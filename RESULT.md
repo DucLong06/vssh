@@ -236,3 +236,267 @@ fc900ec feat: project skeleton, config, ssh config store, sqlite metadata, vault
 
 `BRIEF-CI.md` appeared in the project directory during this work. It is not
 mine, was not part of this task, and is left untracked and unread.
+
+
+---
+
+# Update: CI, security tests, bilingual README (BRIEF-CI.md)
+
+Run on 2026-11-16 on the same machine, at commit `30741f0`. Output is pasted
+as produced. This section supersedes the numbers above where they differ
+(test count, binary size, commit list, and the note that `BRIEF-CI.md` was unread).
+
+## What was added
+
+| Item | Where |
+|------|-------|
+| GitHub Actions CI: job `build-test` (`cargo fmt --check`, `cargo build --release`, `cargo test`, `cargo clippy --all-targets -- -D warnings`) and job `audit` (`cargo audit`), both cached with `Swatinem/rust-cache@v2`; runs on every push and on PRs to `main`/`master` | `.github/workflows/ci.yml` |
+| `cargo audit` configuration with one documented ignore | `.cargo/audit.toml` |
+| Security integration tests (11) | `tests/security.rs` |
+| More in-crate tests (38 total, was 31): host key policy, vault Debug/error leaks, malformed vault plaintext, line-break injection, pattern matcher, tag filter | `src/**` |
+| Library target so `tests/` can import the modules | `src/lib.rs` |
+| Clippy denies `print_stdout`, `print_stderr`, `dbg_macro` (nothing may print or log while the TUI owns the terminal) | `Cargo.toml` |
+| `#tag` search filter (needed to document "filter by tag" truthfully) | `src/ui/mod.rs` |
+| README rewritten: English then Vietnamese, mirrored | `README.md` |
+
+The workflow has not run on GitHub: nothing was pushed. The README badge will
+show no status until the first push. Locally the YAML parses and every command
+in it was run, below.
+
+## Security problems found while writing the tests, and fixed
+
+1. **Host key type switch bypassed the known_hosts check.** A host on record
+   with a key of one type (say ECDSA or RSA) was treated as *unknown* when the
+   server presented another type, and the new key was learned silently, so a
+   known host could be impersonated. Now a host with any recorded key must
+   present a recorded key, and recorded key types are offered first during
+   negotiation (as OpenSSH does). Checked live against an `sshd` with RSA and
+   Ed25519 host keys: recorded-RSA-only host connects (verified via RSA,
+   nothing added to `known_hosts`); a different recorded RSA key is refused
+   with `HOST KEY MISMATCH ... line 1`; an unknown host is learned.
+2. **SQLite advisory RUSTSEC-2026-0459** (`libsqlite3-sys` 0.37, found by
+   `cargo audit`): fixed by upgrading `rusqlite` 0.39 → 0.43.
+3. **Dead session closed on any key.** When a connection dropped, the next key
+   closed the tab and the rest of a half-typed line ran as host-list commands
+   (`e` opens the edit form, Enter saves). This renamed a host in the test
+   config during the live run. A dead tab now ignores keys and closes only with `Ctrl-a x`.
+4. **Line breaks in values written to the ssh config** could have added
+   directives. Not reachable from the TUI (paste and input already strip
+   them), now also impossible at the writer.
+5. **Host pattern matching was exponential** for patterns with many `*`; a
+   crafted `Host` line could hang startup. Now O(pattern × text).
+
+## Not fixed: RUSTSEC-2023-0071 (rsa, "Marvin" timing side channel)
+
+`cargo audit` without the ignore entry:
+
+```
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1509 security advisories (from /home/longhd/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (358 crate dependencies)
+Crate:     rsa
+Version:   0.10.0-rc.18
+Title:     Marvin Attack: potential key recovery through timing sidechannels
+Date:      2023-11-22
+ID:        RUSTSEC-2023-0071
+URL:       https://rustsec.org/advisories/RUSTSEC-2023-0071
+Severity:  5.9 (medium)
+Solution:  Upgrade to >=0.10.0 (patched)
+
+error: 1 vulnerability found!
+exit code: 1
+```
+
+The fix is in `rsa` 0.10.0, but `russh` 0.65.1 (the latest release) requires
+exactly `rsa =0.10.0-rc.18`, so it cannot be selected. The advisory concerns
+private-key operations; in vssh that is signing with an RSA key **file**. Keys
+held by an agent, and Ed25519/ECDSA keys, do not use this code. I chose to
+ignore it in `.cargo/audit.toml` (with the reason) so the audit job stays
+useful for new advisories; removing that entry makes the job fail until russh
+updates. The other option is building russh without its `rsa` feature, which
+drops RSA keys entirely. That is a decision for the maintainer.
+
+## Real output
+
+### `cargo fmt --check`
+
+```
+exit code: 0
+```
+
+### `cargo build --release` (after `cargo clean --release`)
+
+```
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling subtle v2.6.1
+   ... (222 more "Compiling" lines elided) ...
+   Compiling russh v0.65.1
+   Compiling rusqlite v0.43.0
+   Compiling vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `release` profile [optimized] target(s) in 1m 46s
+exit code: 0
+```
+
+228 crates compiled, 0 warnings.
+
+```
+-rwxrwxr-x 2 longhd longhd 6202360 Nov 16 16:14 target/release/vssh
+vssh 0.1.0
+```
+
+### `cargo test`
+
+```
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.76s
+     Running unittests src/lib.rs (target/debug/deps/vssh-ec2a087e5b7d25dc)
+
+running 38 tests
+test config::tests::partial_config_keeps_defaults ... ok
+test config::tests::rejects_typos_and_bad_colours ... ok
+test ssh::forward::tests::socks5_connect_requests ... ok
+test ssh::forward::tests::socks5_rejects_what_it_cannot_do ... ok
+test ssh::tests::known_key_types_are_offered_first ... ok
+test ssh::tests::key_of_another_type_does_not_count_as_unknown ... ok
+test ssh::tests::host_key_policy ... ok
+test store::ssh_config::tests::first_host_in_empty_file ... ok
+test ssh::tests::target_resolution ... ok
+test store::ssh_config::tests::glob_patterns ... ok
+test store::ssh_config::tests::forwards_parse_and_format ... ok
+test store::ssh_config::tests::line_breaks_cannot_inject_directives ... ok
+test store::ssh_config::tests::lists_only_concrete_hosts ... ok
+test store::ssh_config::tests::multi_valued_add_remove ... ok
+test store::ssh_config::tests::round_trip_is_lossless ... ok
+test ui::draw::tests::chips_are_stable_and_popups_fit ... ok
+test store::ssh_config::tests::parses_separators_quotes_and_case ... ok
+test store::ssh_config::tests::host_lifecycle ... ok
+test ui::files::tests::remote_paths ... ok
+test ui::draw::tests::formats_sizes_and_ages ... ok
+test store::ssh_config::tests::resolves_like_openssh ... ok
+test store::ssh_config::tests::set_replaces_adds_and_removes ... ok
+test ui::tests::clean_strips_escape_sequences ... ok
+test ui::term::tests::encodes_keys_like_xterm ... ok
+test ui::tests::tag_filter_matches_tags_and_group_by_prefix ... ok
+test ui::term::tests::answers_terminal_queries ... ok
+test ui::term::tests::renders_text_colours_and_wide_chars ... ok
+test vault::tests::malformed_plaintext_is_rejected_not_trusted ... ok
+test ui::files::tests::local_pane_operations ... ok
+test store::db::tests::metadata_and_snippets ... ok
+test store::ssh_config::tests::save_backs_up_once_and_is_private ... ok
+test vault::tests::set_takes_the_secret_out_of_the_caller ... ok
+test vault::tests::file_is_private_opaque_and_renonced ... ok
+test vault::tests::create_refuses_to_overwrite_or_use_empty_passphrase ... ok
+test vault::tests::debug_and_errors_never_show_secrets ... ok
+test vault::tests::wrong_passphrase_is_rejected ... ok
+test vault::tests::round_trip ... ok
+test vault::tests::tampering_is_detected ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running unittests src/main.rs (target/debug/deps/vssh-a08097de3898dc4f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/security.rs (target/debug/deps/security-20489d7f43bd4846)
+
+running 11 tests
+test comments_and_includes_are_inert ... ok
+test db_module_builds_no_sql_from_strings ... ok
+test edits_cannot_inject_blocks_or_directives ... ok
+test pathological_patterns_do_not_hang ... ok
+test hostile_host_line_stays_in_its_own_block ... ok
+test identity_file_expands_only_a_leading_home ... ok
+test vault_debug_and_errors_do_not_leak ... ok
+test vault_file_stays_private_and_unique ... ok
+test parser_never_panics_and_keeps_its_meaning ... ok
+test vault_rejects_anything_that_is_not_an_intact_vault ... ok
+test sql_metacharacters_are_stored_as_data ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+   Doc-tests vssh
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit code: 0
+```
+
+49 tests: 38 in-crate, 11 in `tests/security.rs`. With the guards for items 1
+and 4 above temporarily disabled, the corresponding tests fail (checked), so
+they do test the fix.
+
+### `cargo clippy -- -D warnings`
+
+```
+    Checking vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.76s
+exit code: 0
+```
+
+### `cargo clippy --all-targets -- -D warnings` (what CI runs)
+
+```
+    Checking vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s
+exit code: 0
+```
+
+### `cargo audit` (cargo-audit 0.23.0, with `.cargo/audit.toml`)
+
+```
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1509 security advisories (from /home/longhd/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (358 crate dependencies)
+exit code: 0
+```
+
+`cargo-audit` was not installed on this machine; it was installed into a
+temporary directory for this run and removed afterwards. `cargo deny` was not
+added: the brief makes it conditional on a deny config, and there is none.
+
+## Coverage of the brief's test list
+
+| Asked | Where |
+|-------|-------|
+| Vault: wrong passphrase, bit flips in magic/salt/nonce/ciphertext/tag, mode 0600, fresh nonce, refuses overwrite, empty passphrase | `src/vault/mod.rs` (existing) |
+| Vault: malformed/truncated files, loosened permissions restored, no temp file left, distinct salt per vault | `tests/security.rs` |
+| Vault: Debug output and error messages never contain a secret or passphrase | `src/vault/mod.rs`, `tests/security.rs` |
+| ssh-config: hostile `Host` tokens, `~` expansion, comments, `Include`, no leaking between hosts | `tests/security.rs` |
+| ssh-config: no panic on garbage (3000 random token documents through every public function), no hang on pathological patterns | `tests/security.rs` |
+| Host key policy: unknown / known / mismatch / other key type / port and name separation | `src/ssh/mod.rs` |
+| SQL: metacharacters stored as data through add/edit/rename/delete; no string-built SQL in `db.rs` | `tests/security.rs` |
+| No secret in logs | enforced by clippy (`print_stdout`, `print_stderr`, `dbg_macro` denied); vssh has no logging |
+
+## Not verified in this round
+
+- The workflow on GitHub itself (not pushed).
+- Startup time was not re-measured after these changes; the release binary is now 6,202,360 bytes.
+- The full end-to-end pass from the first round was not repeated. Live checks
+  this round covered only: host key verification (three cases), the dead-tab
+  behaviour, and the `#tag` filter.
+- No test drives the TUI key handling automatically; fix 3 was verified by hand in tmux.
+- The Vietnamese README text was written by me and not reviewed by a native speaker.
+
+## Commits in this round
+
+```
+30741f0 docs: bilingual README (English + Vietnamese)
+c469a5d ci: GitHub Actions for fmt, build, test, clippy and cargo audit
+8a4d5d1 fix(ui): a dead session closes only with leader x, not on any key
+a8722cb test: security integration suite
+eb8b2af build: deny print/dbg macros in clippy, optimize argon2 in dev profile
+0dd7281 feat(ui): '#tag' in the search box filters by tag or group
+8f6aa3e fix(store): harden the ssh config writer and pattern matcher
+c181126 feat(vault): redacting Debug impl, tests for leaks and malformed contents
+76da434 fix(ssh): refuse a known host that presents a key of another type
+34d55bd fix(deps): rusqlite 0.43 for RUSTSEC-2026-0459 in bundled SQLite
+b46324a refactor: split into library and thin binary
+```
+
+`BRIEF-CI.md` is still untracked; it was read and executed but not committed.
