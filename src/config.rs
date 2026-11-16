@@ -1,5 +1,6 @@
 //! `~/.config/vssh/config.toml`: theme and keybindings. Every field is optional.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{fs, io};
 
@@ -54,6 +55,12 @@ pub struct Config {
     pub theme: Theme,
     pub keys: Keys,
     pub lang: Lang,
+    /// Log every session from the start. Off by default: a log holds
+    /// everything the terminal showed, secrets included.
+    pub log_sessions: bool,
+    /// Login scripts: host alias to a command typed into the shell once it
+    /// is up. (`RemoteCommand` in the ssh config replaces the shell instead.)
+    pub exec: HashMap<String, String>,
     /// TCP-probe every host at startup. Off by default: it touches every
     /// machine in the ssh config on each launch.
     pub ping_on_start: bool,
@@ -228,6 +235,19 @@ mod tests {
             (d.warn, d.bar, d.key)
         );
         assert_eq!(c.keys.connect, 'c');
+    }
+
+    #[test]
+    fn login_scripts_and_logging() {
+        let c: Config = toml::from_str(
+            "log_sessions = true\n[exec]\nweb-01 = \"cd /srv/app && git status\"\n\"db.prod\" = \"psql\"\n",
+        )
+        .unwrap();
+        assert!(c.log_sessions);
+        assert_eq!(c.exec["web-01"], "cd /srv/app && git status");
+        assert_eq!(c.exec["db.prod"], "psql");
+        let none: Config = toml::from_str("").unwrap();
+        assert!(!none.log_sessions && none.exec.is_empty());
     }
 
     #[test]

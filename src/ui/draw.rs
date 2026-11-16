@@ -164,7 +164,8 @@ fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
         let mut inner = rect;
         if app.layout != panes::Layout::Single {
             let mark = if tab.closed { " ✗" } else { "" };
-            let title = format!("{} {}{mark}", i + 2, tab.alias);
+            let rec = if tab.log.is_some() { " ● rec" } else { "" };
+            let title = format!("{} {}{mark}{rec}", i + 2, tab.alias);
             let mut block = panel(&title, i == focused, th).padding(Padding::ZERO);
             if app.broadcast && !tab.closed {
                 block = block.border_style(Style::new().fg(BROADCAST));
@@ -601,7 +602,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
             vec![
                 vec![hint(&leader, "menu", "menu", true)],
                 vec![
-                    hint(&format!("{leader} hjkl"), "pane", "khung", panes > 1),
+                    hint("alt-hjkl", "pane", "khung", panes > 1),
                     hint(&format!("{leader} L"), "layout", "bố cục", true),
                     hint(&format!("{leader} d"), "close", "đóng", true),
                 ],
@@ -779,6 +780,10 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         Span::styled(format!(" {name} "), badge),
         Span::styled(format!(" {context} "), section),
     ];
+    if tab.is_some_and(|t| t.log.is_some()) {
+        let rec = Style::new().fg(th.error).bg(th.bar).bold();
+        left.push(Span::styled(" ● REC", rec));
+    }
     if app.broadcast {
         let word = lang.pick("sessions", "phiên");
         // In a session the mode badge already says BROADCAST.
@@ -846,10 +851,12 @@ fn leader_menu(app: &App) -> (&'static str, Vec<(String, &'static str, &'static 
         _ => (
             "leader",
             vec![
-                entry("h j k l", "focus pane", "chuyển khung"),
+                entry("← ↓ ↑ →", "focus pane", "chuyển khung"),
                 entry("L", "next layout", "bố cục kế"),
                 entry("w", "+window", "+cửa sổ"),
                 entry("b", "broadcast", "phát tới mọi phiên"),
+                entry("l", "log session", "ghi log phiên"),
+                entry("s", "type a snippet", "gõ snippet"),
                 entry("d", "close pane", "đóng khung"),
                 entry("q", "host list", "danh sách máy chủ"),
                 entry("tab n", "next tab", "tab kế tiếp"),
@@ -934,6 +941,22 @@ fn popup(popup: &Popup, th: &Theme, f: &mut Frame) {
                 .scroll((*scroll, 0));
             f.render_widget(Clear, area);
             f.render_widget(text.block(panel(title, true, th)), area);
+        }
+        Popup::Pick { items, sel } => {
+            let height = (items.len() as u16 + 2).min(screen.height * 2 / 3);
+            let area = centered(screen, 78, height);
+            let rows = items.iter().map(|(name, command)| {
+                Line::from(vec![
+                    Span::styled(format!("{name:<20} "), Style::new().fg(th.accent)),
+                    Span::raw(command.as_str()),
+                ])
+            });
+            let list = List::new(rows)
+                .block(panel("Type a snippet into the session", true, th))
+                .highlight_style(selection(th));
+            let mut state = ListState::default().with_selected(Some(*sel));
+            f.render_widget(Clear, area);
+            f.render_stateful_widget(list, area, &mut state);
         }
         Popup::Form(form) => {
             let label_w = form.fields.iter().map(|f| f.0.chars().count()).max();
