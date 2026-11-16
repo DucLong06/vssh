@@ -49,12 +49,24 @@ impl Lang {
     }
 }
 
+/// Which way panels are arranged. `Auto` follows the terminal's shape.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Orientation {
+    #[default]
+    Auto,
+    Landscape,
+    Portrait,
+}
+
 #[derive(Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub theme: Theme,
     pub keys: Keys,
     pub lang: Lang,
+    /// `"auto"` (default), `"landscape"` or `"portrait"`.
+    pub layout: Orientation,
     /// Log every session from the start. Off by default: a log holds
     /// everything the terminal showed, secrets included.
     pub log_sessions: bool,
@@ -108,7 +120,8 @@ impl Default for Theme {
             border: Color::DarkGray,
             text: Color::Reset,
             dim: Color::DarkGray,
-            selection: Color::Rgb(38, 79, 120),
+            // TokyoNight `bg_highlight`: a soft band rather than a bright bar.
+            selection: Color::Rgb(41, 46, 66),
             ok: Color::Green,
             error: Color::Red,
             warn: Color::Yellow,
@@ -130,6 +143,8 @@ pub struct Keys {
     pub connect: char,
     /// Open a session on every host with a tag.
     pub connect_tag: char,
+    /// Show the selected host's details, in windows too small to keep them on screen.
+    pub info: char,
     pub forwards: char,
     pub snippets: char,
     pub add: char,
@@ -153,6 +168,7 @@ impl Default for Keys {
             sftp: 's',
             connect: 'c',
             connect_tag: 'T',
+            info: 'i',
             forwards: 'f',
             snippets: 'n',
             add: 'a',
@@ -248,6 +264,21 @@ mod tests {
         assert_eq!(c.exec["db.prod"], "psql");
         let none: Config = toml::from_str("").unwrap();
         assert!(!none.log_sessions && none.exec.is_empty());
+    }
+
+    #[test]
+    fn layout_override() {
+        let layout = |text: &str| toml::from_str::<Config>(text).map(|c| c.layout);
+        assert_eq!(layout("").unwrap(), Orientation::Auto);
+        assert_eq!(
+            layout("layout = \"portrait\"").unwrap(),
+            Orientation::Portrait
+        );
+        assert_eq!(
+            layout("layout = \"landscape\"").unwrap(),
+            Orientation::Landscape
+        );
+        assert!(layout("layout = \"diagonal\"").is_err());
     }
 
     #[test]

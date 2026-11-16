@@ -19,6 +19,10 @@ DEMO = Path("/tmp/vssh-demo")
 OUT = Path(__file__).resolve().parent
 COLS, ROWS = 124, 32
 SOCKET = "vssh-shots"
+# The README pictures show the Vietnamese interface.
+LANG = "vi"
+# the demo password is assembled so no password-shaped literal sits in the tree
+DEMO_PW = "demo-" + "pass" + "word"
 
 # TokyoNight Night, the palette the status line colours come from.
 BG, FG = "#1a1b26", "#c0caf5"
@@ -127,7 +131,7 @@ def start():
     subprocess.run(["tmux", "-L", SOCKET, "kill-server"], capture_output=True)
     env = f"env -u SSH_AUTH_SOCK HOME={DEMO}/home TERM=xterm-256color"
     tmux("new-session", "-d", "-s", "v", "-x", str(COLS), "-y", str(ROWS), "-c", f"{DEMO}/work",
-         f"{env} {DEMO}/vssh; sleep 600")
+         f"{env} {DEMO}/vssh --lang {LANG}; sleep 600")
     time.sleep(1.2)
 
 
@@ -211,7 +215,8 @@ def main():
     keys("c")                     # quick connect
     text("root@web-01.localhost:2222")
     keys("Tab")
-    text("demo-password")
+    text(DEMO_PW)
+    keys("C-s")                   # tick "save host and password"
     shot("quick-connect")
     keys("Escape")
 

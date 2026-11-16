@@ -11,7 +11,7 @@ vẫn dùng được mọi thứ vssh chỉnh sửa.
 
 - Nhiều phiên SSH trong các tab, có sẵn trình giả lập terminal
 - Nhiều máy chủ cạnh nhau trong các khung chia, và chế độ phát (broadcast): gõ một lần, chạy trên mọi máy
-- Kết nối nhanh tới `user@host` mà không lưu lại gì
+- Kết nối nhanh tới `user@host`, có thể lưu hoặc không lưu máy chủ và mật khẩu
 - Trình duyệt SFTP hai khung, có thanh tiến độ
 - Chuyển tiếp cổng local, remote và dynamic (SOCKS5) cho từng máy chủ
 - Kho mật khẩu mã hoá, snippet lệnh, nhóm và thẻ (tag), tìm kiếm mờ
@@ -23,7 +23,7 @@ vẫn dùng được mọi thứ vssh chỉnh sửa.
 | **Menu leader (`Ctrl-a`)** | **SFTP** |
 | ![Popup which-key liệt kê các phím của phiên làm việc](docs/img/which-key.png) | ![Trình duyệt SFTP hai khung](docs/img/sftp.png) |
 
-Hình ảnh được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh); các máy chủ trong hình là một container demo chạy trên máy.
+Hình ảnh là giao diện tiếng Việt (`vssh --lang vi`); mặc định là tiếng Anh. Chúng được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh); các máy chủ trong hình là một container demo chạy trên máy.
 
 Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
 
@@ -58,11 +58,20 @@ cargo build --release
 
 Nhấn `c`, gõ `user@host` hoặc `user@host:port`, có thể thêm mật khẩu, rồi nhấn `Enter`. Một phiên làm việc mở ra trong tab. Không có gì được lưu: không thêm vào `~/.ssh/config`, không lưu vào kho mật khẩu, không ghi thống kê; mật khẩu chỉ dùng cho phiên đó. Khoá máy chủ vẫn được kiểm tra và ghi vào `~/.ssh/known_hosts`, giống như `ssh`.
 
-![Biểu mẫu kết nối nhanh](docs/img/quick-connect.png)
+**Lưu ngay khi kết nối.** Đánh dấu ô chọn trong biểu mẫu bằng `Ctrl-s` (hoặc `Tab` tới ô đó rồi nhấn `S`), sau đó nhấn `Enter`:
+
+- máy chủ được thêm vào `~/.ssh/config` như mọi máy chủ khác. Alias là tên máy, hoặc `user@host` nếu tên đó đã được dùng;
+- mật khẩu bạn đã gõ được lưu vào kho mật khẩu dưới alias đó, mã hoá như mọi mật khẩu trong kho. Nếu kho đang khoá, vssh hỏi mật khẩu chủ (hoặc tạo kho mới); nếu bạn huỷ bước này thì mật khẩu bị bỏ đi, không được lưu;
+- mật khẩu không bao giờ được ghi vào `~/.ssh/config` hay `config.toml`.
+
+Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng để bật/tắt vì đó là một chữ cái bạn có thể cần gõ; vì vậy phím tắt là `Ctrl-s`.
+
+![Biểu mẫu kết nối nhanh, ô lưu đã được đánh dấu](docs/img/quick-connect.png)
 
 ## Nhiều máy chủ cùng lúc
 
 - **Mở nhiều máy:** đánh dấu các máy bằng `Space`, rồi `Enter` mở một phiên trên từng máy. Hoặc nhấn `T`, gõ một thẻ hay nhóm, mọi máy có thẻ đó sẽ được kết nối.
+- **Mọi tỷ lệ màn hình:** bố cục tự theo màn hình terminal — cạnh nhau khi rộng, xếp chồng chiếm hết chiều rộng khi cao (điện thoại chạy Termux, màn hình dọc), từng bảng một khi không đủ chỗ. Ép bằng `layout = "landscape"|"portrait"` trong cấu hình.
 - **Bố cục:** các phiên hiện cạnh nhau. `Ctrl-a L` đổi lần lượt: một khung, 2 cột, lưới 2x2, 3 cột; `Ctrl-a w` rồi `s` `v` `g` `t` để chọn thẳng. Khi số phiên nhiều hơn số khung, màn hình đi theo phiên đang được chọn.
 - **Chuyển khung:** `Alt-h/j/k/l` di chuyển giữa các khung như cửa sổ vim (hoặc `Ctrl-a` + phím mũi tên). `Ctrl-a d` đóng phiên đang chọn.
 - **Phát (broadcast):** `Alt-b` (hoặc `Ctrl-a b`). Khi bật, những gì bạn gõ hay dán sẽ được gửi tới *mọi* phiên đang kết nối, kể cả phiên không hiện trên màn hình. Thanh trạng thái chuyển sang màu cam và cho biết có bao nhiêu phiên đang nhận, các khung đó có viền cam. Nhấn `Alt-b` lần nữa để tắt.
@@ -121,7 +130,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Enter` / `s` | mở shell / trình duyệt SFTP |
 | | `Space`, rồi `Enter` | đánh dấu các máy, rồi mở phiên trên mọi máy đã đánh dấu |
 | | `T` | kết nối mọi máy có cùng thẻ hoặc nhóm |
-| | `c` | kết nối nhanh (không lưu) |
+| | `c` | kết nối nhanh; `Ctrl-s` trong biểu mẫu để lưu máy chủ và mật khẩu |
 | | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm); `Esc` để xoá |
 | | `a` `e` `d` `y` | thêm, sửa, xoá, nhân bản máy chủ |
 | | `p` | ghim máy chủ |

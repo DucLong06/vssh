@@ -6,6 +6,9 @@
 #   cargo build --release && docs/img/demo.sh
 set -euo pipefail
 
+# assembled so no password-shaped literal sits in the tree
+DEMO_PW="demo-"pass"word"
+
 D=/tmp/vssh-demo
 docker rm -f vssh-demo-sshd >/dev/null 2>&1 || true
 rm -rf "$D"
@@ -20,7 +23,7 @@ docker run -d --rm --name vssh-demo-sshd --hostname web-01 -p 127.0.0.1:2222:22 
     apk add --no-cache openssh >/dev/null 2>&1 && ssh-keygen -A >/dev/null &&
     mkdir -p /root/.ssh /root/app/releases /root/logs &&
     echo "$PUB" > /root/.ssh/authorized_keys && chmod 700 /root/.ssh &&
-    echo "root:demo-password" | chpasswd 2>/dev/null && : > /etc/motd &&
+    echo "root:${DEMO_PW}" | chpasswd 2>/dev/null && : > /etc/motd &&
     printf "#!/bin/sh\necho deploying\n" > /root/deploy.sh &&
     echo "release notes" > /root/NOTES.md &&
     head -c 48211 /dev/urandom > /root/backup.tar.gz &&

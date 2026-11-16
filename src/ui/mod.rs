@@ -35,7 +35,7 @@ use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
-use panes::Layout;
+use panes::{Layout, Shape};
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -127,7 +127,17 @@ struct Form {
     idx: usize,
     /// The last field is a secret, shown as dots.
     masked: bool,
+    /// A "save this host" checkbox below the fields, and whether it is ticked.
+    /// It is one more row for `idx`.
+    save: Option<bool>,
     then: After,
+}
+
+impl Form {
+    /// Rows the cursor can be on: the fields, plus the checkbox if there is one.
+    fn rows(&self) -> usize {
+        self.fields.len() + usize::from(self.save.is_some())
+    }
 }
 
 enum Popup {
@@ -194,9 +204,15 @@ pub struct App {
     layout: Layout,
     /// Index, among the terminal sessions, of the first one shown.
     window: usize,
+    /// How the last frame was arranged; follows the terminal size.
+    shape: Shape,
+    /// Details of the selected host are up, in a window too small to keep them on screen.
+    info: bool,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
     popup: Option<Popup>,
+    /// A password waiting for the vault to be unlocked, with its alias.
+    pending: Option<(String, Zeroizing<String>)>,
     msg: String,
     quit: bool,
 }
@@ -245,6 +261,22 @@ fn start_log(dir: &Path, alias: &str, stamp: &str) -> io::Result<(File, PathBuf)
     let mut options = File::options();
     let file = options.append(true).create(true).mode(0o600).open(&path)?;
     Ok((file, path))
+}
+
+/// Moves a waiting password into the vault once there is an unlocked one,
+/// and returns the alias it was stored under. Until then it keeps waiting.
+fn store_waiting(
+    vault: Option<&mut Vault>,
+    pending: &mut Option<(String, Zeroizing<String>)>,
+) -> Result<Option<String>> {
+    let Some(vault) = vault else {
+        return Ok(None);
+    };
+    let Some((alias, mut password)) = pending.take() else {
+        return Ok(None);
+    };
+    vault.set(&alias, &mut password)?;
+    Ok(Some(alias))
 }
 
 /// Exact, case-insensitive match on a tag or the group: what "connect
@@ -297,6 +329,11 @@ impl App {
             .mode(0o700)
             .create(data_dir())?;
         let db = Db::open(&data_dir().join("vssh.db"))?;
+        Self::with(cfg, tx, sshc, db)
+    }
+
+    /// The app over an already loaded ssh config and database.
+    fn with(cfg: Config, tx: UnboundedSender<Event>, sshc: SshConfig, db: Db) -> Result<Self> {
         db.import(&sshc.hosts())?;
         let mut app = Self {
             cfg,
@@ -322,8 +359,11 @@ impl App {
             broadcast: false,
             layout: Layout::Single,
             window: 0,
+            shape: Shape::Wide,
+            info: false,
             body: (80, 24),
             popup: None,
+            pending: None,
             msg: String::new(),
             quit: false,
         };
@@ -488,7 +528,8 @@ impl App {
     fn focus_pane(&mut self, direction: char) {
         let shown = self.shown();
         let slot = shown.iter().position(|i| i + 1 == self.active);
-        let to = slot.and_then(|s| self.layout.neighbor(s, direction, shown.len()));
+        let stacked = self.shape == Shape::Tall;
+        let to = slot.and_then(|s| self.layout.neighbor(s, direction, shown.len(), stacked));
         if let Some(to) = to {
             self.active = shown[to] + 1;
         }
@@ -579,7 +620,8 @@ impl App {
             let replies = term::Replies::default();
             let parser = vt100::Parser::new_with_callbacks(rows, cols, 5000, replies);
             let mut parser = Box::new(parser);
-            parser.process(format!("Connecting to {alias}…\r\n").as_bytes());
+            let connecting = self.cfg.lang.pick("Connecting to", "Đang kết nối tới");
+            parser.process(format!("{connecting} {alias}…\r\n").as_bytes());
             (Kind::Term { parser, tx: cmd_tx }, task)
         };
         self.tabs.push(Tab {
@@ -846,8 +888,11 @@ impl App {
     fn on_paste(&mut self, text: &str) {
         match &mut self.popup {
             Some(Popup::Form(f)) => {
-                let idx = f.idx;
-                return f.fields[idx].1.push_str(&text.replace(['\r', '\n'], " "));
+                // Nothing to paste into when the cursor is on the save checkbox.
+                if let Some((_, field)) = f.fields.get_mut(f.idx) {
+                    field.push_str(&text.replace(['\r', '\n'], " "));
+                }
+                return;
             }
             Some(_) => return,
             None => {}
@@ -928,7 +973,7 @@ impl App {
             KeyCode::Right => self.focus_pane('l'),
             KeyCode::Char('L') => {
                 self.layout = self.layout.next();
-                self.msg = format!("layout: {}", self.layout.name());
+                self.msg = format!("layout: {}", self.layout.name(self.shape == Shape::Tall));
             }
             KeyCode::Char('b') => self.toggle_broadcast(),
             KeyCode::Char('w') => self.leader = Leader::Window,
@@ -965,7 +1010,7 @@ impl App {
             _ => return,
         };
         self.layout = layout;
-        self.msg = format!("layout: {}", layout.name());
+        self.msg = format!("layout: {}", layout.name(self.shape == Shape::Tall));
     }
 
     fn ask_quit(&mut self) {
@@ -1009,24 +1054,29 @@ impl App {
             KeyCode::End | KeyCode::Char('G') => self.move_sel(isize::MAX),
             KeyCode::Tab => self.cycle(true),
             KeyCode::BackTab => self.cycle(false),
+            KeyCode::Esc if self.info => self.info = false,
             KeyCode::Esc => {
                 self.filter.clear();
                 self.refilter();
             }
+            KeyCode::Char(c) if c == keys.info => self.info ^= true,
             KeyCode::Char(c) if c == keys.quit || c == 'Q' => self.ask_quit(),
             KeyCode::Char(c) if c == keys.search => self.focus = Focus::Search,
             KeyCode::Char(c) if c == keys.add => self.host_form(None),
             KeyCode::Char(c) if c == keys.connect => {
+                let lang = self.cfg.lang;
                 let fields = vec![
                     ("user@host[:port]", String::new()),
-                    ("Password (optional)", String::new()),
+                    (
+                        lang.pick("Password (optional)", "Mật khẩu (nếu cần)"),
+                        String::new(),
+                    ),
                 ];
-                self.form(
-                    "Quick connect (not saved)",
-                    fields,
-                    true,
-                    After::QuickConnect,
-                );
+                let title = lang.pick("Quick connect", "Kết nối nhanh");
+                self.form(title, fields, true, After::QuickConnect);
+                if let Some(Popup::Form(form)) = &mut self.popup {
+                    form.save = Some(false);
+                }
             }
             KeyCode::Enter if !self.marked.is_empty() => {
                 let marked: Vec<String> = mem::take(&mut self.marked).into_iter().collect();
@@ -1039,13 +1089,10 @@ impl App {
                 let own = meta.tags.split([' ', ',']).chain([meta.grp.as_str()]);
                 let own = own.into_iter().find(|t| !t.is_empty()).unwrap_or("");
                 let tag = self.filter.strip_prefix('#').unwrap_or(own).to_string();
-                let fields = vec![("Tag or group", tag)];
-                self.form(
-                    "Connect to every host with",
-                    fields,
-                    false,
-                    After::ConnectTag,
-                );
+                let lang = self.cfg.lang;
+                let fields = vec![(lang.pick("Tag or group", "Thẻ hoặc nhóm"), tag)];
+                let title = lang.pick("Connect to every host with", "Kết nối mọi máy chủ có");
+                self.form(title, fields, false, After::ConnectTag);
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
             KeyCode::Char(c) if c == keys.ping => self.ping_all(),
@@ -1269,6 +1316,7 @@ impl App {
             fields: fields.collect(),
             idx: 0,
             masked,
+            save: None,
             then,
         }));
     }
@@ -1310,6 +1358,27 @@ impl App {
         self.form("Snippet", fields, false, then);
     }
 
+    /// Puts a password into the vault under an alias. A locked vault is
+    /// unlocked (or created) first; the password waits in `pending` meanwhile
+    /// and is dropped, zeroized, if that prompt is cancelled.
+    fn store_password(&mut self, alias: String, password: Zeroizing<String>) {
+        self.pending = Some((alias, password));
+        match self.vault {
+            Some(_) => {
+                let res = self.store_pending();
+                self.check(res);
+            }
+            None => self.unlock_prompt(None),
+        }
+    }
+
+    fn store_pending(&mut self) -> Result<()> {
+        if let Some(alias) = store_waiting(self.vault.as_mut(), &mut self.pending)? {
+            self.msg = format!("saved as {alias}, password stored in the vault");
+        }
+        Ok(())
+    }
+
     fn unlock_prompt(&mut self, next: Option<String>) {
         if vault_path().exists() {
             let then = After::VaultUnlock(next);
@@ -1334,7 +1403,7 @@ impl App {
              \x20 Ctrl-d/u     half a screen     Tab     next tab\n\
              \x20 Enter        open shell (on every marked host, if any are marked)\n\
              \x20 Space        mark host         {tag}       connect to every host with a tag\n\
-             \x20 {sftp}            SFTP browser      {connect}       quick connect, nothing saved\n\
+             \x20 {sftp}            SFTP browser      {connect}       quick connect (Ctrl-s in the form saves it)\n\
              \x20 {search}            search (fuzzy)    Esc     clear search\n\
              \x20              search #tag shows only hosts with that tag or group\n\
              \x20 {add}            add host          {edit}       edit host\n\
@@ -1384,7 +1453,7 @@ impl App {
              \x20 Ctrl-d/u     nửa màn hình      Tab     tab kế tiếp\n\
              \x20 Enter        mở shell (trên mọi máy đã đánh dấu, nếu có)\n\
              \x20 Space        đánh dấu máy      {tag}       kết nối mọi máy có cùng thẻ\n\
-             \x20 {sftp}            trình duyệt SFTP  {connect}       kết nối nhanh, không lưu\n\
+             \x20 {sftp}            trình duyệt SFTP  {connect}       kết nối nhanh (Ctrl-s trong biểu mẫu để lưu)\n\
              \x20 {search}            tìm (mờ)          Esc     xoá tìm kiếm\n\
              \x20              tìm #tag chỉ hiện máy có thẻ hoặc nhóm đó\n\
              \x20 {add}            thêm máy          {edit}       sửa máy\n\
@@ -1460,9 +1529,14 @@ impl App {
                 }
             }
             (Popup::Pick { .. }, KeyCode::Esc | KeyCode::Char('q')) => {}
+            (Popup::Form(_), KeyCode::Esc) => {
+                // Cancelling the vault prompt also gives up the password waiting for it.
+                if self.pending.take().is_some() {
+                    self.msg = "password not stored: the vault stayed locked".into();
+                }
+            }
             (Popup::Text { .. }, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q'))
-            | (Popup::Confirm(..), KeyCode::Esc | KeyCode::Char('n'))
-            | (Popup::Form(_), KeyCode::Esc) => {}
+            | (Popup::Confirm(..), KeyCode::Esc | KeyCode::Char('n')) => {}
             (mut popup, code) => {
                 match (&mut popup, code) {
                     (Popup::Text { scroll, .. }, KeyCode::Down | KeyCode::Char('j')) => {
@@ -1484,11 +1558,21 @@ impl App {
                         *sel = sel.saturating_sub(1)
                     }
                     (Popup::Form(f), KeyCode::Tab | KeyCode::Down) => {
-                        f.idx = (f.idx + 1) % f.fields.len()
+                        f.idx = (f.idx + 1) % f.rows()
                     }
                     (Popup::Form(f), KeyCode::BackTab | KeyCode::Up) => {
-                        f.idx = (f.idx + f.fields.len() - 1) % f.fields.len()
+                        f.idx = (f.idx + f.rows() - 1) % f.rows()
                     }
+                    // The save checkbox: Ctrl-s from any field, or S / Space on its own
+                    // row. A plain S cannot toggle it while a text field has the cursor.
+                    (Popup::Form(f), KeyCode::Char(c))
+                        if f.save.is_some()
+                            && ((c == 's' && k.modifiers == KeyModifiers::CONTROL)
+                                || (f.idx == f.fields.len() && "Ss ".contains(c))) =>
+                    {
+                        f.save = f.save.map(|on| !on)
+                    }
+                    (Popup::Form(f), _) if f.idx == f.fields.len() => {}
                     (Popup::Form(f), KeyCode::Backspace) => drop(f.fields[f.idx].1.pop()),
                     (Popup::Form(f), KeyCode::Char(c))
                         if !k
@@ -1588,13 +1672,27 @@ impl App {
             } => self.open_target(alias, target.clone(), *saved, *sftp, Some(secret)),
             After::QuickConnect => {
                 let target = Target::parse(&text(0))?;
-                let title = match target.port {
-                    22 => format!("{}@{}", target.user, target.host),
-                    port => format!("{}@{}:{port}", target.user, target.host),
-                };
-                // The password lives in this session's task only.
                 let password = (!secret.is_empty()).then_some(secret);
-                self.open_target(&title, target, false, false, password);
+                if form.save == Some(true) {
+                    // The host goes into the ssh config, the password only into the vault.
+                    let alias = target.save_to(&mut self.sshc)?;
+                    self.save_config()?;
+                    self.db.import(std::slice::from_ref(&alias))?;
+                    self.reload()?;
+                    self.sel = self.hosts.iter().position(|h| *h == alias).unwrap_or(0);
+                    self.open_target(&alias, target, true, false, password.clone());
+                    self.msg = format!("saved as {alias}");
+                    if let Some(password) = password {
+                        self.store_password(alias, password);
+                    }
+                } else {
+                    let title = match target.port {
+                        22 => format!("{}@{}", target.user, target.host),
+                        port => format!("{}@{}:{port}", target.user, target.host),
+                    };
+                    // The password lives in this session's task only.
+                    self.open_target(&title, target, false, false, password);
+                }
             }
             After::ConnectTag => {
                 let tag = text(0);
@@ -1606,6 +1704,7 @@ impl App {
             After::VaultUnlock(next) => {
                 self.vault = Some(Vault::open(&vault_path(), &secret)?);
                 self.msg = "vault unlocked".into();
+                self.store_pending()?;
                 if let Some(alias) = next {
                     self.password_prompt(alias);
                 }
@@ -1619,6 +1718,7 @@ impl App {
                 ensure!(**first == *secret, "passphrases do not match");
                 self.vault = Some(Vault::create(&vault_path(), &secret)?);
                 self.msg = "vault created".into();
+                self.store_pending()?;
                 if let Some(alias) = next {
                     self.password_prompt(alias);
                 }
@@ -1858,6 +1958,52 @@ mod tests {
         }
         assert_eq!(received(&mut rxs[0]), b"df -h /\r");
         assert_eq!(received(&mut rxs[1]), b"df -h /\r");
+    }
+
+    #[test]
+    fn a_quick_connect_password_waits_for_the_vault_then_goes_only_there() {
+        let dir = std::env::temp_dir().join(format!("vssh-quicksave-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("vault");
+        let waiting = || {
+            Some((
+                "web.example".to_string(),
+                Zeroizing::new("s3cret-pw".to_string()),
+            ))
+        };
+
+        // Vault locked: nothing is stored and the password keeps waiting.
+        let mut pending = waiting();
+        assert_eq!(store_waiting(None, &mut pending).unwrap(), None);
+        assert!(pending.is_some() && !path.exists());
+
+        // Vault unlocked: stored under the alias, and no longer held here.
+        let mut vault = Vault::create(&path, "master").unwrap();
+        let stored = store_waiting(Some(&mut vault), &mut pending).unwrap();
+        assert_eq!(stored.as_deref(), Some("web.example"));
+        assert!(pending.is_none());
+        assert_eq!(store_waiting(Some(&mut vault), &mut pending).unwrap(), None);
+        drop(vault);
+
+        // It is what a later connection to that alias looks up, and it is not readable on disk.
+        let vault = Vault::open(&path, "master").unwrap();
+        assert_eq!(vault.get("web.example"), Some("s3cret-pw"));
+        let raw = std::fs::read(&path).unwrap();
+        assert!(!raw.windows(9).any(|w| w == b"s3cret-pw"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn save_checkbox_is_one_more_form_row() {
+        let form = |save| Form {
+            title: String::new(),
+            fields: vec![("a", Zeroizing::new(String::new())); 2],
+            idx: 0,
+            masked: true,
+            save,
+            then: After::QuickConnect,
+        };
+        assert_eq!((form(None).rows(), form(Some(false)).rows()), (2, 3));
     }
 
     #[test]
