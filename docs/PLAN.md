@@ -94,6 +94,8 @@ Files on disk:
 | Recursive directory transfer in SFTP | Files only |
 | Remapping keys in sub-views | Only the leader and host-list keys are configurable |
 | Mouse support | None |
+| Vault entries on host rename/delete | Not migrated or removed; entries are keyed by alias |
+| Terminal emulation | vt100 crate: colours, alternate screen, scrollback, bracketed paste, device-status replies; no mouse reporting, no OSC colour queries |
 
 ## Verification
 
