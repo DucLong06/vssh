@@ -54,6 +54,15 @@ pub struct Theme {
     pub ok: Color,
     #[serde(deserialize_with = "color")]
     pub error: Color,
+    /// In-progress states and the pin star.
+    #[serde(deserialize_with = "color")]
+    pub warn: Color,
+    /// Background of the header and the bottom bar.
+    #[serde(deserialize_with = "color")]
+    pub bar: Color,
+    /// Key names in the bottom bar.
+    #[serde(deserialize_with = "color")]
+    pub key: Color,
 }
 
 impl Default for Theme {
@@ -66,6 +75,9 @@ impl Default for Theme {
             selection: Color::Rgb(38, 79, 120),
             ok: Color::Green,
             error: Color::Red,
+            warn: Color::Yellow,
+            bar: Color::Rgb(45, 49, 66),
+            key: Color::LightMagenta,
         }
     }
 }
@@ -78,6 +90,8 @@ pub struct Keys {
     pub quit: char,
     pub search: char,
     pub sftp: char,
+    /// Quick connect: a one-off session that is not saved.
+    pub connect: char,
     pub forwards: char,
     pub snippets: char,
     pub add: char,
@@ -99,6 +113,7 @@ impl Default for Keys {
             quit: 'q',
             search: '/',
             sftp: 's',
+            connect: 'c',
             forwards: 'f',
             snippets: 'n',
             add: 'a',
@@ -140,6 +155,47 @@ mod tests {
         assert_eq!(c.theme.accent, Color::Rgb(255, 136, 0));
         assert_eq!(c.theme.ok, Color::Green);
         assert_eq!((c.keys.leader, c.keys.quit), ('b', 'q'));
+    }
+
+    /// A config written for the first release: every key it knew, none of the later ones.
+    #[test]
+    fn config_from_before_the_restyle_still_loads() {
+        let old = r##"
+            ping_on_start = false
+            [theme]
+            accent = "magenta"
+            border = "darkgray"
+            text = "reset"
+            dim = "gray"
+            selection = "#264f78"
+            ok = "green"
+            error = "red"
+            [keys]
+            leader = "a"
+            quit = "q"
+            search = "/"
+            sftp = "s"
+            forwards = "f"
+            snippets = "n"
+            add = "a"
+            edit = "e"
+            delete = "d"
+            duplicate = "y"
+            pin = "p"
+            mark = " "
+            ping = "r"
+            password = "P"
+            vault = "V"
+            help = "?"
+        "##;
+        let c: Config = toml::from_str(old).unwrap();
+        assert_eq!((c.theme.accent, c.theme.dim), (Color::Magenta, Color::Gray));
+        let d = Theme::default();
+        assert_eq!(
+            (c.theme.warn, c.theme.bar, c.theme.key),
+            (d.warn, d.bar, d.key)
+        );
+        assert_eq!(c.keys.connect, 'c');
     }
 
     #[test]
