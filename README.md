@@ -72,6 +72,7 @@ A plain `S` cannot be the toggle while the cursor is in a text field, because it
 ## Many hosts at once
 
 - **Open several:** mark hosts with `Space`, then `Enter` opens a session on each. Or press `T`, type a tag or group, and every host with it is connected.
+- **Any screen shape:** the layout follows the terminal — side by side in wide windows, stacked full-width in tall ones (phones on Termux, vertical monitors), one panel at a time when there is no room. Override with `layout = "landscape"|"portrait"` in the config.
 - **Layouts:** the sessions appear side by side. `Ctrl-a L` cycles single, 2 columns, 2x2 grid, 3 columns; `Ctrl-a w` then `s` `v` `g` `t` picks one directly. With more sessions than panes, the view follows the focused one.
 - **Focus:** `Alt-h/j/k/l` moves between panes like vim windows (also `Ctrl-a` + arrow). `Ctrl-a d` closes the focused session.
 - **Broadcast:** `Alt-b` (or `Ctrl-a b`). While it is on, what you type or paste goes to *every* connected session, including ones not on screen. The status line turns orange and shows how many sessions are listening, and their panes get an orange border. Press `Alt-b` again to stop.

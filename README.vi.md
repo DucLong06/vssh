@@ -71,6 +71,7 @@ Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng đ�
 ## Nhiều máy chủ cùng lúc
 
 - **Mở nhiều máy:** đánh dấu các máy bằng `Space`, rồi `Enter` mở một phiên trên từng máy. Hoặc nhấn `T`, gõ một thẻ hay nhóm, mọi máy có thẻ đó sẽ được kết nối.
+- **Mọi tỷ lệ màn hình:** bố cục tự theo màn hình terminal — cạnh nhau khi rộng, xếp chồng chiếm hết chiều rộng khi cao (điện thoại chạy Termux, màn hình dọc), từng bảng một khi không đủ chỗ. Ép bằng `layout = "landscape"|"portrait"` trong cấu hình.
 - **Bố cục:** các phiên hiện cạnh nhau. `Ctrl-a L` đổi lần lượt: một khung, 2 cột, lưới 2x2, 3 cột; `Ctrl-a w` rồi `s` `v` `g` `t` để chọn thẳng. Khi số phiên nhiều hơn số khung, màn hình đi theo phiên đang được chọn.
 - **Chuyển khung:** `Alt-h/j/k/l` di chuyển giữa các khung như cửa sổ vim (hoặc `Ctrl-a` + phím mũi tên). `Ctrl-a d` đóng phiên đang chọn.
 - **Phát (broadcast):** `Alt-b` (hoặc `Ctrl-a b`). Khi bật, những gì bạn gõ hay dán sẽ được gửi tới *mọi* phiên đang kết nối, kể cả phiên không hiện trên màn hình. Thanh trạng thái chuyển sang màu cam và cho biết có bao nhiêu phiên đang nhận, các khung đó có viền cam. Nhấn `Alt-b` lần nữa để tắt.
