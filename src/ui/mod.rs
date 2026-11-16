@@ -65,7 +65,7 @@ impl Event {
 
 enum Kind {
     Term {
-        parser: Box<vt100::Parser>,
+        parser: Box<vt100::Parser<term::Replies>>,
         tx: UnboundedSender<SessionCmd>,
     },
     Sftp(Box<SftpView>),
@@ -359,7 +359,9 @@ impl App {
             });
             let rows = NonZeroU16::new(size.1).unwrap_or(NonZeroU16::MIN);
             let cols = NonZeroU16::new(size.0).unwrap_or(NonZeroU16::MIN);
-            let mut parser = Box::new(vt100::Parser::new(rows, cols, 5000));
+            let replies = term::Replies::default();
+            let parser = vt100::Parser::new_with_callbacks(rows, cols, 5000, replies);
+            let mut parser = Box::new(parser);
             parser.process(format!("Connecting to {alias}…\r\n").as_bytes());
             (Kind::Term { parser, tx: cmd_tx }, task)
         };
@@ -470,8 +472,12 @@ impl App {
                     return;
                 };
                 self.mark_connected(i);
-                if let Kind::Term { parser, .. } = &mut self.tabs[i].kind {
+                if let Kind::Term { parser, tx } = &mut self.tabs[i].kind {
                     parser.process(&data);
+                    let reply = mem::take(&mut parser.callbacks_mut().0);
+                    if !reply.is_empty() {
+                        let _ = tx.send(SessionCmd::Data(reply));
+                    }
                 }
             }
             Event::Sftp(id, reply) => {
@@ -613,7 +619,7 @@ impl App {
             Some(Kind::Term { parser, tx }) => Some((parser, tx)),
             _ => None,
         };
-        let scroll = |parser: &mut vt100::Parser, by: isize| {
+        let scroll = |parser: &mut vt100::Parser<term::Replies>, by: isize| {
             let at = parser.screen().scrollback().saturating_add_signed(by);
             parser.screen_mut().set_scrollback(at);
         };
