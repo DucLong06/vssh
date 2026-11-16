@@ -87,6 +87,29 @@ impl Target {
         })
     }
 
+    /// Adds this target to the ssh config as a host and returns the alias it
+    /// got: the host name, or `user@host` if that name is already a host.
+    /// Only `HostName`, `User` and a non-default `Port` are written; a
+    /// password never goes into this file.
+    pub fn save_to(&self, c: &mut SshConfig) -> Result<String> {
+        if self.host.contains(['*', '?', '!', '#', '"', '=']) {
+            bail!("{} cannot be used as a host alias", self.host);
+        }
+        let taken = c.hosts();
+        let with_user = format!("{}@{}", self.user, self.host);
+        let alias = [self.host.clone(), with_user]
+            .into_iter()
+            .find(|a| !taken.contains(a))
+            .with_context(|| format!("{}@{} is already a saved host", self.user, self.host))?;
+        c.add_host(&alias);
+        c.set(&alias, "HostName", &self.host);
+        c.set(&alias, "User", &self.user);
+        if self.port != 22 {
+            c.set(&alias, "Port", &self.port.to_string());
+        }
+        Ok(alias)
+    }
+
     /// A one-off target typed as `[user@]host[:port]`; IPv6 as `[::1]:22`.
     /// Nothing is read from or written to the ssh config.
     pub fn parse(spec: &str) -> Result<Self> {
@@ -470,6 +493,51 @@ mod tests {
         assert_eq!(command("plain"), None);
         assert_eq!(command("inherits"), None);
         assert_eq!(Target::parse("a@b").unwrap().remote_command, None);
+    }
+
+    #[test]
+    fn saving_a_quick_connect_target() {
+        let mut c = SshConfig::parse(
+            "Host old\n    HostName 10.0.0.9\n\nHost *\n    User fallback\n    Port 2200\n",
+        );
+        let target = Target::parse("deploy@web.example:2222").unwrap();
+
+        // First save: the alias is the host name, and the block resolves back to the target.
+        assert_eq!(target.save_to(&mut c).unwrap(), "web.example");
+        let back = Target::from_config(&c, "web.example").unwrap();
+        assert_eq!(
+            (back.host, back.user, back.port),
+            ("web.example".into(), "deploy".into(), 2222)
+        );
+        // It sits ahead of `Host *`, so the wildcard defaults do not override it.
+        let text = c.to_string();
+        assert!(text.contains(
+            "Host web.example\n    HostName web.example\n    User deploy\n    Port 2222\n\nHost *\n"
+        ));
+
+        // Same host again: `user@host`; a third time there is no free name left.
+        assert_eq!(target.save_to(&mut c).unwrap(), "deploy@web.example");
+        let err = target.save_to(&mut c).unwrap_err().to_string();
+        assert_eq!(err, "deploy@web.example is already a saved host");
+        // Another user on the same host still gets a name.
+        let other = Target::parse("root@web.example").unwrap();
+        assert_eq!(other.save_to(&mut c).unwrap(), "root@web.example");
+        // The default port is left out.
+        assert_eq!(c.own("root@web.example", "Port"), "");
+        assert_eq!(
+            c.hosts(),
+            [
+                "old",
+                "web.example",
+                "deploy@web.example",
+                "root@web.example"
+            ]
+        );
+
+        // A name that would be a pattern, not a host, is refused before anything is written.
+        let before = c.to_string();
+        assert!(Target::parse("root@web*").unwrap().save_to(&mut c).is_err());
+        assert_eq!(c.to_string(), before);
     }
 
     #[test]

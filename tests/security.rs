@@ -107,6 +107,54 @@ fn vault_debug_and_errors_do_not_leak() {
     }
 }
 
+// ── quick connect with "save" ───────────────────────────────────────────
+
+/// What saving a quick connect does on disk: the host in the ssh config, the
+/// password in the vault under the same alias, and the password nowhere else.
+#[test]
+fn quick_connect_save_puts_the_password_in_the_vault_only() {
+    let dir = temp("quick-save");
+    let config = dir.join("config");
+    fs::write(&config, "# mine\nHost *\n    ServerAliveInterval 30\n").unwrap();
+    let password = "***REMOVED***";
+
+    let target = Target::parse("deploy@web.example:2222").unwrap();
+    let mut c = SshConfig::load(&config).unwrap();
+    let alias = target.save_to(&mut c).unwrap();
+    c.save(&config).unwrap();
+    let mut vault = Vault::create(&dir.join("vault"), "master-passphrase").unwrap();
+    vault.set(&alias, &mut password.to_string()).unwrap();
+    drop(vault);
+
+    // Reading everything back the way the next start of the app does.
+    let c = SshConfig::load(&config).unwrap();
+    assert_eq!(c.hosts(), std::slice::from_ref(&alias));
+    let back = Target::from_config(&c, &alias).unwrap();
+    assert_eq!(
+        (back.host, back.user, back.port),
+        (target.host, target.user, target.port)
+    );
+    let vault = Vault::open(&dir.join("vault"), "master-passphrase").unwrap();
+    assert_eq!(vault.get(&alias), Some(password));
+
+    // The password is in no file in plain text, and not in the vault's Debug output.
+    for entry in fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let bytes = fs::read(&path).unwrap();
+        let leaked = bytes
+            .windows(password.len())
+            .any(|w| w == password.as_bytes());
+        assert!(!leaked, "password found in {}", path.display());
+    }
+    assert!(!format!("{vault:?}").contains(password));
+    let text = fs::read_to_string(&config).unwrap();
+    let saved = "# mine\n\nHost web.example\n    HostName web.example\n    User deploy\n    Port 2222\n\nHost *\n";
+    assert!(text.starts_with(saved), "{text}");
+    assert!(!text.to_lowercase().contains("pass"));
+    let mode = fs::metadata(&config).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
 // ── ssh config ──────────────────────────────────────────────────────────
 
 #[test]

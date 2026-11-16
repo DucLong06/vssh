@@ -15,7 +15,7 @@ use ratatui::Frame;
 use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
 use super::{clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Tab};
-use crate::config::Theme;
+use crate::config::{Lang, Theme};
 use crate::ssh::SessionCmd;
 use crate::store::db::Meta;
 
@@ -134,7 +134,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         which_key(app, f, body);
     }
     if let Some(p) = &app.popup {
-        popup(p, &app.cfg.theme, f);
+        popup(p, &app.cfg.theme, app.cfg.lang, f);
     }
 }
 
@@ -917,7 +917,7 @@ fn which_key(app: &App, f: &mut Frame, body: Rect) {
     f.render_widget(Paragraph::new(lines).block(panel(title, true, th)), area);
 }
 
-fn popup(popup: &Popup, th: &Theme, f: &mut Frame) {
+fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
     let screen = f.area();
     match popup {
         Popup::Confirm(text, _) => {
@@ -967,7 +967,7 @@ fn popup(popup: &Popup, th: &Theme, f: &mut Frame) {
         Popup::Form(form) => {
             let label_w = form.fields.iter().map(|f| f.0.chars().count()).max();
             let label_w = label_w.unwrap_or(0) + 2;
-            let area = centered(screen, 78, form.fields.len() as u16 + 5);
+            let area = centered(screen, 78, form.rows() as u16 + 5);
             // Borders, padding and one cell for the cursor.
             let room = usize::from(area.width).saturating_sub(label_w + 5);
             let mut cursor = (area.x, area.y);
@@ -993,10 +993,33 @@ fn popup(popup: &Popup, th: &Theme, f: &mut Frame) {
                     Span::raw(shown),
                 ]));
             }
-            let hints: &[(&str, &str)] = match form.fields.len() {
-                1 => &[("enter", "ok"), ("esc", "cancel")],
-                _ => &[("tab", "next field"), ("enter", "ok"), ("esc", "cancel")],
-            };
+            if let Some(on) = form.save {
+                let focused = form.idx == form.fields.len();
+                let style = match (on, focused) {
+                    (_, true) => Style::new().fg(th.accent).bold(),
+                    (true, false) => Style::new().fg(th.ok),
+                    (false, false) => Style::new().fg(th.dim),
+                };
+                let text = lang.pick(
+                    "save host to ~/.ssh/config, password to the vault",
+                    "lưu máy vào ~/.ssh/config, mật khẩu vào kho",
+                );
+                let tick = if on { "x" } else { " " };
+                if focused {
+                    cursor = (area.x + 3, area.y + 2 + form.fields.len() as u16);
+                }
+                lines.push(Line::styled(format!("[{tick}] {text}"), style));
+            }
+            let field = lang.pick("next field", "ô kế tiếp");
+            let cancel = lang.pick("cancel", "huỷ");
+            let save = lang.pick("save on/off", "bật/tắt lưu");
+            let mut hints = vec![("enter", "ok"), ("esc", cancel)];
+            if form.rows() > 1 {
+                hints.insert(0, ("tab", field));
+            }
+            if form.save.is_some() {
+                hints.push(("ctrl-s", save));
+            }
             lines.push(Line::default());
             lines.push(Line::from_iter(hints.iter().flat_map(|(name, action)| {
                 [
