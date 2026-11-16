@@ -182,6 +182,16 @@ fn clean(s: &str) -> String {
         .collect()
 }
 
+/// `#web` in the search box: true if a tag or the group starts with `web`
+/// (case-insensitive). A bare `#` matches every tagged or grouped host.
+fn has_tag(meta: &Meta, query: &str) -> bool {
+    let query = query.to_lowercase();
+    meta.tags
+        .split([' ', ','])
+        .chain([meta.grp.as_str()])
+        .any(|t| !t.is_empty() && t.to_lowercase().starts_with(&query))
+}
+
 impl App {
     fn new(cfg: Config, tx: UnboundedSender<Event>) -> Result<Self> {
         let sshc = SshConfig::load(&ssh_config_path()).context("cannot read ~/.ssh/config")?;
@@ -254,6 +264,9 @@ impl App {
                     return Some((0, a));
                 }
                 let m = self.meta.get(&a);
+                if let Some(tag) = self.filter.strip_prefix('#') {
+                    return m.is_some_and(|m| has_tag(m, tag)).then_some((0, a));
+                }
                 let hay = format!(
                     "{a} {} {} {} {}",
                     self.sshc.get(&a, "HostName").unwrap_or(""),
@@ -964,6 +977,7 @@ impl App {
              \x20 j/k ↑/↓      move            g/G     first / last\n\
              \x20 Enter        open shell      {}       SFTP browser\n\
              \x20 {}            search (fuzzy)  Esc     clear search\n\
+             \x20              search #tag shows only hosts with that tag or group\n\
              \x20 {}            add host        {}       edit host\n\
              \x20 {}            delete host     {}       duplicate host\n\
              \x20 {}            pin / unpin     Space   mark for snippets\n\
@@ -1248,6 +1262,22 @@ pub async fn run(cfg: Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tag_filter_matches_tags_and_group_by_prefix() {
+        let meta = Meta {
+            grp: "Prod".into(),
+            tags: "web, eu-west db".into(),
+            ..Meta::default()
+        };
+        for hit in ["web", "WEB", "eu", "eu-west", "db", "pro", ""] {
+            assert!(has_tag(&meta, hit), "{hit}");
+        }
+        for miss in ["west", "eb", "prod2", "x"] {
+            assert!(!has_tag(&meta, miss), "{miss}");
+        }
+        assert!(!has_tag(&Meta::default(), ""));
+    }
 
     #[test]
     fn clean_strips_escape_sequences() {

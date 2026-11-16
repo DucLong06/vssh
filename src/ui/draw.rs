@@ -399,7 +399,7 @@ fn footer(app: &App, f: &mut Frame, area: Rect) {
                 "Tab pane · Enter open · h up · c copy · m mkdir · r rename · d delete · q close"
                     .into()
             }
-            (None, Focus::Search) => "type to filter · Enter keep · Esc clear".into(),
+            (None, Focus::Search) => "type to filter · #tag for a tag or group · Enter keep · Esc clear".into(),
             (None, Focus::Forwards) => "a add · d delete · Enter start/stop · Esc back".into(),
             (None, Focus::Snippets) => "a add · e edit · d delete · Enter run · Esc back".into(),
             (None, Focus::List) => format!(
