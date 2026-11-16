@@ -2,17 +2,18 @@
 
 pub mod forward;
 
-use std::path::PathBuf;
+use std::borrow::Cow;
+use std::fmt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt, io};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
-use russh::keys::known_hosts::learn_known_hosts;
+use russh::keys::known_hosts::{known_host_keys_path, learn_known_hosts_path};
 use russh::keys::{
-    check_known_hosts, load_public_key, load_secret_key, PrivateKeyWithHashAlg,
+    load_public_key, load_secret_key, Algorithm, HashAlg, PrivateKeyWithHashAlg, PublicKey,
     PublicKeyOrCertificate,
 };
 use russh::{Channel, ChannelMsg};
@@ -95,29 +96,12 @@ pub struct Client {
 impl client::Handler for Client {
     type Error = anyhow::Error;
 
-    /// `known_hosts` policy of `StrictHostKeyChecking accept-new`: an unknown
-    /// host is recorded on first contact, a changed key is always refused.
     async fn check_server_key(&mut self, key: &PublicKeyOrCertificate) -> Result<bool> {
         let PublicKeyOrCertificate::PublicKey { key, .. } = key else {
             bail!("host certificates are not supported");
         };
-        match check_known_hosts(&self.host, self.port, key) {
-            Ok(true) => Ok(true),
-            Ok(false) => {
-                learn_known_hosts(&self.host, self.port, key)?;
-                Ok(true)
-            }
-            // A missing known_hosts file just means the host is not known yet.
-            Err(russh::keys::Error::IO(e)) if e.kind() == io::ErrorKind::NotFound => {
-                learn_known_hosts(&self.host, self.port, key)?;
-                Ok(true)
-            }
-            Err(e) => bail!(
-                "HOST KEY MISMATCH for {}: {e}. Refusing to connect; \
-                 fix ~/.ssh/known_hosts if the key really changed",
-                self.host
-            ),
-        }
+        verify_host_key(&self.host, self.port, key, &known_hosts_path())?;
+        Ok(true)
     }
 
     async fn server_channel_open_forwarded_tcpip(
@@ -144,17 +128,66 @@ impl client::Handler for Client {
     }
 }
 
+fn known_hosts_path() -> PathBuf {
+    crate::config::home().join(".ssh/known_hosts")
+}
+
+/// `known_hosts` policy, as `StrictHostKeyChecking accept-new`: a host with
+/// no recorded key is recorded on first contact; a host with recorded keys
+/// must present one of them. A key of another type than the recorded one is
+/// refused too, otherwise an impostor could get in just by switching type.
+pub fn verify_host_key(host: &str, port: u16, key: &PublicKey, known_hosts: &Path) -> Result<()> {
+    let known = known_host_keys_path(host, port, known_hosts)
+        .with_context(|| format!("cannot read {}", known_hosts.display()))?;
+    if known.iter().any(|(_, k)| k.key_data() == key.key_data()) {
+        return Ok(());
+    }
+    if let Some((line, _)) = known.first() {
+        bail!(
+            "HOST KEY MISMATCH for {host}: the server's key is not the one on line {line} \
+             of {}. Refusing to connect; fix that file if the key really changed",
+            known_hosts.display()
+        );
+    }
+    learn_known_hosts_path(host, port, key, known_hosts)
+        .with_context(|| format!("cannot write {}", known_hosts.display()))
+}
+
+/// Host key algorithms to offer, the types already on record first (as
+/// OpenSSH does), so a known host proves the key we know.
+fn host_key_algorithms(known: &[PublicKey]) -> Vec<Algorithm> {
+    let recorded = known.iter().flat_map(|k| match k.algorithm() {
+        // A recorded ssh-rsa key is also valid for the SHA-2 signature variants.
+        Algorithm::Rsa { .. } => [Some(HashAlg::Sha512), Some(HashAlg::Sha256), None]
+            .map(|hash| Algorithm::Rsa { hash })
+            .to_vec(),
+        other => vec![other],
+    });
+    let defaults = client::Config::default().preferred.key;
+    let mut all: Vec<Algorithm> = vec![];
+    for algorithm in recorded.chain(defaults.iter().cloned()) {
+        if !all.contains(&algorithm) {
+            all.push(algorithm);
+        }
+    }
+    all
+}
+
 /// Connects and authenticates: agent, then key files, then the password.
 pub async fn connect(
     t: &Target,
     password: Option<&str>,
     remote_fwd: Option<(String, u16)>,
 ) -> Result<Handle<Client>> {
-    let config = Arc::new(client::Config {
+    let mut config = client::Config {
         keepalive_interval: Some(Duration::from_secs(30)),
         nodelay: true,
         ..Default::default()
-    });
+    };
+    let known = known_host_keys_path(&t.host, t.port, known_hosts_path()).unwrap_or_default();
+    let known: Vec<PublicKey> = known.into_iter().map(|(_, key)| key).collect();
+    config.preferred.key = Cow::Owned(host_key_algorithms(&known));
+    let config = Arc::new(config);
     let handler = Client {
         host: t.host.clone(),
         port: t.port,
@@ -269,6 +302,76 @@ pub async fn exec(h: &Handle<Client>, command: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use russh::keys::ssh_key::public::{Ed25519PublicKey, KeyData};
+    use std::fs;
+
+    fn key(seed: u8) -> PublicKey {
+        KeyData::Ed25519(Ed25519PublicKey([seed; 32])).into()
+    }
+
+    #[test]
+    fn host_key_policy() {
+        let dir = std::env::temp_dir().join(format!("vssh-hostkey-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("known_hosts");
+
+        // Unknown host, no file yet: accepted and recorded.
+        verify_host_key("alpha", 22, &key(1), &path).unwrap();
+        let learned = fs::read_to_string(&path).unwrap();
+        assert!(learned.contains("alpha ssh-ed25519 "));
+
+        // Known host, same key: accepted, nothing written.
+        verify_host_key("alpha", 22, &key(1), &path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), learned);
+
+        // Known host, different key: refused, nothing written.
+        let err = verify_host_key("alpha", 22, &key(2), &path).unwrap_err();
+        assert!(err.to_string().starts_with("HOST KEY MISMATCH for alpha"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), learned);
+
+        // Another port or name is another host with its own record.
+        verify_host_key("alpha", 2222, &key(2), &path).unwrap();
+        verify_host_key("beta", 22, &key(3), &path).unwrap();
+        assert!(verify_host_key("alpha", 2222, &key(1), &path).is_err());
+        assert!(verify_host_key("beta", 22, &key(3), &path).is_ok());
+        assert!(fs::read_to_string(&path).unwrap().contains("[alpha]:2222 "));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn key_of_another_type_does_not_count_as_unknown() {
+        let dir = std::env::temp_dir().join(format!("vssh-hostkey-type-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("known_hosts");
+        // The host is on record with an ECDSA key; an Ed25519 key shows up.
+        let ecdsa = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKJHpxtF7tWbtXLUK2aKqXLokliWZyiyV1vJ+nX2Lpp2cR0JzQZRJ40tKdv695CMBBwbVQPIlCNsa1qBi3wxGR8=";
+        fs::write(&path, format!("gamma {ecdsa}\n")).unwrap();
+        let before = fs::read_to_string(&path).unwrap();
+
+        let err = verify_host_key("gamma", 22, &key(1), &path).unwrap_err();
+        assert!(err.to_string().contains("line 1"), "{err}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn known_key_types_are_offered_first() {
+        let default = client::Config::default().preferred.key.to_vec();
+        assert_eq!(host_key_algorithms(&[]), default);
+
+        let rsa = "AAAAB3NzaC1yc2EAAAADAQABAAABAQDugpu62IWX1u5o2utZw5MnT2qlmiLrNpeS/P7k82bjg4y3F/9vF4Skbj6wp8S5IDUkQki/Iu17UTKVlJ9AsxR9skpCLAu2UOC63Np1HA0x+gQ+ZEZFTEaeUc/ljIwVmy5SATY6FRwJXIwYlARdeXkcrQ6mNtUErW0ldoavPhnbttoBuiyaHB/brJ1z/JU+3KZYYaP8H0qgFkvB6bdkMNud2f5w21camhfx404Im3QUN+xkgSWqYwbVKd/zaPJiwsxfrp4hQbHvkXrT4hEOOoOLEQahCrXjDqtQMYuDswrTc1ENlVOI7NkndSMpMV0wZ+/5U6GaorVtt54zzOUKEVKf";
+        let rsa = russh::keys::parse_public_key_base64(rsa).unwrap();
+        let offered = host_key_algorithms(&[rsa]);
+        assert!(matches!(
+            offered[0],
+            Algorithm::Rsa {
+                hash: Some(HashAlg::Sha512)
+            }
+        ));
+        assert!(matches!(offered[2], Algorithm::Rsa { hash: None }));
+        // Everything else is still offered, once.
+        assert_eq!(offered.len(), default.len());
+    }
 
     #[test]
     fn target_resolution() {
