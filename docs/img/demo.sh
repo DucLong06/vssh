@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates the README media from the real app: a throwaway HOME with demo
-# hosts, an Alpine container as the SSH server, and vhs driving vssh.
-# Needs: docker, vhs (with ttyd and ffmpeg), python3. Run from the repo root:
+# hosts, an Alpine container as the SSH server, and shots.py driving vssh in
+# tmux. Needs docker, tmux, python3, google-chrome and ffmpeg.
+# Run from the repo root:
 #   cargo build --release && docs/img/demo.sh
 set -euo pipefail
 
@@ -41,30 +42,8 @@ echo "<h1>site</h1>" > "$D/work/index.html"
 echo "todo" > "$D/work/README.md"
 head -c 20480 /dev/urandom > "$D/work/logo.png"
 
-# Groups, tags, notes, pins and snippets. Run by the tape after vssh has
-# created its database, so the schema is always the app's own.
-cat > "$D/meta.py" <<'PY'
-import sqlite3
-db = sqlite3.connect("/tmp/vssh-demo/home/.local/share/vssh/vssh.db")
-hosts = {
-    "web-01": ("prod", "web eu", 1, "nginx + app, behind the EU load balancer"),
-    "web-02": ("prod", "web us", 0, ""),
-    "db-primary": ("prod", "db postgres", 1, "primary, do not restart during business hours"),
-    "bastion": ("infra", "jump", 0, ""),
-    "staging-api": ("staging", "api", 0, ""),
-    "backup-nas": ("infra", "storage", 0, ""),
-}
-for alias, (grp, tags, pinned, notes) in hosts.items():
-    db.execute("UPDATE hosts SET grp=?, tags=?, pinned=?, notes=? WHERE alias=?",
-               (grp, tags, pinned, notes, alias))
-db.executemany("INSERT INTO snippets(host, name, command) VALUES (?, ?, ?)", [
-    ("", "disk usage", "df -h /"),
-    ("", "uptime", "uptime"),
-    ("web-01", "reload nginx", "nginx -s reload"),
-])
-db.commit()
-PY
-
-vhs docs/img/demo.tape
+status=0
+python3 docs/img/shots.py || status=$?
 docker rm -f vssh-demo-sshd >/dev/null
 rm -rf "$D"
+exit "$status"
