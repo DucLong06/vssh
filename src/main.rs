@@ -1,14 +1,7 @@
 //! vssh: a terminal SSH connection manager.
 
-mod config;
-mod proto;
-mod sftp;
-mod ssh;
-mod store;
-mod ui;
-mod vault;
-
 use anyhow::Result;
+use vssh::{config, ui};
 
 const HELP: &str = "\
 vssh - terminal SSH connection manager
