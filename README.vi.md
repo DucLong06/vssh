@@ -7,7 +7,7 @@ chi tiết hoặc phiên làm việc bên phải, dùng phím kiểu vim ở m�
 được lưu ngay trong `~/.ssh/config` quen thuộc, nên lệnh `ssh` thông thường
 vẫn dùng được mọi thứ vssh chỉnh sửa.
 
-![vssh: danh sách máy chủ, lọc theo thẻ, ba máy cạnh nhau với chế độ phát, menu leader, kết nối nhanh và SFTP](docs/img/demo.gif)
+![vssh: danh sách máy chủ, lọc theo thẻ, ba máy cạnh nhau với chế độ phát, menu leader, kết nối nhanh và SFTP](docs/img/demo.vi.gif)
 
 - Nhiều phiên SSH trong các tab, có sẵn trình giả lập terminal
 - Nhiều máy chủ cạnh nhau trong các khung chia, và chế độ phát (broadcast): gõ một lần, chạy trên mọi máy
@@ -19,11 +19,11 @@ vẫn dùng được mọi thứ vssh chỉnh sửa.
 
 | Danh sách máy chủ và chi tiết | Phát tới ba máy chủ |
 |---|---|
-| ![Danh sách máy chủ với chấm trạng thái, độ trễ, nhóm và thẻ](docs/img/hosts.png) | ![Ba phiên cạnh nhau, một lệnh được gõ vào cả ba](docs/img/broadcast.png) |
+| ![Danh sách máy chủ với chấm trạng thái, độ trễ, nhóm và thẻ](docs/img/hosts.vi.png) | ![Ba phiên cạnh nhau, một lệnh được gõ vào cả ba](docs/img/broadcast.vi.png) |
 | **Menu leader (`Ctrl-a`)** | **SFTP** |
-| ![Popup which-key liệt kê các phím của phiên làm việc](docs/img/which-key.png) | ![Trình duyệt SFTP hai khung](docs/img/sftp.png) |
+| ![Popup which-key liệt kê các phím của phiên làm việc](docs/img/which-key.vi.png) | ![Trình duyệt SFTP hai khung](docs/img/sftp.vi.png) |
 
-Hình ảnh là giao diện tiếng Việt (`vssh --lang vi`); mặc định là tiếng Anh. Chúng được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh); các máy chủ trong hình là một container demo chạy trên máy.
+Mọi hình ảnh được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh), bằng ngôn ngữ giao diện tiếng Việt; các máy chủ trong hình là một container demo chạy trên máy.
 
 Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
 
@@ -66,7 +66,7 @@ Nhấn `c`, gõ `user@host` hoặc `user@host:port`, có thể thêm mật khẩ
 
 Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng để bật/tắt vì đó là một chữ cái bạn có thể cần gõ; vì vậy phím tắt là `Ctrl-s`.
 
-![Biểu mẫu kết nối nhanh, ô lưu đã được đánh dấu](docs/img/quick-connect.png)
+![Biểu mẫu kết nối nhanh, ô lưu đã được đánh dấu](docs/img/quick-connect.vi.png)
 
 ## Nhiều máy chủ cùng lúc
 
