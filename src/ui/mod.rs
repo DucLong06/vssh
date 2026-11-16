@@ -512,7 +512,10 @@ impl App {
                 self.tabs[i].closed = true;
                 match &mut self.tabs[i].kind {
                     Kind::Term { parser, .. } => {
-                        let note = format!("\r\n\x1b[0;33m[{}] press any key\x1b[0m", clean(&why));
+                        let leader = self.cfg.keys.leader;
+                        let why = clean(&why);
+                        let note =
+                            format!("\r\n\x1b[0;33m[{why}] Ctrl-{leader} x closes this tab\x1b[0m");
                         parser.process(note.as_bytes());
                     }
                     Kind::Sftp(_) => self.msg = why,
@@ -610,7 +613,9 @@ impl App {
         let i = self.active - 1;
         let closed = self.tabs[i].closed;
         match &mut self.tabs[i].kind {
-            Kind::Term { .. } if closed => drop(self.close_tab(i)),
+            // A dead session swallows keys. Closing on "any key" would let the
+            // rest of a half-typed command run as host-list commands.
+            Kind::Term { .. } if closed => {}
             Kind::Term { parser, tx } => {
                 parser.screen_mut().set_scrollback(0);
                 let bytes = term::encode_key(k, parser.screen().application_cursor());
