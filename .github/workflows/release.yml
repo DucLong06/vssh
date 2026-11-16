@@ -1,0 +1,62 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            deb_arch: amd64
+          - target: aarch64-unknown-linux-musl
+            deb_arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+      - name: Install cross tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools dpkg-dev pkg-config
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CC: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'aarch64-linux-gnu-gcc' || 'cc' }}
+      - name: Run tests
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: cargo test
+      - name: Tarball
+        run: |
+          VER=${GITHUB_REF_NAME#v}
+          tar -czf vssh-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release vssh
+      - name: .deb package
+        run: |
+          VER=${GITHUB_REF_NAME#v}
+          PKG=vssh_${VER}_${{ matrix.deb_arch }}
+          mkdir -p ${PKG}/DEBIAN ${PKG}/usr/bin
+          cp target/${{ matrix.target }}/release/vssh ${PKG}/usr/bin/vssh
+          chmod 755 ${PKG}/usr/bin/vssh
+          cat > ${PKG}/DEBIAN/control <<CTRL
+          Package: vssh
+          Version: ${VER}
+          Section: utils
+          Priority: optional
+          Architecture: ${{ matrix.deb_arch }}
+          Maintainer: Hoang Duc Long <hoangduclongg@gmail.com>
+          Depends: libc6
+          Description: Terminal SSH manager with broadcast typing and split panes
+           Host list, live sessions, SFTP dual-pane, port forwards, snippets and
+           an encrypted vault. Rust TUI (ratatui + russh), vim keys.
+          CTRL
+          dpkg-deb --build --root-owner-group ${PKG}
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            vssh-${{ matrix.target }}.tar.gz
+            *.deb
