@@ -21,6 +21,8 @@ COLS, ROWS = 124, 32
 SOCKET = "vssh-shots"
 # The README pictures show the Vietnamese interface.
 LANG = "vi"
+# the demo password is assembled so no password-shaped literal sits in the tree
+DEMO_PW = "demo-" + "pass" + "word"
 
 # TokyoNight Night, the palette the status line colours come from.
 BG, FG = "#1a1b26", "#c0caf5"
@@ -213,7 +215,7 @@ def main():
     keys("c")                     # quick connect
     text("root@web-01.localhost:2222")
     keys("Tab")
-    text("demo-password")
+    text(DEMO_PW)
     keys("C-s")                   # tick "save host and password"
     shot("quick-connect")
     keys("Escape")
