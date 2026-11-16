@@ -42,6 +42,8 @@ pub struct Target {
     pub user: String,
     /// Private key files to try, in order.
     pub keys: Vec<PathBuf>,
+    /// `RemoteCommand` of the ssh config: run instead of the login shell.
+    pub remote_command: Option<String>,
 }
 
 impl Target {
@@ -78,6 +80,10 @@ impl Target {
                 .get(alias, "User")
                 .map_or_else(current_user, str::to_string),
             keys,
+            remote_command: c
+                .get(alias, "RemoteCommand")
+                .filter(|cmd| !cmd.eq_ignore_ascii_case("none"))
+                .map(str::to_string),
         })
     }
 
@@ -105,6 +111,7 @@ impl Target {
             port: port.parse().context("port must be a number up to 65535")?,
             user,
             keys: default_keys(),
+            remote_command: None,
         })
     }
 }
@@ -281,17 +288,45 @@ pub enum SessionCmd {
     Resize(u16, u16),
 }
 
-/// Runs an interactive shell on a PTY until either side closes it.
+/// What a session runs when it starts.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Login {
+    /// Run this instead of the login shell (`RemoteCommand`).
+    pub command: Option<String>,
+    /// Type this into the session once it is up (a login script).
+    pub script: Option<String>,
+}
+
+impl Login {
+    /// The bytes that "type" the script: each line followed by Enter, as if
+    /// it came from the keyboard. Blank lines are dropped.
+    pub fn script_input(&self) -> Vec<u8> {
+        let lines = self.script.iter().flat_map(|s| s.lines());
+        let typed = lines.filter(|l| !l.trim().is_empty());
+        typed.flat_map(|l| [l.as_bytes(), b"\r"].concat()).collect()
+    }
+}
+
+/// Runs an interactive session on a PTY until either side closes it.
 pub async fn shell(
     h: Handle<Client>,
     (cols, rows): (u16, u16),
+    login: Login,
     mut rx: UnboundedReceiver<SessionCmd>,
     on_data: impl Fn(&[u8]),
 ) -> Result<()> {
     let mut ch = h.channel_open_session().await?;
     ch.request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
         .await?;
-    ch.request_shell(false).await?;
+    match &login.command {
+        Some(command) => ch.exec(false, command.as_str()).await?,
+        None => ch.request_shell(false).await?,
+    }
+    let script = login.script_input();
+    if !script.is_empty() {
+        // The PTY holds it until the shell starts reading.
+        ch.data(&script[..]).await?;
+    }
     loop {
         tokio::select! {
             msg = ch.wait() => match msg {
@@ -405,6 +440,36 @@ mod tests {
         assert!(matches!(offered[2], Algorithm::Rsa { hash: None }));
         // Everything else is still offered, once.
         assert_eq!(offered.len(), default.len());
+    }
+
+    #[test]
+    fn login_script_is_typed_line_by_line() {
+        let login = |script: &str| Login {
+            command: None,
+            script: Some(script.to_string()),
+        };
+        assert_eq!(login("uptime").script_input(), b"uptime\r");
+        assert_eq!(
+            login("cd /srv/app\n\n  \ngit status\n").script_input(),
+            b"cd /srv/app\rgit status\r"
+        );
+        assert!(login("").script_input().is_empty());
+        assert!(Login::default().script_input().is_empty());
+    }
+
+    #[test]
+    fn remote_command_comes_from_the_ssh_config() {
+        let c = SshConfig::parse(
+            "Host logs\n  RemoteCommand journalctl -f -u app\n\
+             Host plain\n  RemoteCommand none\n\
+             Host inherits\n\
+             Host *\n  User admin\n",
+        );
+        let command = |alias| Target::from_config(&c, alias).unwrap().remote_command;
+        assert_eq!(command("logs").as_deref(), Some("journalctl -f -u app"));
+        assert_eq!(command("plain"), None);
+        assert_eq!(command("inherits"), None);
+        assert_eq!(Target::parse("a@b").unwrap().remote_command, None);
     }
 
     #[test]

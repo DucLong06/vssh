@@ -6,11 +6,12 @@ mod panes;
 mod term;
 
 use std::collections::{BTreeSet, HashMap};
-use std::io::stdout;
+use std::fs::File;
+use std::io::{self, stdout, Write};
 use std::mem;
 use std::num::NonZeroU16;
-use std::os::unix::fs::DirBuilderExt;
-use std::path::PathBuf;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Context, Result};
@@ -29,7 +30,7 @@ use zeroize::Zeroizing;
 
 use crate::config::{data_dir, ssh_config_path, Config};
 use crate::sftp;
-use crate::ssh::{self, forward, AuthFailed, SessionCmd, Target};
+use crate::ssh::{self, forward, AuthFailed, Login, SessionCmd, Target};
 use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
@@ -85,6 +86,8 @@ struct Tab {
     /// Set once the first byte or listing arrives.
     connected: bool,
     closed: bool,
+    /// Session log, while logging is on.
+    log: Option<File>,
 }
 
 /// What to do with a submitted form or a confirmed question.
@@ -134,6 +137,11 @@ enum Popup {
         title: String,
         body: String,
         scroll: u16,
+    },
+    /// Choose a snippet (name, command) to type into the session.
+    Pick {
+        items: Vec<(String, String)>,
+        sel: usize,
     },
 }
 
@@ -218,6 +226,25 @@ fn has_tag(meta: &Meta, query: &str) -> bool {
         .split([' ', ','])
         .chain([meta.grp.as_str()])
         .any(|t| !t.is_empty() && t.to_lowercase().starts_with(&query))
+}
+
+/// Opens the log file of a session: `<dir>/<alias>-<stamp>.log`, private to
+/// the user. The alias is reduced to file-name characters, so a host called
+/// `../x` cannot write outside the log directory.
+fn start_log(dir: &Path, alias: &str, stamp: &str) -> io::Result<(File, PathBuf)> {
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    let safe = |c: char| c.is_ascii_alphanumeric() || "._@-".contains(c);
+    let name: String = alias
+        .chars()
+        .map(|c| if safe(c) { c } else { '_' })
+        .collect();
+    let path = dir.join(format!("{name}-{stamp}.log"));
+    let mut options = File::options();
+    let file = options.append(true).create(true).mode(0o600).open(&path)?;
+    Ok((file, path))
 }
 
 /// Exact, case-insensitive match on a tag or the group: what "connect
@@ -519,6 +546,11 @@ impl App {
         let (id, tx, size) = (self.next_id, self.tx.clone(), self.body);
         let tab_target = target.clone();
         self.next_id += 1;
+        // Login scripts belong to saved hosts; a quick connect runs none.
+        let login = Login {
+            command: target.remote_command.clone(),
+            script: self.cfg.exec.get(alias).filter(|_| saved).cloned(),
+        };
         let (kind, task) = if sftp {
             let (cmd_tx, cmd_rx) = unbounded_channel();
             let task = tokio::spawn(async move {
@@ -538,7 +570,7 @@ impl App {
                     let pw = password.as_ref().map(|p| p.as_str());
                     let h = ssh::connect(&target, pw, None).await?;
                     let data = |d: &[u8]| drop(tx.send(Event::Data(id, d.to_vec())));
-                    ssh::shell(h, size, cmd_rx, data).await
+                    ssh::shell(h, size, login, cmd_rx, data).await
                 };
                 let _ = tx.send(Event::ended(id, res.await));
             });
@@ -559,8 +591,66 @@ impl App {
             task,
             connected: false,
             closed: false,
+            log: None,
         });
         self.active = self.tabs.len();
+        if self.cfg.log_sessions && !sftp {
+            self.toggle_log();
+        }
+    }
+
+    /// Starts or stops logging the active session to a file.
+    fn toggle_log(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        let Kind::Term { parser, .. } = &self.tabs[i].kind else {
+            return;
+        };
+        // What is on screen now goes in first, then everything that follows.
+        let screen = parser.screen().contents();
+        if self.tabs[i].log.take().is_some() {
+            return self.msg = "session log closed".into();
+        }
+        let alias = self.tabs[i].alias.clone();
+        let res = (|| {
+            let stamp = self.db.timestamp()?;
+            let (mut file, path) = start_log(&data_dir().join("logs"), &alias, &stamp)?;
+            writeln!(
+                file,
+                "# vssh session log: {alias}, started {stamp}\n{screen}"
+            )?;
+            anyhow::Ok((file, path))
+        })();
+        match res {
+            Ok((file, path)) => {
+                self.tabs[i].log = Some(file);
+                self.msg = format!(
+                    "LOGGING to {}: everything shown is written as is, secrets included",
+                    path.display()
+                );
+            }
+            Err(e) => self.msg = format!("cannot start the session log: {e:#}"),
+        }
+    }
+
+    /// Offers the snippets that apply to the active session, to type one in.
+    fn pick_snippet(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        if !matches!(self.tabs[i].kind, Kind::Term { .. }) {
+            return;
+        }
+        let snippets = self.host_snippets(&self.tabs[i].alias);
+        let items: Vec<_> = snippets
+            .into_iter()
+            .map(|s| (s.name.clone(), s.command.clone()))
+            .collect();
+        match items.is_empty() {
+            true => self.msg = "no snippets yet: add some with n on the host list".into(),
+            false => self.popup = Some(Popup::Pick { items, sel: 0 }),
+        }
     }
 
     /// Removes a tab. The view stays on the tab it was on; if that is the one
@@ -665,6 +755,12 @@ impl App {
                     if !reply.is_empty() {
                         let _ = tx.send(SessionCmd::Data(reply));
                     }
+                }
+                // A log that cannot be written is closed, loudly, not half kept.
+                let tab = &mut self.tabs[i];
+                if let Some(Err(e)) = tab.log.as_mut().map(|log| log.write_all(&data)) {
+                    tab.log = None;
+                    self.msg = format!("session log of {} stopped: {e}", tab.alias);
                 }
             }
             Event::Sftp(id, reply) => {
@@ -772,8 +868,16 @@ impl App {
         if let Some(popup) = self.popup.take() {
             return self.popup_key(popup, k);
         }
-        if k.modifiers == KeyModifiers::ALT && k.code == KeyCode::Char('b') {
-            return self.toggle_broadcast();
+        if k.modifiers == KeyModifiers::ALT {
+            match k.code {
+                KeyCode::Char('b') => return self.toggle_broadcast(),
+                // Window navigation, only while there is more than one pane:
+                // with a single pane these keys still reach the shell.
+                KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) if self.shown().len() > 1 => {
+                    return self.focus_pane(c);
+                }
+                _ => {}
+            }
         }
         let is_leader =
             k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char(self.cfg.keys.leader);
@@ -818,13 +922,18 @@ impl App {
             KeyCode::PageDown => self.scroll(-10),
             KeyCode::Char('u') if ctrl => self.scroll(10),
             KeyCode::Char('d') if ctrl => self.scroll(-10),
-            KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) => self.focus_pane(c),
+            KeyCode::Left => self.focus_pane('h'),
+            KeyCode::Down => self.focus_pane('j'),
+            KeyCode::Up => self.focus_pane('k'),
+            KeyCode::Right => self.focus_pane('l'),
             KeyCode::Char('L') => {
                 self.layout = self.layout.next();
                 self.msg = format!("layout: {}", self.layout.name());
             }
             KeyCode::Char('b') => self.toggle_broadcast(),
             KeyCode::Char('w') => self.leader = Leader::Window,
+            KeyCode::Char('l') => self.toggle_log(),
+            KeyCode::Char('s') => self.pick_snippet(),
             KeyCode::Tab | KeyCode::Char('n') => self.cycle(true),
             KeyCode::BackTab | KeyCode::Char('p') => self.cycle(false),
             KeyCode::Char('q') => self.active = 0,
@@ -843,6 +952,10 @@ impl App {
     fn window_key(&mut self, k: KeyEvent) {
         let layout = match k.code {
             KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) => return self.focus_pane(c),
+            KeyCode::Left => return self.focus_pane('h'),
+            KeyCode::Down => return self.focus_pane('j'),
+            KeyCode::Up => return self.focus_pane('k'),
+            KeyCode::Right => return self.focus_pane('l'),
             KeyCode::Char('d' | 'x') => return self.close_pane(),
             KeyCode::Char('s') => Layout::Single,
             KeyCode::Char('v') => Layout::Columns2,
@@ -1234,9 +1347,12 @@ impl App {
              \x20 a add   e edit   d delete   Enter start/stop or run   Esc back\n\
              \x20 forward syntax:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
              SESSIONS (leader = Ctrl-{leader}; a menu of these keys appears after it)\n\
-             \x20 leader h/j/k/l   focus pane        leader L      cycle layout\n\
-             \x20 leader w         window menu: s single, v 2 columns, g 2x2, t 3 columns\n\
+             \x20 Alt-h/j/k/l      focus pane (also leader + arrow, leader w h/j/k/l)\n\
+             \x20 leader L         cycle layout      leader w      window menu:\n\
+             \x20                  s single, v 2 columns, g 2x2 grid, t 3 columns\n\
              \x20 leader b, Alt-b  broadcast: typing goes to every live session\n\
+             \x20 leader l         log this session to a file (everything shown, as is)\n\
+             \x20 leader s         type a snippet into the session\n\
              \x20 leader d / x     close pane        leader q      back to the host list\n\
              \x20 leader Tab/n     next tab          leader p      previous tab\n\
              \x20 leader 1-9       go to tab         leader PgUp/PgDn  scroll (also Ctrl-u/d)\n\
@@ -1281,9 +1397,12 @@ impl App {
              \x20 a thêm   e sửa   d xoá   Enter bật/tắt hoặc chạy   Esc quay lại\n\
              \x20 cú pháp:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
              PHIÊN LÀM VIỆC (leader = Ctrl-{leader}; nhấn xong sẽ hiện menu các phím này)\n\
-             \x20 leader h/j/k/l   chuyển khung      leader L      đổi bố cục\n\
-             \x20 leader w         menu cửa sổ: s một khung, v 2 cột, g 2x2, t 3 cột\n\
+             \x20 Alt-h/j/k/l      chuyển khung (hoặc leader + mũi tên, leader w h/j/k/l)\n\
+             \x20 leader L         đổi bố cục        leader w      menu cửa sổ:\n\
+             \x20                  s một khung, v 2 cột, g lưới 2x2, t 3 cột\n\
              \x20 leader b, Alt-b  phát: gõ một lần, gửi tới mọi phiên đang mở\n\
+             \x20 leader l         ghi log phiên này ra file (mọi thứ hiện ra, nguyên văn)\n\
+             \x20 leader s         gõ một snippet vào phiên\n\
              \x20 leader d / x     đóng khung        leader q      về danh sách máy chủ\n\
              \x20 leader Tab/n     tab kế tiếp       leader p      tab trước\n\
              \x20 leader 1-9       tới tab số        leader PgUp/PgDn  cuộn (hoặc Ctrl-u/d)\n\
@@ -1330,6 +1449,17 @@ impl App {
                     self.popup = Some(Popup::Form(form));
                 }
             }
+            (Popup::Pick { items, sel }, KeyCode::Enter) => {
+                // Pasted, then Enter: the command arrives as one piece of text.
+                if let (Some((_, command)), Some(i)) = (items.get(sel), self.active.checked_sub(1))
+                {
+                    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+                    for input in [TermInput::Paste(command), TermInput::Key(enter)] {
+                        send_input(&mut self.tabs, i, self.broadcast, &input);
+                    }
+                }
+            }
+            (Popup::Pick { .. }, KeyCode::Esc | KeyCode::Char('q')) => {}
             (Popup::Text { .. }, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q'))
             | (Popup::Confirm(..), KeyCode::Esc | KeyCode::Char('n'))
             | (Popup::Form(_), KeyCode::Esc) => {}
@@ -1346,6 +1476,12 @@ impl App {
                     }
                     (Popup::Text { scroll, .. }, KeyCode::PageUp) => {
                         *scroll = scroll.saturating_sub(10)
+                    }
+                    (Popup::Pick { items, sel }, KeyCode::Down | KeyCode::Char('j')) => {
+                        *sel = (*sel + 1).min(items.len().saturating_sub(1))
+                    }
+                    (Popup::Pick { sel, .. }, KeyCode::Up | KeyCode::Char('k')) => {
+                        *sel = sel.saturating_sub(1)
                     }
                     (Popup::Form(f), KeyCode::Tab | KeyCode::Down) => {
                         f.idx = (f.idx + 1) % f.fields.len()
@@ -1616,6 +1752,7 @@ mod tests {
             task: tokio::spawn(async {}),
             connected: true,
             closed: false,
+            log: None,
         };
         (tab, rx)
     }
@@ -1680,6 +1817,47 @@ mod tests {
         send_input(&mut tabs, 0, true, &TermInput::Paste("a\nb"));
         assert_eq!(received(&mut rxs[0]), b"\x1b[Aa\rb");
         assert_eq!(received(&mut rxs[1]), b"\x1bOA\x1b[200~a\nb\x1b[201~");
+    }
+
+    #[test]
+    fn session_logs_are_private_and_stay_in_their_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("vssh-logs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let logs = dir.join("logs");
+
+        let (mut file, path) = start_log(&logs, "web-01", "20261116-101500").unwrap();
+        assert_eq!(path, logs.join("web-01-20261116-101500.log"));
+        file.write_all(b"hello").unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!((mode(&path), mode(&logs)), (0o600, 0o700));
+
+        // Names that try to leave the directory, and a quick-connect title.
+        for (alias, name) in [
+            ("../../etc/cron.d/x", ".._.._etc_cron.d_x-s.log"),
+            ("/abs/path", "_abs_path-s.log"),
+            ("a b\n$(c)", "a_b___c_-s.log"),
+            ("root@10.0.0.5:2222", "root@10.0.0.5_2222-s.log"),
+        ] {
+            let (_, path) = start_log(&logs, alias, "s").unwrap();
+            assert_eq!(path, logs.join(name), "{alias}");
+        }
+        // Logging the same session twice in one second appends, it does not truncate.
+        let (mut again, _) = start_log(&logs, "web-01", "20261116-101500").unwrap();
+        again.write_all(b" again").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello again");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_picked_snippet_is_typed_into_every_broadcast_session() {
+        let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=2).map(term_tab).unzip();
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        for input in [TermInput::Paste("df -h /"), TermInput::Key(enter)] {
+            send_input(&mut tabs, 0, true, &input);
+        }
+        assert_eq!(received(&mut rxs[0]), b"df -h /\r");
+        assert_eq!(received(&mut rxs[1]), b"df -h /\r");
     }
 
     #[test]

@@ -104,6 +104,13 @@ impl Db {
         Ok(())
     }
 
+    /// Local time as `YYYYMMDD-HHMMSS`, for file names. SQLite is the date
+    /// library this program already links.
+    pub fn timestamp(&self) -> Result<String> {
+        let sql = "SELECT strftime('%Y%m%d-%H%M%S', 'now', 'localtime')";
+        self.0.query_row(sql, [], |row| row.get(0))
+    }
+
     pub fn rename(&self, old: &str, new: &str) -> Result<()> {
         self.0
             .execute("UPDATE hosts SET alias = ?2 WHERE alias = ?1", [old, new])?;
@@ -158,6 +165,9 @@ mod tests {
     #[test]
     fn metadata_and_snippets() {
         let db = Db::init(Connection::open_in_memory().unwrap()).unwrap();
+        let stamp = db.timestamp().unwrap();
+        assert_eq!(stamp.len(), 15, "{stamp}");
+        assert!(stamp.starts_with("20") && stamp.as_bytes()[8] == b'-');
         db.import(&["a".into(), "b".into()]).unwrap();
         db.import(&["a".into()]).unwrap();
         assert_eq!(db.metas().unwrap().len(), 2);
