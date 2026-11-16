@@ -13,7 +13,8 @@ use ratatui::widgets::{
 use ratatui::Frame;
 
 use super::files::{SftpView, LOCAL, REMOTE};
-use super::{clean, fwd_key, term, App, Focus, Kind, Popup};
+use super::panes;
+use super::{clean, fwd_key, term, App, Focus, Kind, Popup, Tab};
 use crate::config::Theme;
 use crate::ssh::SessionCmd;
 use crate::store::db::Meta;
@@ -122,27 +123,63 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     let th = &app.cfg.theme;
     match app.active.checked_sub(1).map(|i| &mut app.tabs[i].kind) {
         None => hosts(app, f, body),
-        Some(Kind::Term { parser, tx }) => {
-            // Keep the remote PTY the size of the pane.
-            let size = (NonZeroU16::new(body.height), NonZeroU16::new(body.width));
-            if let (Some(rows), Some(cols)) = size {
-                if parser.screen().size() != (rows, cols) {
-                    parser.set_size(rows, cols);
-                    let _ = tx.send(SessionCmd::Resize(body.width, body.height));
-                }
-            }
-            let screen = parser.screen();
-            term::render(screen, body, f.buffer_mut());
-            if !screen.hide_cursor() && screen.scrollback() == 0 {
-                let (row, col) = screen.cursor_position();
-                f.set_cursor_position((body.x + col, body.y + row));
-            }
-        }
+        Some(Kind::Term { .. }) => sessions(app, f, body),
         Some(Kind::Sftp(view)) => files(view, th, f, body),
     }
     footer(app, f, foot);
     if let Some(p) = &app.popup {
         popup(p, &app.cfg.theme, f);
+    }
+}
+
+/// Border of the panes that receive broadcast input (TokyoNight orange).
+const BROADCAST: Color = Color::Rgb(255, 158, 100);
+
+/// The session view: one pane per slot of the layout, the active session
+/// focused. A single pane uses the whole area without a border.
+fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
+    let shown = app.shown();
+    let focused = app.active - 1;
+    for (slot, rect) in app.layout.rects(area).into_iter().enumerate() {
+        let th = &app.cfg.theme;
+        let Some(&i) = shown.get(slot) else {
+            let empty = Paragraph::new("no session").style(Style::new().fg(th.dim));
+            f.render_widget(empty.block(panel("empty", false, th)), rect);
+            continue;
+        };
+        let tab = &mut app.tabs[i];
+        let mut inner = rect;
+        if app.layout != panes::Layout::Single {
+            let mark = if tab.closed { " ✗" } else { "" };
+            let title = format!("{} {}{mark}", i + 2, tab.alias);
+            let mut block = panel(&title, i == focused, th).padding(Padding::ZERO);
+            if app.broadcast && !tab.closed {
+                block = block.border_style(Style::new().fg(BROADCAST));
+            }
+            inner = block.inner(rect);
+            f.render_widget(block, rect);
+        }
+        term_pane(tab, inner, f, i == focused);
+    }
+}
+
+fn term_pane(tab: &mut Tab, area: Rect, f: &mut Frame, focused: bool) {
+    let Kind::Term { parser, tx } = &mut tab.kind else {
+        return;
+    };
+    // Keep the remote PTY the size of the pane.
+    let size = (NonZeroU16::new(area.height), NonZeroU16::new(area.width));
+    if let (Some(rows), Some(cols)) = size {
+        if parser.screen().size() != (rows, cols) {
+            parser.set_size(rows, cols);
+            let _ = tx.send(SessionCmd::Resize(area.width, area.height));
+        }
+    }
+    let screen = parser.screen();
+    term::render(screen, area, f.buffer_mut());
+    if focused && !screen.hide_cursor() && screen.scrollback() == 0 {
+        let (row, col) = screen.cursor_position();
+        f.set_cursor_position((area.x + col, area.y + row));
     }
 }
 
@@ -540,17 +577,21 @@ fn footer(app: &App, f: &mut Frame, area: Rect) {
         _ if app.leader => vec![
             ("tab/n".into(), "next"),
             ("p".into(), "previous"),
-            ("1-9".into(), "go to tab"),
-            ("h".into(), "hosts"),
-            ("x".into(), "close tab"),
-            ("k/j".into(), "scroll"),
+            ("hjkl".into(), "pane"),
+            ("L".into(), "layout"),
+            ("b".into(), "broadcast"),
+            ("q".into(), "hosts"),
+            ("x".into(), "close"),
+            ("pgup/pgdn".into(), "scroll"),
             (leader, "send it through"),
         ],
         (Some(Kind::Term { .. }), _) => vec![
             (format!("{leader} tab"), "next tab"),
-            (format!("{leader} h"), "hosts"),
+            (format!("{leader} hjkl"), "pane"),
+            (format!("{leader} L"), "layout"),
+            (format!("{leader} b"), "broadcast"),
+            (format!("{leader} q"), "hosts"),
             (format!("{leader} x"), "close"),
-            (format!("{leader} k/j"), "scroll"),
         ],
         (Some(Kind::Sftp(_)), _) => vec![
             ("tab".into(), "pane"),
