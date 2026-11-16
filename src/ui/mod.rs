@@ -374,9 +374,17 @@ impl App {
         self.active = self.tabs.len();
     }
 
-    fn close_tab(&mut self, i: usize) {
-        self.tabs.remove(i).task.abort();
-        self.active = self.active.min(self.tabs.len());
+    /// Removes a tab. The view stays on the tab it was on; if that is the one
+    /// going away it returns to the host list, never into another live shell.
+    fn close_tab(&mut self, i: usize) -> Tab {
+        let tab = self.tabs.remove(i);
+        tab.task.abort();
+        self.active = match self.active {
+            a if a == i + 1 => 0,
+            a if a > i + 1 => a - 1,
+            a => a,
+        };
+        tab
     }
 
     fn ping_all(&mut self) {
@@ -495,8 +503,7 @@ impl App {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
-                let tab = self.tabs.remove(i);
-                self.active = self.active.min(self.tabs.len());
+                let tab = self.close_tab(i);
                 let then = After::Password {
                     sftp: matches!(tab.kind, Kind::Sftp(_)),
                     alias: tab.alias.clone(),
@@ -554,6 +561,7 @@ impl App {
         if self.active == 0 {
             if self.focus == Focus::Search {
                 self.filter.push_str(text.trim());
+                self.sel = 0;
                 self.refilter();
             }
         } else if let Kind::Term { parser, tx } = &self.tabs[self.active - 1].kind {
@@ -583,7 +591,7 @@ impl App {
         let i = self.active - 1;
         let closed = self.tabs[i].closed;
         match &mut self.tabs[i].kind {
-            Kind::Term { .. } if closed => self.close_tab(i),
+            Kind::Term { .. } if closed => drop(self.close_tab(i)),
             Kind::Term { parser, tx } => {
                 parser.screen_mut().set_scrollback(0);
                 let bytes = term::encode_key(k, parser.screen().application_cursor());
@@ -618,7 +626,7 @@ impl App {
             (KeyCode::Tab | KeyCode::Char('n'), _) => self.cycle(true),
             (KeyCode::BackTab | KeyCode::Char('p'), _) => self.cycle(false),
             (KeyCode::Char('h'), _) => self.active = 0,
-            (KeyCode::Char('x'), _) if self.active > 0 => self.close_tab(self.active - 1),
+            (KeyCode::Char('x'), _) if self.active > 0 => drop(self.close_tab(self.active - 1)),
             (KeyCode::Char(c @ '1'..='9'), _) => {
                 let i = c as usize - '1' as usize;
                 if i <= self.tabs.len() {
@@ -641,6 +649,7 @@ impl App {
             Focus::List => {}
         }
         let keys = &self.cfg.keys;
+        let ctrl = k.modifiers == KeyModifiers::CONTROL;
         match k.code {
             KeyCode::Down | KeyCode::Char('j') => self.move_sel(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_sel(-1),
@@ -654,9 +663,12 @@ impl App {
                 self.filter.clear();
                 self.refilter();
             }
-            KeyCode::Char(c) if c == keys.quit && self.tabs.is_empty() => self.quit = true,
-            KeyCode::Char(c) if c == keys.quit => {
-                let text = format!("Quit and close {} open tab(s)?", self.tabs.len());
+            KeyCode::Char(c) if c == keys.quit || (c == 'c' && ctrl) => {
+                let (tabs, fwds) = (self.tabs.len(), self.fwds.len());
+                if tabs + fwds == 0 {
+                    return self.quit = true;
+                }
+                let text = format!("Quit? This closes {tabs} tab(s) and {fwds} forward(s).");
                 self.popup = Some(Popup::Confirm(text, After::Quit));
             }
             KeyCode::Char(c) if c == keys.search => self.focus = Focus::Search,
@@ -741,8 +753,14 @@ impl App {
             KeyCode::Enter => self.focus = Focus::List,
             KeyCode::Down => self.move_sel(1),
             KeyCode::Up => self.move_sel(-1),
-            KeyCode::Backspace => drop(self.filter.pop()),
-            KeyCode::Char(c) => self.filter.push(c),
+            KeyCode::Backspace | KeyCode::Char(_) => {
+                match k.code {
+                    KeyCode::Char(c) => self.filter.push(c),
+                    _ => drop(self.filter.pop()),
+                }
+                // A new query puts the cursor on its best match.
+                self.sel = 0;
+            }
             _ => {}
         }
         self.refilter();
@@ -835,7 +853,7 @@ impl App {
             (KeyCode::Enter | KeyCode::Right | KeyCode::Char('l'), _) => view.enter(),
             (KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h'), _) => view.up(),
             (KeyCode::Char('R'), _) => view.refresh(),
-            (KeyCode::Char('q'), _) => return self.close_tab(self.active - 1),
+            (KeyCode::Char('q'), _) => return drop(self.close_tab(self.active - 1)),
             (KeyCode::Char('m'), _) => {
                 return self.prompt("New directory", "Name", false, After::SftpMkdir);
             }
