@@ -14,7 +14,7 @@ use ratatui::Frame;
 
 use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
-use super::{clean, fwd_key, term, App, Focus, Kind, Popup, Tab};
+use super::{clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Tab};
 use crate::config::Theme;
 use crate::ssh::SessionCmd;
 use crate::store::db::Meta;
@@ -108,9 +108,10 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 }
 
 pub fn draw(app: &mut App, f: &mut Frame) {
-    let [bar, body, foot] = Layout::vertical([
+    let [bar, body, keys, status] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(1),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(f.area());
@@ -126,14 +127,26 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         Some(Kind::Term { .. }) => sessions(app, f, body),
         Some(Kind::Sftp(view)) => files(view, th, f, body),
     }
-    footer(app, f, foot);
+    hints(app, f, keys);
+    status_line(app, f, status);
+    if app.leader != Leader::Off {
+        which_key(app, f, body);
+    }
     if let Some(p) = &app.popup {
         popup(p, &app.cfg.theme, f);
     }
 }
 
-/// Border of the panes that receive broadcast input (TokyoNight orange).
+// Mode colours of the status line, from the TokyoNight palette.
+const BLUE: Color = Color::Rgb(122, 162, 247);
+const GREEN: Color = Color::Rgb(158, 206, 106);
+const TEAL: Color = Color::Rgb(26, 188, 156);
+const YELLOW: Color = Color::Rgb(224, 175, 104);
+const MAGENTA: Color = Color::Rgb(187, 154, 247);
+/// Also the border of the panes that receive broadcast input.
 const BROADCAST: Color = Color::Rgb(255, 158, 100);
+/// Text on the coloured segments.
+const INK: Color = Color::Rgb(26, 27, 38);
 
 /// The session view: one pane per slot of the layout, the active session
 /// focused. A single pane uses the whole area without a border.
@@ -232,12 +245,6 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
         status.push(Span::styled(text, Style::new().fg(colour)));
         status.push(Span::styled(" · ", Style::new().fg(th.dim)));
     };
-    if app.broadcast {
-        push(
-            format!("BROADCAST → {} sessions", app.live_sessions()),
-            th.error,
-        );
-    }
     if !app.marked.is_empty() {
         push(format!("{} marked", app.marked.len()), th.warn);
     }
@@ -558,97 +565,343 @@ fn files(view: &SftpView, th: &Theme, f: &mut Frame, area: Rect) {
     }
 }
 
-/// Bottom bar: a message if there is one, otherwise the keys of whatever has focus.
-fn footer(app: &App, f: &mut Frame, area: Rect) {
-    let th = &app.cfg.theme;
+/// One key hint. `on` is false when the key does nothing right now.
+struct Hint {
+    key: String,
+    text: &'static str,
+    on: bool,
+}
+
+/// The keys of whatever has focus, in groups. English and Vietnamese sit
+/// side by side so a new hint cannot be added in one language only.
+fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
     let k = &app.cfg.keys;
-    f.render_widget(Block::new().style(Style::new().bg(th.bar)), area);
-    if !app.msg.is_empty() && !app.leader {
-        let msg = format!(" {}", clean(&app.msg).replace('\n', " "));
-        return f.render_widget(Line::styled(msg, th.accent), area);
-    }
-    let leader = format!("^{}", k.leader);
+    let lang = app.cfg.lang;
+    let hint = |key: &str, en: &'static str, vi: &'static str, on: bool| Hint {
+        key: key.to_string(),
+        text: lang.pick(en, vi),
+        on,
+    };
     let key = |c: char| match c {
         ' ' => "space".to_string(),
         c => c.to_string(),
     };
-    let tab = app.active.checked_sub(1).map(|i| &app.tabs[i].kind);
-    let hints: Vec<(String, &str)> = match (tab, app.focus) {
-        _ if app.leader => vec![
-            ("tab/n".into(), "next"),
-            ("p".into(), "previous"),
-            ("hjkl".into(), "pane"),
-            ("L".into(), "layout"),
-            ("b".into(), "broadcast"),
-            ("q".into(), "hosts"),
-            ("x".into(), "close"),
-            ("pgup/pgdn".into(), "scroll"),
-            (leader, "send it through"),
-        ],
-        (Some(Kind::Term { .. }), _) => vec![
-            (format!("{leader} tab"), "next tab"),
-            (format!("{leader} hjkl"), "pane"),
-            (format!("{leader} L"), "layout"),
-            (format!("{leader} b"), "broadcast"),
-            (format!("{leader} q"), "hosts"),
-            (format!("{leader} x"), "close"),
-        ],
-        (Some(Kind::Sftp(_)), _) => vec![
-            ("tab".into(), "pane"),
-            ("enter".into(), "open"),
-            ("h".into(), "up"),
-            ("c".into(), "copy"),
-            ("m".into(), "mkdir"),
-            ("r".into(), "rename"),
-            ("d".into(), "delete"),
-            ("q".into(), "close"),
-        ],
-        (None, Focus::Search) => vec![
-            ("type".into(), "filter"),
-            ("#tag".into(), "tag or group"),
-            ("enter".into(), "keep"),
-            ("esc".into(), "clear"),
-        ],
-        (None, Focus::Forwards) => vec![
-            ("a".into(), "add"),
-            ("d".into(), "delete"),
-            ("enter".into(), "start/stop"),
-            ("esc".into(), "back"),
-        ],
-        (None, Focus::Snippets) => vec![
-            ("a".into(), "add"),
-            ("e".into(), "edit"),
-            ("d".into(), "delete"),
-            ("enter".into(), "run"),
-            ("esc".into(), "back"),
-        ],
-        (None, Focus::List) => vec![
-            ("enter".into(), "shell"),
-            (key(k.sftp), "sftp"),
-            (key(k.connect), "quick connect"),
-            (key(k.forwards), "forwards"),
-            (key(k.snippets), "snippets"),
-            (key(k.search), "search"),
-            (key(k.add), "add"),
-            (key(k.edit), "edit"),
-            (key(k.ping), "ping"),
-            (key(k.help), "help"),
-            (key(k.quit), "quit"),
-        ],
-    };
-    let mut spans = vec![];
-    if app.leader {
-        let tag = Style::new().fg(Color::Black).bg(th.key).bold();
-        spans.push(Span::styled(" LEADER ", tag));
+    let leader = format!("^{}", k.leader);
+    match (
+        app.active.checked_sub(1).map(|i| &app.tabs[i].kind),
+        app.focus,
+    ) {
+        (Some(Kind::Term { .. }), _) => {
+            let panes = app.terms().len().min(app.layout.panes());
+            let live = app.live_sessions();
+            let broadcast = match app.broadcast {
+                true => hint("alt-b", "broadcast ON", "đang phát", true),
+                false => hint("alt-b", "broadcast", "phát tới mọi phiên", live > 1),
+            };
+            vec![
+                vec![hint(&leader, "menu", "menu", true)],
+                vec![
+                    hint(&format!("{leader} hjkl"), "pane", "khung", panes > 1),
+                    hint(&format!("{leader} L"), "layout", "bố cục", true),
+                    hint(&format!("{leader} d"), "close", "đóng", true),
+                ],
+                vec![broadcast],
+                vec![
+                    hint(&format!("{leader} tab"), "next tab", "tab kế", true),
+                    hint(&format!("{leader} q"), "hosts", "máy chủ", true),
+                ],
+            ]
+        }
+        (Some(Kind::Sftp(view)), _) => {
+            let entry = view.selected();
+            let file = entry.is_some_and(|e| !e.is_dir) && view.progress.is_none();
+            vec![
+                vec![
+                    hint("tab", "pane", "khung", true),
+                    hint("enter", "open", "mở", entry.is_some_and(|e| e.is_dir)),
+                    hint("h", "up", "lên", true),
+                ],
+                vec![
+                    hint("c", "copy", "chép", file),
+                    hint("m", "mkdir", "tạo thư mục", true),
+                    hint("r", "rename", "đổi tên", entry.is_some()),
+                    hint("d", "delete", "xoá", entry.is_some()),
+                ],
+                vec![
+                    hint("q", "close", "đóng", true),
+                    hint("Q", "quit", "thoát", true),
+                ],
+            ]
+        }
+        (None, Focus::Search) => vec![vec![
+            hint("type", "filter", "lọc", true),
+            hint("#tag", "tag or group", "thẻ hoặc nhóm", true),
+            hint("enter", "keep", "giữ", true),
+            hint("esc", "clear", "xoá", true),
+        ]],
+        (None, focus @ (Focus::Forwards | Focus::Snippets)) => {
+            let alias = app.alias().unwrap_or_default();
+            let (any, action) = match focus {
+                Focus::Forwards => (
+                    !app.forwards(&alias).is_empty(),
+                    hint("enter", "start/stop", "bật/tắt", true),
+                ),
+                _ => (
+                    !app.host_snippets(&alias).is_empty(),
+                    hint("enter", "run", "chạy", true),
+                ),
+            };
+            vec![
+                vec![
+                    hint("a", "add", "thêm", true),
+                    hint("e", "edit", "sửa", any && focus == Focus::Snippets),
+                    hint("d", "delete", "xoá", any),
+                    Hint { on: any, ..action },
+                ],
+                vec![hint("esc", "back", "quay lại", true)],
+            ]
+        }
+        (None, Focus::List) => {
+            let host = app.alias().is_some();
+            let marked = !app.marked.is_empty();
+            let enter = match marked {
+                true => hint("enter", "connect marked", "kết nối máy đã đánh dấu", true),
+                false => hint("enter", "shell", "shell", host),
+            };
+            vec![
+                vec![
+                    enter,
+                    hint(&key(k.sftp), "sftp", "sftp", host),
+                    hint(&key(k.mark), "mark", "đánh dấu", host),
+                    hint(&key(k.connect_tag), "by tag", "theo thẻ", host),
+                    hint(&key(k.connect), "quick", "nhanh", true),
+                ],
+                vec![
+                    hint(&key(k.forwards), "forwards", "chuyển cổng", host),
+                    hint(&key(k.snippets), "snippets", "snippet", host),
+                    hint(&key(k.add), "add", "thêm", true),
+                    hint(&key(k.edit), "edit", "sửa", host),
+                ],
+                vec![
+                    hint(&key(k.search), "search", "tìm", true),
+                    hint(&key(k.ping), "ping", "kiểm tra", true),
+                    hint(&key(k.help), "help", "trợ giúp", true),
+                    hint(&key(k.quit), "quit", "thoát", true),
+                ],
+            ]
+        }
     }
-    for (name, action) in hints {
-        spans.push(Span::styled(
-            format!(" {name}"),
-            Style::new().fg(th.key).bold(),
-        ));
-        spans.push(Span::styled(format!(" {action} "), Style::new().fg(th.dim)));
+}
+
+/// The line above the status line: a message if there is one, otherwise the
+/// key hints. Hints that do nothing right now are faded.
+fn hints(app: &App, f: &mut Frame, area: Rect) {
+    let th = &app.cfg.theme;
+    if !app.msg.is_empty() {
+        let msg = format!(" {}", clean(&app.msg).replace('\n', " "));
+        return f.render_widget(Line::styled(msg, th.accent), area);
+    }
+    let faded = Style::new().fg(th.dim).add_modifier(Modifier::DIM);
+    let mut spans = vec![];
+    for (i, group) in hint_groups(app).into_iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" │", Style::new().fg(th.border)));
+        }
+        for hint in group {
+            let (name, action) = match hint.on {
+                true => (Style::new().fg(th.key).bold(), Style::new().fg(th.dim)),
+                false => (faded, faded),
+            };
+            spans.push(Span::styled(format!(" {}", hint.key), name));
+            spans.push(Span::styled(format!(" {} ", hint.text), action));
+        }
     }
     f.render_widget(Line::from(spans), area);
+}
+
+/// Name and colour of the current mode, shown at the left of the status line.
+fn mode(app: &App) -> (&'static str, Color) {
+    let tab = app.active.checked_sub(1).map(|i| &app.tabs[i].kind);
+    match (tab, app.focus) {
+        _ if app.leader != Leader::Off => ("LEADER", MAGENTA),
+        (Some(Kind::Term { .. }), _) if app.broadcast => ("BROADCAST", BROADCAST),
+        (Some(Kind::Term { .. }), _) => ("TERMINAL", GREEN),
+        (Some(Kind::Sftp(_)), _) => ("SFTP", TEAL),
+        (None, Focus::Search) => ("SEARCH", YELLOW),
+        (None, _) => ("NORMAL", BLUE),
+    }
+}
+
+/// Bottom line, laid out like lualine: mode and context on the left, the
+/// host and pane in the middle, tags, group and latency on the right.
+fn status_line(app: &App, f: &mut Frame, area: Rect) {
+    let th = &app.cfg.theme;
+    let lang = app.cfg.lang;
+    let (name, colour) = mode(app);
+    let badge = Style::new().fg(INK).bg(colour).bold();
+    let section = Style::new().fg(th.text).bg(th.selection);
+    let plain = Style::new().fg(th.dim).bg(th.bar);
+    f.render_widget(Block::new().style(plain), area);
+
+    // What the line is about: the focused tab, or the selected host.
+    let tab = app.active.checked_sub(1).map(|i| &app.tabs[i]);
+    let alias = tab.map(|t| t.alias.clone()).or_else(|| app.alias());
+    let alias = alias.unwrap_or_default();
+    let sessions = app.live_sessions();
+    let (context, middle) = match tab.map(|t| &t.kind) {
+        Some(Kind::Term { .. }) => {
+            let terms = app.terms();
+            let at = terms.iter().position(|i| i + 1 == app.active).unwrap_or(0);
+            let shown = terms
+                .len()
+                .saturating_sub(app.window)
+                .min(app.layout.panes());
+            let pane = at.saturating_sub(app.window) + 1;
+            let word = lang.pick("pane", "khung");
+            (
+                app.layout.name().to_string(),
+                format!("{alias} : {word} {pane}/{shown}"),
+            )
+        }
+        Some(Kind::Sftp(view)) => {
+            let side = [
+                lang.pick("local", "máy mình"),
+                lang.pick("remote", "máy từ xa"),
+            ];
+            (side[view.side].to_string(), format!("{alias} : sftp"))
+        }
+        None => {
+            let word = lang.pick("hosts", "máy chủ");
+            (format!("{} {word}", app.hosts.len()), alias.clone())
+        }
+    };
+    let mut left = vec![
+        Span::styled(format!(" {name} "), badge),
+        Span::styled(format!(" {context} "), section),
+    ];
+    if app.broadcast {
+        let word = lang.pick("sessions", "phiên");
+        // In a session the mode badge already says BROADCAST.
+        let label = if name == "BROADCAST" {
+            ""
+        } else {
+            "BROADCAST "
+        };
+        let text = format!(" {label}→ {sessions} {word} ");
+        left.push(Span::styled(
+            text,
+            Style::new().fg(BROADCAST).bg(th.bar).bold(),
+        ));
+    }
+
+    let meta = app.meta.get(&alias).filter(|_| tab.is_none_or(|t| t.saved));
+    let mut right = vec![];
+    if let Some(meta) = meta {
+        let all: Vec<&str> = tags(meta).collect();
+        if !all.is_empty() {
+            right.push(Span::styled(format!("{} ", all.join(" ")), plain));
+        }
+        if !meta.grp.is_empty() {
+            right.push(Span::styled(format!(" {} ", meta.grp), section));
+        }
+    }
+    let reach = match app
+        .reach
+        .get(&alias)
+        .filter(|_| tab.is_none_or(|t| t.saved))
+    {
+        Some(Some(ms)) => latency(*ms),
+        Some(None) => lang.pick("down", "mất kết nối").to_string(),
+        None => "—".to_string(),
+    };
+    right.push(Span::styled(format!(" {reach} "), badge));
+
+    f.render_widget(
+        Line::styled(middle, plain).alignment(Alignment::Center),
+        area,
+    );
+    f.render_widget(Line::from(left), area);
+    f.render_widget(Line::from(right).alignment(Alignment::Right), area);
+}
+
+/// The leader menu: key, English, Vietnamese. Keep in step with
+/// `App::leader_key` and `App::window_key`.
+fn leader_menu(app: &App) -> (&'static str, Vec<(String, &'static str, &'static str)>) {
+    let leader = format!("^{}", app.cfg.keys.leader);
+    let entry = |key: &str, en, vi| (key.to_string(), en, vi);
+    match app.leader {
+        Leader::Window => (
+            "leader › window",
+            vec![
+                entry("h j k l", "focus pane", "chuyển khung"),
+                entry("s", "single pane", "một khung"),
+                entry("v", "2 columns", "2 cột"),
+                entry("g", "2x2 grid", "lưới 2x2"),
+                entry("t", "3 columns", "3 cột"),
+                entry("L", "next layout", "bố cục kế"),
+                entry("d", "close pane", "đóng khung"),
+                entry("esc", "cancel", "huỷ"),
+            ],
+        ),
+        _ => (
+            "leader",
+            vec![
+                entry("h j k l", "focus pane", "chuyển khung"),
+                entry("L", "next layout", "bố cục kế"),
+                entry("w", "+window", "+cửa sổ"),
+                entry("b", "broadcast", "phát tới mọi phiên"),
+                entry("d", "close pane", "đóng khung"),
+                entry("q", "host list", "danh sách máy chủ"),
+                entry("tab n", "next tab", "tab kế tiếp"),
+                entry("p", "previous tab", "tab trước"),
+                entry("1-9", "go to tab", "tới tab số"),
+                entry("pgup pgdn", "scroll", "cuộn"),
+                entry(&leader, "send it to the remote", "gửi tới máy từ xa"),
+                entry("esc", "cancel", "huỷ"),
+            ],
+        ),
+    }
+}
+
+/// Which-key popup: after the leader, lists what the next key does. Sits at
+/// the bottom right of the body, in two columns.
+fn which_key(app: &App, f: &mut Frame, body: Rect) {
+    let th = &app.cfg.theme;
+    let (title, entries) = leader_menu(app);
+    let rows = entries.len().div_ceil(2);
+    let width = 76.min(body.width);
+    let height = (rows as u16 + 2).min(body.height);
+    let area = Rect::new(
+        body.x + body.width - width,
+        body.y + body.height - height,
+        width,
+        height,
+    );
+    let column = usize::from(width.saturating_sub(4)) / 2;
+    let cell = |i: usize| -> Vec<Span> {
+        let Some((key, en, vi)) = entries.get(i) else {
+            return vec![];
+        };
+        let text = app.cfg.lang.pick(en, vi);
+        // Groups, marked with `+`, open another menu.
+        let colour = if text.starts_with('+') {
+            th.accent
+        } else {
+            th.text
+        };
+        let used = key.chars().count() + 3 + text.chars().count();
+        vec![
+            Span::styled(key.clone(), Style::new().fg(th.key).bold()),
+            Span::styled(" → ", Style::new().fg(th.dim)),
+            Span::styled(text, Style::new().fg(colour)),
+            Span::raw(" ".repeat(column.saturating_sub(used))),
+        ]
+    };
+    let lines: Vec<Line> = (0..rows)
+        .map(|r| Line::from([cell(r), cell(r + rows)].concat()))
+        .collect();
+    f.render_widget(Clear, area);
+    f.render_widget(Paragraph::new(lines).block(panel(title, true, th)), area);
 }
 
 fn popup(popup: &Popup, th: &Theme, f: &mut Frame) {

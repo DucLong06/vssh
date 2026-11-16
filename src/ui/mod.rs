@@ -137,6 +137,16 @@ enum Popup {
     },
 }
 
+/// Where a leader sequence is: not started, after the leader, or in the
+/// window menu (`leader w`).
+#[derive(Clone, Copy, Default, PartialEq)]
+enum Leader {
+    #[default]
+    Off,
+    Root,
+    Window,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Focus {
     List,
@@ -169,7 +179,7 @@ pub struct App {
     /// 0 is the host list, `i` is `tabs[i - 1]`.
     active: usize,
     next_id: u64,
-    leader: bool,
+    leader: Leader,
     /// Typing in one session goes to every live session.
     broadcast: bool,
     /// How many sessions the session view shows side by side.
@@ -281,7 +291,7 @@ impl App {
             tabs: vec![],
             active: 0,
             next_id: 1,
-            leader: false,
+            leader: Leader::Off,
             broadcast: false,
             layout: Layout::Single,
             window: 0,
@@ -767,11 +777,13 @@ impl App {
         }
         let is_leader =
             k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char(self.cfg.keys.leader);
-        if mem::take(&mut self.leader) {
-            return self.leader_key(k, is_leader);
+        match mem::take(&mut self.leader) {
+            Leader::Root => return self.leader_key(k, is_leader),
+            Leader::Window => return self.window_key(k),
+            Leader::Off => {}
         }
         if is_leader {
-            return self.leader = true;
+            return self.leader = Leader::Root;
         }
         if self.active == 0 {
             return self.hosts_key(k);
@@ -812,6 +824,7 @@ impl App {
                 self.msg = format!("layout: {}", self.layout.name());
             }
             KeyCode::Char('b') => self.toggle_broadcast(),
+            KeyCode::Char('w') => self.leader = Leader::Window,
             KeyCode::Tab | KeyCode::Char('n') => self.cycle(true),
             KeyCode::BackTab | KeyCode::Char('p') => self.cycle(false),
             KeyCode::Char('q') => self.active = 0,
@@ -826,6 +839,31 @@ impl App {
         }
     }
 
+    /// The window menu, `leader w`: focus, layout presets, close.
+    fn window_key(&mut self, k: KeyEvent) {
+        let layout = match k.code {
+            KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) => return self.focus_pane(c),
+            KeyCode::Char('d' | 'x') => return self.close_pane(),
+            KeyCode::Char('s') => Layout::Single,
+            KeyCode::Char('v') => Layout::Columns2,
+            KeyCode::Char('g') => Layout::Grid,
+            KeyCode::Char('t') => Layout::Columns3,
+            KeyCode::Char('L') => self.layout.next(),
+            _ => return,
+        };
+        self.layout = layout;
+        self.msg = format!("layout: {}", layout.name());
+    }
+
+    fn ask_quit(&mut self) {
+        let (tabs, fwds) = (self.tabs.len(), self.fwds.len());
+        if tabs + fwds == 0 {
+            return self.quit = true;
+        }
+        let text = format!("Quit? This closes {tabs} tab(s) and {fwds} forward(s).");
+        self.popup = Some(Popup::Confirm(text, After::Quit));
+    }
+
     fn move_sel(&mut self, delta: isize) {
         let last = self.hosts.len().saturating_sub(1);
         self.sel = self.sel.saturating_add_signed(delta).min(last);
@@ -838,7 +876,17 @@ impl App {
             Focus::List => {}
         }
         let keys = &self.cfg.keys;
-        let ctrl = k.modifiers == KeyModifiers::CONTROL;
+        if k.modifiers == KeyModifiers::CONTROL {
+            // Half a screen of two-line rows, like Ctrl-d / Ctrl-u in vim.
+            let half = (self.body.1.saturating_sub(2) / 4).max(1) as isize;
+            return match k.code {
+                KeyCode::Char('d') => self.move_sel(half),
+                KeyCode::Char('u') => self.move_sel(-half),
+                KeyCode::Char('c') => self.ask_quit(),
+                // Never let Ctrl-d fall through to `d` (delete).
+                _ => {}
+            };
+        }
         match k.code {
             KeyCode::Down | KeyCode::Char('j') => self.move_sel(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_sel(-1),
@@ -852,14 +900,7 @@ impl App {
                 self.filter.clear();
                 self.refilter();
             }
-            KeyCode::Char(c) if c == keys.quit || (c == 'c' && ctrl) => {
-                let (tabs, fwds) = (self.tabs.len(), self.fwds.len());
-                if tabs + fwds == 0 {
-                    return self.quit = true;
-                }
-                let text = format!("Quit? This closes {tabs} tab(s) and {fwds} forward(s).");
-                self.popup = Some(Popup::Confirm(text, After::Quit));
-            }
+            KeyCode::Char(c) if c == keys.quit || c == 'Q' => self.ask_quit(),
             KeyCode::Char(c) if c == keys.search => self.focus = Focus::Search,
             KeyCode::Char(c) if c == keys.add => self.host_form(None),
             KeyCode::Char(c) if c == keys.connect => {
@@ -1074,6 +1115,7 @@ impl App {
             (KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h'), _) => view.up(),
             (KeyCode::Char('R'), _) => view.refresh(),
             (KeyCode::Char('q'), _) => return self.close_pane(),
+            (KeyCode::Char('Q'), _) => return self.ask_quit(),
             (KeyCode::Char('m'), _) => {
                 return self.prompt("New directory", "Name", false, After::SftpMkdir);
             }
@@ -1173,53 +1215,104 @@ impl App {
 
     fn help(&mut self) {
         let k = &self.cfg.keys;
-        let body = format!(
+        let en = format!(
             "HOST LIST\n\
-             \x20 j/k ↑/↓      move            g/G     first / last\n\
-             \x20 Enter        open shell      {}       SFTP browser\n\
-             \x20 {}            search (fuzzy)  Esc     clear search\n\
+             \x20 j/k ↑/↓      move              g/G     first / last\n\
+             \x20 Ctrl-d/u     half a screen     Tab     next tab\n\
+             \x20 Enter        open shell (on every marked host, if any are marked)\n\
+             \x20 Space        mark host         {tag}       connect to every host with a tag\n\
+             \x20 {sftp}            SFTP browser      {connect}       quick connect, nothing saved\n\
+             \x20 {search}            search (fuzzy)    Esc     clear search\n\
              \x20              search #tag shows only hosts with that tag or group\n\
-             \x20 {}            add host        {}       edit host\n\
-             \x20 {}            delete host     {}       duplicate host\n\
-             \x20 {}            pin / unpin     Space   mark for snippets\n\
-             \x20 {}            port forwards   {}       snippets\n\
-             \x20 {}            check reachability\n\
-             \x20 {}            store password  {}       unlock / lock vault\n\
-             \x20 {}            quick connect: user@host[:port], nothing is saved\n\
-             \x20 Tab          next tab        {}       quit\n\n\
+             \x20 {add}            add host          {edit}       edit host\n\
+             \x20 {delete}            delete host       {duplicate}       duplicate host\n\
+             \x20 {pin}            pin / unpin       {ping}       check reachability\n\
+             \x20 {forwards}            port forwards     {snippets}       snippets\n\
+             \x20 {password}            store password    {vault}       unlock / lock vault\n\
+             \x20 {quit}            quit              Q       quit (from SFTP too)\n\n\
              FORWARDS / SNIPPETS PANEL\n\
              \x20 a add   e edit   d delete   Enter start/stop or run   Esc back\n\
              \x20 forward syntax:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
-             ANY TAB (leader = Ctrl-{leader})\n\
-             \x20 leader Tab/n  next tab      leader p    previous tab\n\
-             \x20 leader 1-9    go to tab     leader q    host list\n\
-             \x20 leader h/j/k/l focus pane   leader L    cycle layout: 1, 2 columns, 2x2, 3 columns\n\
-             \x20 leader b      broadcast typing to all sessions (also Alt-b)\n\
-             \x20 leader x / d  close pane    leader PgUp/PgDn  scroll (also Ctrl-u/Ctrl-d)\n\
-             \x20 leader leader send Ctrl-{leader} to the remote\n\n\
+             SESSIONS (leader = Ctrl-{leader}; a menu of these keys appears after it)\n\
+             \x20 leader h/j/k/l   focus pane        leader L      cycle layout\n\
+             \x20 leader w         window menu: s single, v 2 columns, g 2x2, t 3 columns\n\
+             \x20 leader b, Alt-b  broadcast: typing goes to every live session\n\
+             \x20 leader d / x     close pane        leader q      back to the host list\n\
+             \x20 leader Tab/n     next tab          leader p      previous tab\n\
+             \x20 leader 1-9       go to tab         leader PgUp/PgDn  scroll (also Ctrl-u/d)\n\
+             \x20 leader leader    send Ctrl-{leader} to the remote\n\n\
              SFTP\n\
              \x20 Tab switch pane   Enter/l open dir   h/Backspace parent\n\
              \x20 c copy to other pane   m mkdir   r rename   d delete\n\
-             \x20 R refresh   q close\n",
-            k.sftp,
-            k.search,
-            k.add,
-            k.edit,
-            k.delete,
-            k.duplicate,
-            k.pin,
-            k.forwards,
-            k.snippets,
-            k.ping,
-            k.password,
-            k.vault,
-            k.connect,
-            k.quit,
+             \x20 R refresh   q close   Q quit\n",
+            tag = k.connect_tag,
+            sftp = k.sftp,
+            connect = k.connect,
+            search = k.search,
+            add = k.add,
+            edit = k.edit,
+            delete = k.delete,
+            duplicate = k.duplicate,
+            pin = k.pin,
+            ping = k.ping,
+            forwards = k.forwards,
+            snippets = k.snippets,
+            password = k.password,
+            vault = k.vault,
+            quit = k.quit,
             leader = k.leader,
         );
+        let vi = format!(
+            "DANH SÁCH MÁY CHỦ\n\
+             \x20 j/k ↑/↓      di chuyển         g/G     về đầu / về cuối\n\
+             \x20 Ctrl-d/u     nửa màn hình      Tab     tab kế tiếp\n\
+             \x20 Enter        mở shell (trên mọi máy đã đánh dấu, nếu có)\n\
+             \x20 Space        đánh dấu máy      {tag}       kết nối mọi máy có cùng thẻ\n\
+             \x20 {sftp}            trình duyệt SFTP  {connect}       kết nối nhanh, không lưu\n\
+             \x20 {search}            tìm (mờ)          Esc     xoá tìm kiếm\n\
+             \x20              tìm #tag chỉ hiện máy có thẻ hoặc nhóm đó\n\
+             \x20 {add}            thêm máy          {edit}       sửa máy\n\
+             \x20 {delete}            xoá máy           {duplicate}       nhân bản máy\n\
+             \x20 {pin}            ghim / bỏ ghim    {ping}       kiểm tra kết nối\n\
+             \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
+             \x20 {password}            lưu mật khẩu      {vault}       mở / khoá kho mật khẩu\n\
+             \x20 {quit}            thoát             Q       thoát (cả từ SFTP)\n\n\
+             KHUNG CHUYỂN TIẾP CỔNG / SNIPPET\n\
+             \x20 a thêm   e sửa   d xoá   Enter bật/tắt hoặc chạy   Esc quay lại\n\
+             \x20 cú pháp:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
+             PHIÊN LÀM VIỆC (leader = Ctrl-{leader}; nhấn xong sẽ hiện menu các phím này)\n\
+             \x20 leader h/j/k/l   chuyển khung      leader L      đổi bố cục\n\
+             \x20 leader w         menu cửa sổ: s một khung, v 2 cột, g 2x2, t 3 cột\n\
+             \x20 leader b, Alt-b  phát: gõ một lần, gửi tới mọi phiên đang mở\n\
+             \x20 leader d / x     đóng khung        leader q      về danh sách máy chủ\n\
+             \x20 leader Tab/n     tab kế tiếp       leader p      tab trước\n\
+             \x20 leader 1-9       tới tab số        leader PgUp/PgDn  cuộn (hoặc Ctrl-u/d)\n\
+             \x20 leader leader    gửi Ctrl-{leader} tới máy từ xa\n\n\
+             SFTP\n\
+             \x20 Tab đổi khung   Enter/l vào thư mục   h/Backspace thư mục cha\n\
+             \x20 c chép sang khung kia   m tạo thư mục   r đổi tên   d xoá\n\
+             \x20 R tải lại   q đóng   Q thoát\n",
+            tag = k.connect_tag,
+            sftp = k.sftp,
+            connect = k.connect,
+            search = k.search,
+            add = k.add,
+            edit = k.edit,
+            delete = k.delete,
+            duplicate = k.duplicate,
+            pin = k.pin,
+            ping = k.ping,
+            forwards = k.forwards,
+            snippets = k.snippets,
+            password = k.password,
+            vault = k.vault,
+            quit = k.quit,
+            leader = k.leader,
+        );
+        let lang = self.cfg.lang;
         self.popup = Some(Popup::Text {
-            title: "Help".into(),
-            body,
+            title: lang.pick("Help", "Trợ giúp").into(),
+            body: lang.pick(&en, &vi).to_string(),
             scroll: 0,
         });
     }
