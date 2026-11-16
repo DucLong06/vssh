@@ -77,14 +77,15 @@ fn ago(ts: i64) -> String {
     }
 }
 
-/// A bordered panel: thick accent border when focused, thin and muted otherwise.
+/// Every frame in the app: rounded corners, one cell of margin inside. Focus
+/// is shown by colour alone (accent border and title), never by a heavier line.
 fn panel<'a>(title: &str, focused: bool, th: &Theme) -> Block<'a> {
-    let (kind, border, text) = match focused {
-        true => (BorderType::Thick, th.accent, th.accent),
-        false => (BorderType::Rounded, th.border, th.dim),
+    let (border, text) = match focused {
+        true => (th.accent, th.accent),
+        false => (th.border, th.dim),
     };
     Block::bordered()
-        .border_type(kind)
+        .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(border))
         .title(Span::styled(
             format!(" {title} "),
@@ -153,8 +154,12 @@ const INK: Color = Color::Rgb(26, 27, 38);
 fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
     let shown = app.shown();
     let focused = app.active - 1;
-    for (slot, rect) in app.layout.rects(area).into_iter().enumerate() {
+    for (slot, mut rect) in app.layout.rects(area).into_iter().enumerate() {
         let th = &app.cfg.theme;
+        // One empty column between neighbours, so their borders do not double up.
+        if rect.right() < area.right() {
+            rect.width = rect.width.saturating_sub(1);
+        }
         let Some(&i) = shown.get(slot) else {
             let empty = Paragraph::new("no session").style(Style::new().fg(th.dim));
             f.render_widget(empty.block(panel("empty", false, th)), rect);
@@ -166,7 +171,7 @@ fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
             let mark = if tab.closed { " ✗" } else { "" };
             let rec = if tab.log.is_some() { " ● rec" } else { "" };
             let title = format!("{} {}{mark}{rec}", i + 2, tab.alias);
-            let mut block = panel(&title, i == focused, th).padding(Padding::ZERO);
+            let mut block = panel(&title, i == focused, th);
             if app.broadcast && !tab.closed {
                 block = block.border_style(Style::new().fg(BROADCAST));
             }
@@ -339,8 +344,8 @@ fn address(app: &App, alias: &str) -> String {
 }
 
 fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
-    let [left, right] =
-        Layout::horizontal([Constraint::Percentage(44), Constraint::Min(24)]).areas(area);
+    let split = Layout::horizontal([Constraint::Percentage(44), Constraint::Min(24)]).spacing(1);
+    let [left, right] = split.areas(area);
     // The scroll offset lives in the app; borrow it out while the rows borrow the app.
     let mut state = std::mem::take(&mut app.list);
     state.select(Some(app.sel));
@@ -358,7 +363,7 @@ fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
     let block = panel(&title, on_list, th).padding(Padding::right(1));
     let list = List::new(items)
         .block(block)
-        .highlight_symbol(Line::styled("▌", th.accent))
+        .highlight_symbol(Line::styled("▎", th.accent))
         .repeat_highlight_symbol(true)
         .highlight_style(Style::new().bg(th.selection));
     f.render_stateful_widget(list, left, &mut state);
@@ -530,7 +535,8 @@ fn snippets(app: &App, alias: &str, f: &mut Frame, area: Rect) {
 
 fn files(view: &SftpView, th: &Theme, f: &mut Frame, area: Rect) {
     let [panes, gauge] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
-    let halves: [Rect; 2] = Layout::horizontal([Constraint::Percentage(50); 2]).areas(panes);
+    let split = Layout::horizontal([Constraint::Percentage(50); 2]).spacing(1);
+    let halves: [Rect; 2] = split.areas(panes);
     for side in [LOCAL, REMOTE] {
         let items = view.lists[side].iter().map(|e| match e.is_dir {
             true => Line::styled(

@@ -108,7 +108,8 @@ impl Default for Theme {
             border: Color::DarkGray,
             text: Color::Reset,
             dim: Color::DarkGray,
-            selection: Color::Rgb(38, 79, 120),
+            // TokyoNight `bg_highlight`: a soft band rather than a bright bar.
+            selection: Color::Rgb(41, 46, 66),
             ok: Color::Green,
             error: Color::Red,
             warn: Color::Yellow,
