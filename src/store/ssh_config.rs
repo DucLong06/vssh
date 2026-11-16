@@ -36,19 +36,51 @@ fn kv(line: &str) -> Option<(&str, &str)> {
     Some((&line[..end], rest))
 }
 
+/// The file is line-based: a line break inside a name or value would smuggle
+/// in extra directives (a `ProxyCommand`, another `Host`), so it becomes a space.
+fn one_line(text: String) -> String {
+    text.replace(['\n', '\r'], " ")
+}
+
+fn option(key: &str, value: &str) -> String {
+    one_line(format!("    {key} {value}"))
+}
+
+fn host_header(patterns: &str) -> String {
+    one_line(format!("Host {patterns}"))
+}
+
 fn has_key(line: &str, key: &str) -> bool {
     kv(line).is_some_and(|(k, _)| k.eq_ignore_ascii_case(key))
 }
 
 /// OpenSSH host pattern match: `*` is any run of characters, `?` exactly one.
+/// Iterative with a single backtrack point, so a pattern full of `*` costs
+/// O(pattern x text) instead of hanging the UI.
 fn glob(pat: &[u8], s: &[u8]) -> bool {
-    match pat.split_first() {
-        None => s.is_empty(),
-        Some((b'*', rest)) => (0..=s.len()).any(|i| glob(rest, &s[i..])),
-        Some((&c, rest)) => s
-            .split_first()
-            .is_some_and(|(&d, s)| (c == b'?' || c == d) && glob(rest, s)),
+    let (mut p, mut i) = (0, 0);
+    // Pattern position after the last `*`, and how much text it has swallowed.
+    let mut star = None;
+    while i < s.len() {
+        match pat.get(p) {
+            Some(b'*') => {
+                star = Some((p + 1, i));
+                p += 1;
+            }
+            Some(&c) if c == b'?' || c == s[i] => {
+                p += 1;
+                i += 1;
+            }
+            _ => match star {
+                Some((after, eaten)) => {
+                    (p, i) = (after, eaten + 1);
+                    star = Some((after, eaten + 1));
+                }
+                None => return false,
+            },
+        }
     }
+    pat[p..].iter().all(|&c| c == b'*')
 }
 
 impl Block {
@@ -81,7 +113,7 @@ impl Block {
     fn push(&mut self, key: &str, value: &str) {
         let at = self.lines.iter().rposition(|l| !l.trim().is_empty());
         self.lines
-            .insert(at.map_or(0, |i| i + 1), format!("    {key} {value}"));
+            .insert(at.map_or(0, |i| i + 1), option(key, value));
     }
 
     fn end_with_blank(&mut self) {
@@ -210,7 +242,7 @@ impl SshConfig {
         let b = &mut self.blocks[i];
         match (b.lines.iter().position(|l| has_key(l, key)), value) {
             (Some(at), "") => drop(b.lines.remove(at)),
-            (Some(at), _) => b.lines[at] = format!("    {key} {value}"),
+            (Some(at), _) => b.lines[at] = option(key, value),
             (None, "") => {}
             (None, _) => b.push(key, value),
         }
@@ -243,7 +275,7 @@ impl SshConfig {
             Some(_) => vec![String::new()],
             None => vec![],
         };
-        let header = format!("Host {alias}");
+        let header = host_header(alias);
         self.blocks.insert(at, Block { header, lines });
     }
 
@@ -258,7 +290,7 @@ impl SshConfig {
         if rest.is_empty() {
             self.blocks.remove(i);
         } else {
-            self.blocks[i].header = format!("Host {}", rest.join(" "));
+            self.blocks[i].header = host_header(&rest.join(" "));
         }
     }
 
@@ -269,14 +301,14 @@ impl SshConfig {
             .into_iter()
             .map(|p| if p == old { new } else { p })
             .collect();
-        self.blocks[i].header = format!("Host {}", pats.join(" "));
+        self.blocks[i].header = host_header(&pats.join(" "));
     }
 
     pub fn duplicate_host(&mut self, alias: &str, new: &str) {
         let Some(i) = self.owner(alias) else { return };
         self.blocks[i].end_with_blank();
         let mut copy = self.blocks[i].clone();
-        copy.header = format!("Host {new}");
+        copy.header = host_header(new);
         self.blocks.insert(i + 1, copy);
     }
 }
@@ -437,6 +469,21 @@ Host *
         assert!(!m("web?", "web12"));
         assert!(m("*.example.*", "a.example.com"));
         assert!(!m("*.example.com", "example.com"));
+        assert!(m("a*b*c", "a-b-b-c") && !m("a*b*c", "a-b-b"));
+        assert!(m("", "") && m("**", "") && !m("?", "") && !m("", "a"));
+        // Would take longer than the universe with naive backtracking.
+        assert!(!m(&format!("{}b", "*a".repeat(40)), &"a".repeat(200)));
+    }
+
+    #[test]
+    fn line_breaks_cannot_inject_directives() {
+        let mut c = SshConfig::parse("Host a\n    User me\n");
+        c.set("a", "HostName", "x\n    ProxyCommand evil\nHost pwned");
+        c.add("a", "LocalForward", "1 h:1\r\nMatch all");
+        assert_eq!(c.to_string().lines().count(), 4);
+        let re = SshConfig::parse(&c.to_string());
+        assert_eq!(re.hosts(), ["a"]);
+        assert_eq!(re.get("a", "ProxyCommand"), None);
     }
 
     #[test]
