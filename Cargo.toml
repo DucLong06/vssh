@@ -20,6 +20,16 @@ toml = "0.9"
 vt100 = "0.18"
 zeroize = "1"
 
+# The TUI owns the terminal: nothing may print to it, and nothing may log secrets.
+[lints.clippy]
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"
+
+# Argon2 is slow on purpose; unoptimized it dominates the test run.
+[profile.dev.package.argon2]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = true
