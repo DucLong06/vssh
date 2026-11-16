@@ -92,6 +92,8 @@ pub struct Keys {
     pub sftp: char,
     /// Quick connect: a one-off session that is not saved.
     pub connect: char,
+    /// Open a session on every host with a tag.
+    pub connect_tag: char,
     pub forwards: char,
     pub snippets: char,
     pub add: char,
@@ -114,6 +116,7 @@ impl Default for Keys {
             search: '/',
             sftp: 's',
             connect: 'c',
+            connect_tag: 'T',
             forwards: 'f',
             snippets: 'n',
             add: 'a',

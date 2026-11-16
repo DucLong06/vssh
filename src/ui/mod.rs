@@ -99,6 +99,8 @@ enum After {
     },
     /// Connect to a typed `user@host[:port]` without saving it.
     QuickConnect,
+    /// Open a session on every host that has the typed tag or group.
+    ConnectTag,
     /// Unlock, then optionally go on to set this host's password.
     VaultUnlock(Option<String>),
     /// Same, for a new vault; the second field is the first passphrase entry.
@@ -166,6 +168,8 @@ pub struct App {
     active: usize,
     next_id: u64,
     leader: bool,
+    /// Typing in one session goes to every live session.
+    broadcast: bool,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
     popup: Option<Popup>,
@@ -200,6 +204,48 @@ fn has_tag(meta: &Meta, query: &str) -> bool {
         .any(|t| !t.is_empty() && t.to_lowercase().starts_with(&query))
 }
 
+/// Exact, case-insensitive match on a tag or the group: what "connect
+/// everything tagged web" means, unlike the prefix match of the search box.
+fn tag_is(meta: &Meta, tag: &str) -> bool {
+    meta.tags
+        .split([' ', ','])
+        .chain([meta.grp.as_str()])
+        .any(|t| !t.is_empty() && t.eq_ignore_ascii_case(tag))
+}
+
+/// Something typed or pasted into a terminal session.
+enum TermInput<'a> {
+    Key(KeyEvent),
+    Paste(&'a str),
+}
+
+/// Sends input to the focused session, or to every live session when
+/// broadcasting. Each session encodes it for its own terminal modes, so
+/// arrow keys stay right for a pane that happens to be inside vim.
+/// Returns how many sessions received it.
+fn send_input(tabs: &mut [Tab], focused: usize, broadcast: bool, input: &TermInput) -> usize {
+    let mut sent = 0;
+    for (i, tab) in tabs.iter_mut().enumerate() {
+        let Kind::Term { parser, tx } = &mut tab.kind else {
+            continue;
+        };
+        if tab.closed || !(broadcast || i == focused) {
+            continue;
+        }
+        parser.screen_mut().set_scrollback(0);
+        let screen = parser.screen();
+        let bytes = match input {
+            TermInput::Key(k) => term::encode_key(*k, screen.application_cursor()),
+            TermInput::Paste(text) if screen.bracketed_paste() => {
+                format!("\x1b[200~{text}\x1b[201~").into_bytes()
+            }
+            TermInput::Paste(text) => text.replace('\n', "\r").into_bytes(),
+        };
+        sent += usize::from(tx.send(SessionCmd::Data(bytes)).is_ok());
+    }
+    sent
+}
+
 impl App {
     fn new(cfg: Config, tx: UnboundedSender<Event>) -> Result<Self> {
         let sshc = SshConfig::load(&ssh_config_path()).context("cannot read ~/.ssh/config")?;
@@ -230,6 +276,7 @@ impl App {
             active: 0,
             next_id: 1,
             leader: false,
+            broadcast: false,
             body: (80, 24),
             popup: None,
             msg: String::new(),
@@ -355,6 +402,34 @@ impl App {
             }
             Err(e) => self.msg = e.to_string(),
         }
+    }
+
+    /// Opens one session per host and puts the view on the first of them.
+    fn open_many(&mut self, aliases: &[String]) {
+        let first = self.tabs.len() + 1;
+        for alias in aliases {
+            self.open(alias, false);
+        }
+        if self.tabs.len() >= first {
+            self.active = first;
+        }
+    }
+
+    /// Number of sessions that would receive typed input right now.
+    fn live_sessions(&self) -> usize {
+        let live = |t: &&Tab| matches!(t.kind, Kind::Term { .. }) && !t.closed;
+        self.tabs.iter().filter(live).count()
+    }
+
+    fn toggle_broadcast(&mut self) {
+        self.broadcast ^= true;
+        self.msg = match self.broadcast {
+            true => format!(
+                "BROADCAST ON: typing goes to all {} live session(s)",
+                self.live_sessions()
+            ),
+            false => "broadcast off".into(),
+        };
     }
 
     /// Opens a tab; the connection runs in its own task.
@@ -612,18 +687,18 @@ impl App {
                 self.sel = 0;
                 self.refilter();
             }
-        } else if let Kind::Term { parser, tx } = &self.tabs[self.active - 1].kind {
-            let data = match parser.screen().bracketed_paste() {
-                true => format!("\x1b[200~{text}\x1b[201~"),
-                false => text.replace('\n', "\r"),
-            };
-            let _ = tx.send(SessionCmd::Data(data.into_bytes()));
+        } else {
+            let input = TermInput::Paste(text);
+            send_input(&mut self.tabs, self.active - 1, self.broadcast, &input);
         }
     }
 
     fn on_key(&mut self, k: KeyEvent) {
         if let Some(popup) = self.popup.take() {
             return self.popup_key(popup, k);
+        }
+        if k.modifiers == KeyModifiers::ALT && k.code == KeyCode::Char('b') {
+            return self.toggle_broadcast();
         }
         let is_leader =
             k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char(self.cfg.keys.leader);
@@ -637,15 +712,12 @@ impl App {
             return self.hosts_key(k);
         }
         let i = self.active - 1;
-        let closed = self.tabs[i].closed;
-        match &mut self.tabs[i].kind {
-            // A dead session swallows keys. Closing on "any key" would let the
-            // rest of a half-typed command run as host-list commands.
-            Kind::Term { .. } if closed => {}
-            Kind::Term { parser, tx } => {
-                parser.screen_mut().set_scrollback(0);
-                let bytes = term::encode_key(k, parser.screen().application_cursor());
-                let _ = tx.send(SessionCmd::Data(bytes));
+        match self.tabs[i].kind {
+            // A dead session swallows keys (`send_input` skips it). Closing on
+            // "any key" would let the rest of a half-typed command run as
+            // host-list commands.
+            Kind::Term { .. } => {
+                send_input(&mut self.tabs, i, self.broadcast, &TermInput::Key(k));
             }
             Kind::Sftp(_) => self.sftp_key(k),
         }
@@ -668,9 +740,11 @@ impl App {
             parser.screen_mut().set_scrollback(at);
         };
         match (k.code, term) {
-            (_, Some((_, tx))) if again => {
-                let _ = tx.send(SessionCmd::Data(term::encode_key(k, false)));
+            (_, Some(_)) if again => {
+                let input = TermInput::Key(k);
+                send_input(&mut self.tabs, self.active - 1, self.broadcast, &input);
             }
+            (KeyCode::Char('b'), _) => self.toggle_broadcast(),
             (KeyCode::PageUp | KeyCode::Char('k'), Some((parser, _))) => scroll(parser, 10),
             (KeyCode::PageDown | KeyCode::Char('j'), Some((parser, _))) => scroll(parser, -10),
             (KeyCode::Tab | KeyCode::Char('n'), _) => self.cycle(true),
@@ -733,6 +807,25 @@ impl App {
                     fields,
                     true,
                     After::QuickConnect,
+                );
+            }
+            KeyCode::Enter if !self.marked.is_empty() => {
+                let marked: Vec<String> = mem::take(&mut self.marked).into_iter().collect();
+                self.open_many(&marked);
+            }
+            KeyCode::Char(c) if c == keys.connect_tag => {
+                // Offer the tag being filtered on, else the selected host's first tag or group.
+                let meta = self.alias().and_then(|a| self.meta.get(&a).cloned());
+                let meta = meta.unwrap_or_default();
+                let own = meta.tags.split([' ', ',']).chain([meta.grp.as_str()]);
+                let own = own.into_iter().find(|t| !t.is_empty()).unwrap_or("");
+                let tag = self.filter.strip_prefix('#').unwrap_or(own).to_string();
+                let fields = vec![("Tag or group", tag)];
+                self.form(
+                    "Connect to every host with",
+                    fields,
+                    false,
+                    After::ConnectTag,
                 );
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
@@ -1207,6 +1300,13 @@ impl App {
                 let password = (!secret.is_empty()).then_some(secret);
                 self.open_target(&title, target, false, false, password);
             }
+            After::ConnectTag => {
+                let tag = text(0);
+                let with_tag = |a: &String| self.meta.get(a).is_some_and(|m| tag_is(m, &tag));
+                let hosts: Vec<String> = self.sshc.hosts().into_iter().filter(with_tag).collect();
+                ensure!(!hosts.is_empty(), "no host has the tag or group {tag}");
+                self.open_many(&hosts);
+            }
             After::VaultUnlock(next) => {
                 self.vault = Some(Vault::open(&vault_path(), &secret)?);
                 self.msg = "vault unlocked".into();
@@ -1337,6 +1437,100 @@ mod tests {
             assert!(!has_tag(&meta, miss), "{miss}");
         }
         assert!(!has_tag(&Meta::default(), ""));
+    }
+
+    /// A live terminal tab whose "connection" is just the receiving end of its channel.
+    fn term_tab(id: u64) -> (Tab, tokio::sync::mpsc::UnboundedReceiver<SessionCmd>) {
+        let (tx, rx) = unbounded_channel();
+        let size = NonZeroU16::new(10).unwrap();
+        let parser = vt100::Parser::new_with_callbacks(size, size, 100, term::Replies::default());
+        let tab = Tab {
+            id,
+            alias: format!("host{id}"),
+            target: Target::parse("user@host").unwrap(),
+            saved: true,
+            kind: Kind::Term {
+                parser: Box::new(parser),
+                tx,
+            },
+            task: tokio::spawn(async {}),
+            connected: true,
+            closed: false,
+        };
+        (tab, rx)
+    }
+
+    fn received(rx: &mut tokio::sync::mpsc::UnboundedReceiver<SessionCmd>) -> Vec<u8> {
+        let mut all = vec![];
+        while let Ok(SessionCmd::Data(bytes)) = rx.try_recv() {
+            all.extend(bytes);
+        }
+        all
+    }
+
+    #[tokio::test]
+    async fn broadcast_sends_keys_to_every_live_session() {
+        let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=4).map(term_tab).unzip();
+        let (sftp_tx, _sftp_rx) = unbounded_channel();
+        tabs.push(Tab {
+            kind: Kind::Sftp(Box::new(SftpView::new(sftp_tx))),
+            ..term_tab(9).0
+        });
+        tabs[3].closed = true;
+        let key = |c| TermInput::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+
+        // Broadcast off: only the focused session hears the key.
+        assert_eq!(send_input(&mut tabs, 1, false, &key('a')), 1);
+        let got: Vec<_> = rxs.iter_mut().map(received).collect();
+        assert_eq!(
+            got,
+            [b"".to_vec(), b"a".to_vec(), b"".to_vec(), b"".to_vec()]
+        );
+
+        // Broadcast on: every live terminal does; the closed one and SFTP do not.
+        assert_eq!(send_input(&mut tabs, 1, true, &key('l')), 3);
+        assert_eq!(send_input(&mut tabs, 1, true, &key('s')), 3);
+        let enter = TermInput::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        send_input(&mut tabs, 1, true, &enter);
+        let got: Vec<_> = rxs.iter_mut().map(received).collect();
+        assert_eq!(
+            got,
+            [
+                b"ls\r".to_vec(),
+                b"ls\r".to_vec(),
+                b"ls\r".to_vec(),
+                b"".to_vec()
+            ]
+        );
+
+        // Focus on a dead pane still broadcasts to the others, and types nowhere without it.
+        assert_eq!(send_input(&mut tabs, 3, true, &key('x')), 3);
+        assert_eq!(send_input(&mut tabs, 3, false, &key('x')), 0);
+    }
+
+    #[tokio::test]
+    async fn broadcast_encodes_for_each_sessions_own_mode() {
+        let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=2).map(term_tab).unzip();
+        // Session 2 is in a full-screen program: application cursor keys, bracketed paste.
+        if let Kind::Term { parser, .. } = &mut tabs[1].kind {
+            parser.process(b"\x1b[?1h\x1b[?2004h");
+        }
+        let up = TermInput::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        send_input(&mut tabs, 0, true, &up);
+        send_input(&mut tabs, 0, true, &TermInput::Paste("a\nb"));
+        assert_eq!(received(&mut rxs[0]), b"\x1b[Aa\rb");
+        assert_eq!(received(&mut rxs[1]), b"\x1bOA\x1b[200~a\nb\x1b[201~");
+    }
+
+    #[test]
+    fn connect_by_tag_is_exact() {
+        let meta = Meta {
+            grp: "Prod".into(),
+            tags: "web, eu-west".into(),
+            ..Meta::default()
+        };
+        assert!(tag_is(&meta, "web") && tag_is(&meta, "WEB") && tag_is(&meta, "prod"));
+        assert!(!tag_is(&meta, "we") && !tag_is(&meta, "eu") && !tag_is(&meta, ""));
     }
 
     #[test]

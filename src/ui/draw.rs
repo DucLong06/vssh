@@ -195,6 +195,12 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
         status.push(Span::styled(text, Style::new().fg(colour)));
         status.push(Span::styled(" · ", Style::new().fg(th.dim)));
     };
+    if app.broadcast {
+        push(
+            format!("BROADCAST → {} sessions", app.live_sessions()),
+            th.error,
+        );
+    }
     if !app.marked.is_empty() {
         push(format!("{} marked", app.marked.len()), th.warn);
     }
