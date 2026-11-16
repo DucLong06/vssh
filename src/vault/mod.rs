@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::{fs, mem};
+use std::{fmt, fs, mem};
 
 use anyhow::{anyhow, ensure, Context, Result};
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -26,6 +26,17 @@ pub struct Vault {
     salt: [u8; SALT],
     key: Zeroizing<[u8; 32]>,
     entries: BTreeMap<String, Zeroizing<String>>,
+}
+
+/// Deliberately not derived: shows where the vault is and how much it holds,
+/// never the key or a secret.
+impl fmt::Debug for Vault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Vault")
+            .field("path", &self.path)
+            .field("entries", &self.entries.len())
+            .finish_non_exhaustive()
+    }
 }
 
 /// Argon2id, 19 MiB, 2 passes. Pinned here (not `Default`) because the file
@@ -170,6 +181,42 @@ mod tests {
         v.set("db", &mut "pässwörd with spaces\n\t🔑".to_string())
             .unwrap();
         v
+    }
+
+    #[test]
+    fn malformed_plaintext_is_rejected_not_trusted() {
+        assert!(decode(&[]).unwrap().is_empty());
+        // Truncated length, length past the end, name without a secret, bad UTF-8.
+        for bad in [
+            &[1u8, 0, 0][..],
+            &[5, 0, 0, 0, b'a'],
+            &[0xff, 0xff, 0xff, 0xff],
+            &[1, 0, 0, 0, b'a'],
+            &[1, 0, 0, 0, 0xff, 0, 0, 0, 0],
+        ] {
+            assert!(decode(bad).is_none(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn debug_and_errors_never_show_secrets() {
+        let path = temp("debug");
+        let v = filled(&path);
+        let debug = format!("{v:?} {v:#?}");
+        assert!(debug.contains("entries: 2"));
+        for secret in ["hunter2", "pässwörd", "correct horse"] {
+            assert!(!debug.contains(secret), "{debug}");
+        }
+        // Neither the raw key nor the salt, in any integer rendering.
+        assert!(!debug.contains(&format!("{:?}", &v.key[..4])));
+        assert!(!debug.contains("salt:") && !debug.contains("key:"));
+
+        let wrong = "wrong-passphrase-attempt";
+        let err = Vault::open(&path, wrong).unwrap_err();
+        let shown = format!("{err} {err:?} {err:#}");
+        for secret in ["hunter2", "pässwörd", "correct horse", wrong] {
+            assert!(!shown.contains(secret), "{shown}");
+        }
     }
 
     #[test]
