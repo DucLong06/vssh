@@ -35,7 +35,7 @@ use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
-use panes::Layout;
+use panes::{Layout, Shape};
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -204,6 +204,10 @@ pub struct App {
     layout: Layout,
     /// Index, among the terminal sessions, of the first one shown.
     window: usize,
+    /// How the last frame was arranged; follows the terminal size.
+    shape: Shape,
+    /// Details of the selected host are up, in a window too small to keep them on screen.
+    info: bool,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
     popup: Option<Popup>,
@@ -325,6 +329,11 @@ impl App {
             .mode(0o700)
             .create(data_dir())?;
         let db = Db::open(&data_dir().join("vssh.db"))?;
+        Self::with(cfg, tx, sshc, db)
+    }
+
+    /// The app over an already loaded ssh config and database.
+    fn with(cfg: Config, tx: UnboundedSender<Event>, sshc: SshConfig, db: Db) -> Result<Self> {
         db.import(&sshc.hosts())?;
         let mut app = Self {
             cfg,
@@ -350,6 +359,8 @@ impl App {
             broadcast: false,
             layout: Layout::Single,
             window: 0,
+            shape: Shape::Wide,
+            info: false,
             body: (80, 24),
             popup: None,
             pending: None,
@@ -517,7 +528,8 @@ impl App {
     fn focus_pane(&mut self, direction: char) {
         let shown = self.shown();
         let slot = shown.iter().position(|i| i + 1 == self.active);
-        let to = slot.and_then(|s| self.layout.neighbor(s, direction, shown.len()));
+        let stacked = self.shape == Shape::Tall;
+        let to = slot.and_then(|s| self.layout.neighbor(s, direction, shown.len(), stacked));
         if let Some(to) = to {
             self.active = shown[to] + 1;
         }
@@ -961,7 +973,7 @@ impl App {
             KeyCode::Right => self.focus_pane('l'),
             KeyCode::Char('L') => {
                 self.layout = self.layout.next();
-                self.msg = format!("layout: {}", self.layout.name());
+                self.msg = format!("layout: {}", self.layout.name(self.shape == Shape::Tall));
             }
             KeyCode::Char('b') => self.toggle_broadcast(),
             KeyCode::Char('w') => self.leader = Leader::Window,
@@ -998,7 +1010,7 @@ impl App {
             _ => return,
         };
         self.layout = layout;
-        self.msg = format!("layout: {}", layout.name());
+        self.msg = format!("layout: {}", layout.name(self.shape == Shape::Tall));
     }
 
     fn ask_quit(&mut self) {
@@ -1042,10 +1054,12 @@ impl App {
             KeyCode::End | KeyCode::Char('G') => self.move_sel(isize::MAX),
             KeyCode::Tab => self.cycle(true),
             KeyCode::BackTab => self.cycle(false),
+            KeyCode::Esc if self.info => self.info = false,
             KeyCode::Esc => {
                 self.filter.clear();
                 self.refilter();
             }
+            KeyCode::Char(c) if c == keys.info => self.info ^= true,
             KeyCode::Char(c) if c == keys.quit || c == 'Q' => self.ask_quit(),
             KeyCode::Char(c) if c == keys.search => self.focus = Focus::Search,
             KeyCode::Char(c) if c == keys.add => self.host_form(None),

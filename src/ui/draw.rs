@@ -14,6 +14,7 @@ use ratatui::Frame;
 
 use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
+use super::panes::Shape;
 use super::{clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Tab};
 use crate::config::{Lang, Theme};
 use crate::ssh::SessionCmd;
@@ -110,26 +111,32 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 }
 
 pub fn draw(app: &mut App, f: &mut Frame) {
+    let screen = f.area();
+    app.shape = Shape::of(screen.width, screen.height, app.cfg.layout);
+    // The hints take a second row when they need one and the window can spare it.
+    let rows = if screen.height >= 16 { 2 } else { 1 };
+    let hint_rows = flow(hint_groups(app), screen.width.into(), rows);
     let [bar, body, keys, status] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(1),
-        Constraint::Length(1),
+        Constraint::Length(hint_rows.len().max(1) as u16),
         Constraint::Length(1),
     ])
-    .areas(f.area());
+    .areas(screen);
     app.body = (body.width, body.height);
     f.render_widget(
         Block::new().style(Style::new().fg(app.cfg.theme.text)),
-        f.area(),
+        screen,
     );
     header(app, f, bar);
     let th = &app.cfg.theme;
+    let tall = app.shape == Shape::Tall;
     match app.active.checked_sub(1).map(|i| &mut app.tabs[i].kind) {
         None => hosts(app, f, body),
         Some(Kind::Term { .. }) => sessions(app, f, body),
-        Some(Kind::Sftp(view)) => files(view, th, app.cfg.lang, f, body),
+        Some(Kind::Sftp(view)) => files(view, th, app.cfg.lang, tall, f, body),
     }
-    hints(app, f, keys);
+    hints(app, hint_rows, f, keys);
     status_line(app, f, status);
     if app.leader != Leader::Off {
         which_key(app, f, body);
@@ -155,7 +162,9 @@ const INK: Color = Color::Rgb(26, 27, 38);
 fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
     let shown = app.shown();
     let focused = app.active - 1;
-    for (slot, mut rect) in app.layout.rects(area).into_iter().enumerate() {
+    // Portrait: every pane gets the full width, one above the other.
+    let stacked = app.shape == Shape::Tall;
+    for (slot, mut rect) in app.layout.rects(area, stacked).into_iter().enumerate() {
         let th = &app.cfg.theme;
         // One empty column between neighbours, so their borders do not double up.
         if rect.right() < area.right() {
@@ -223,6 +232,16 @@ fn breadcrumb(app: &App) -> String {
     crumbs.join(" › ")
 }
 
+/// Index of the first tab to draw so that the active one is on screen:
+/// tabs before it are dropped from the left until it fits in `room` cells.
+fn tab_window(widths: &[usize], active: usize, room: usize) -> usize {
+    let mut first = 0;
+    while first < active && widths[first..=active].iter().sum::<usize>() > room {
+        first += 1;
+    }
+    first
+}
+
 fn header(app: &App, f: &mut Frame, area: Rect) {
     let th = &app.cfg.theme;
     f.render_widget(Block::new().style(Style::new().bg(th.bar)), area);
@@ -235,17 +254,29 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
         };
         format!("{kind}{}{}", t.alias, if t.closed { " ✗" } else { "" })
     }));
-    for (i, title) in titles.enumerate() {
-        let (number, text) = match i == app.active {
+    let tabs: Vec<(String, String)> = titles
+        .enumerate()
+        .map(|(i, title)| (format!(" {} ", i + 1), format!("{title} ")))
+        .collect();
+    // On a narrow screen the tab bar scrolls to keep the active tab visible.
+    let widths: Vec<usize> = tabs
+        .iter()
+        .map(|(n, t)| n.chars().count() + t.chars().count())
+        .collect();
+    let room = usize::from(area.width).saturating_sub(9);
+    let first = tab_window(&widths, app.active.min(widths.len() - 1), room);
+    if first > 0 {
+        spans.push(Span::styled("‹", Style::new().fg(th.dim)));
+    }
+    for (i, (number, title)) in tabs.into_iter().enumerate().skip(first) {
+        let (colour, text) = match i == app.active {
             true => (th.accent, Style::new().fg(th.text).bold()),
             false => (th.dim, Style::new().fg(th.dim)),
         };
-        spans.push(Span::styled(
-            format!(" {} ", i + 1),
-            Style::new().fg(number),
-        ));
-        spans.push(Span::styled(format!("{title} "), text));
+        spans.push(Span::styled(number, Style::new().fg(colour)));
+        spans.push(Span::styled(title, text));
     }
+    let used: usize = spans.iter().map(Span::width).sum();
     f.render_widget(Line::from(spans), area);
 
     let mut status = vec![];
@@ -269,12 +300,23 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
     }
     status.pop();
     status.push(Span::raw(" "));
-    f.render_widget(Line::from(status).alignment(Alignment::Right), area);
+    // Only where it does not cover the tabs.
+    let wanted: usize = status.iter().map(Span::width).sum();
+    if used + wanted <= usize::from(area.width) {
+        f.render_widget(Line::from(status).alignment(Alignment::Right), area);
+    }
 }
 
-/// One host, two lines: status dot, pin, alias and latency; then the
-/// address, group and tag badges in a quieter tone.
-fn host_item<'a>(app: &'a App, alias: &'a str, width: usize, selected: bool) -> ListItem<'a> {
+/// One host. Two lines where there is room (status dot, pin, alias and
+/// latency; then address, group and tag badges in a quieter tone), one line
+/// when `compact`. Group and tags always win over the address for space.
+fn host_item<'a>(
+    app: &'a App,
+    alias: &'a str,
+    width: usize,
+    selected: bool,
+    compact: bool,
+) -> ListItem<'a> {
     let th = &app.cfg.theme;
     let meta = app.meta.get(alias);
     let quiet = Style::new().fg(if selected { th.text } else { th.dim });
@@ -302,32 +344,51 @@ fn host_item<'a>(app: &'a App, alias: &'a str, width: usize, selected: bool) -> 
         Span::styled(format!("{pin}{mark} "), Style::new().fg(th.warn)),
         Span::styled(alias, Style::new().fg(th.text).bold()),
     ];
-    // Right-align the latency.
-    let used: usize = first.iter().map(Span::width).sum();
-    let gap = width.saturating_sub(used + latency.chars().count());
-    first.push(Span::raw(" ".repeat(gap)));
     let latency_style = match app.reach.get(alias) {
         Some(None) => Style::new().fg(th.error),
         _ => quiet,
     };
-    first.push(Span::styled(latency, latency_style));
-
-    let mut tail = vec![];
+    // Group, then one piece per tag: dropped from the end when space runs out.
+    let mut tail: Vec<[Span; 2]> = vec![];
     if let Some(grp) = meta.map(|m| m.grp.as_str()).filter(|g| !g.is_empty()) {
-        tail.push(Span::styled("  ·  ", quiet));
-        tail.push(Span::styled(grp, Style::new().fg(chip(grp))));
+        let dot = Span::styled("  ·  ", quiet);
+        tail.push([dot, Span::styled(grp, Style::new().fg(chip(grp)))]);
     }
     for tag in meta.into_iter().flat_map(tags) {
-        tail.push(Span::raw(" "));
-        tail.push(badge(tag, selected));
+        tail.push([Span::raw(" "), badge(tag, selected)]);
     }
-    // A long address gives way to the group and tags, not the other way round.
+    let size = |tail: &[[Span; 2]]| tail.iter().flatten().map(Span::width).sum::<usize>();
+    let used: usize = first.iter().map(Span::width).sum();
+    let latency_width = latency.chars().count();
+
+    if compact {
+        while !tail.is_empty() && used + size(&tail) + 1 + latency_width > width {
+            tail.pop();
+        }
+        first.extend(std::mem::take(&mut tail).into_iter().flatten());
+    }
+    // Right-align the latency.
+    let used: usize = first.iter().map(Span::width).sum();
+    let gap = width.saturating_sub(used + latency_width);
+    first.push(Span::raw(" ".repeat(gap)));
+    first.push(Span::styled(latency, latency_style));
+    if compact {
+        return ListItem::new(Line::from(first));
+    }
+
     const INDENT: usize = 7;
-    let tail_width: usize = tail.iter().map(Span::width).sum();
-    let room = width.saturating_sub(INDENT + tail_width).max(12);
-    let address = shorten(&address(app, alias), room);
+    let room = width.saturating_sub(INDENT);
+    while tail.len() > 1 && size(&tail) > room {
+        tail.pop();
+    }
+    // The address gets what is left, and is dropped rather than cut to a stub.
+    let left = room.saturating_sub(size(&tail));
+    let address = match left >= 8 {
+        true => shorten(&address(app, alias), left),
+        false => String::new(),
+    };
     let mut second = vec![Span::styled(format!("{:INDENT$}{address}", ""), quiet)];
-    second.extend(tail);
+    second.extend(tail.into_iter().flatten());
     ListItem::new(vec![Line::from(first), Line::from(second)])
 }
 
@@ -354,36 +415,59 @@ fn address(app: &App, alias: &str) -> String {
     out
 }
 
+/// The host tab. Landscape: list left, details right. Portrait: list on top
+/// with one-line rows, details below. Small windows: one panel at a time,
+/// with the details (or forwards / snippets) taking the place of the list.
 fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
-    let split = Layout::horizontal([Constraint::Percentage(44), Constraint::Min(24)]).spacing(1);
-    let [left, right] = split.areas(area);
-    // The scroll offset lives in the app; borrow it out while the rows borrow the app.
-    let mut state = std::mem::take(&mut app.list);
-    state.select(Some(app.sel));
-    let th = &app.cfg.theme;
-    let on_list = matches!(app.focus, Focus::List | Focus::Search);
+    let side_up = app.info || matches!(app.focus, Focus::Forwards | Focus::Snippets);
+    let (list_area, side_area) = match app.shape {
+        Shape::Wide => {
+            let split = [Constraint::Percentage(44), Constraint::Min(24)];
+            let [left, right] = Layout::horizontal(split).spacing(1).areas(area);
+            (Some(left), Some(right))
+        }
+        Shape::Tall => {
+            // The list takes what its rows need, up to two fifths of the height.
+            let most = (area.height / 5 * 2).max(5);
+            let rows = (app.hosts.len() as u16).saturating_add(2).clamp(5, most);
+            let split = [Constraint::Length(rows), Constraint::Min(0)];
+            let [top, bottom] = Layout::vertical(split).areas(area);
+            (Some(top), Some(bottom))
+        }
+        Shape::Compact if side_up => (None, Some(area)),
+        Shape::Compact => (Some(area), None),
+    };
 
-    // Inside the borders: one cell for the selection bar, one of padding on the right.
-    let width = usize::from(left.width.saturating_sub(4));
-    let items = app
-        .hosts
-        .iter()
-        .enumerate()
-        .map(|(i, alias)| host_item(app, alias, width, i == app.sel));
-    let title = format!(
-        "{} {}",
-        app.cfg.lang.pick("Hosts", "Máy chủ"),
-        app.hosts.len()
-    );
-    let block = panel(&title, on_list, th).padding(Padding::right(1));
-    let list = List::new(items)
-        .block(block)
-        .highlight_symbol(Line::styled("▎", th.accent))
-        .repeat_highlight_symbol(true)
-        .highlight_style(Style::new().bg(th.selection));
-    f.render_stateful_widget(list, left, &mut state);
-    app.list = state;
+    if let Some(left) = list_area {
+        // The scroll offset lives in the app; borrow it out while the rows borrow the app.
+        let mut state = std::mem::take(&mut app.list);
+        state.select(Some(app.sel));
+        let th = &app.cfg.theme;
+        let on_list = matches!(app.focus, Focus::List | Focus::Search);
+        let compact = app.shape != Shape::Wide;
+        // Inside the borders: one cell for the selection bar, one of padding on the right.
+        let width = usize::from(left.width.saturating_sub(4));
+        let items = app
+            .hosts
+            .iter()
+            .enumerate()
+            .map(|(i, alias)| host_item(app, alias, width, i == app.sel, compact));
+        let title = format!(
+            "{} {}",
+            app.cfg.lang.pick("Hosts", "Máy chủ"),
+            app.hosts.len()
+        );
+        let block = panel(&title, on_list, th).padding(Padding::right(1));
+        let list = List::new(items)
+            .block(block)
+            .highlight_symbol(Line::styled("▎", th.accent))
+            .repeat_highlight_symbol(true)
+            .highlight_style(Style::new().bg(th.selection));
+        f.render_stateful_widget(list, left, &mut state);
+        app.list = state;
+    }
 
+    let Some(right) = side_area else { return };
     let Some(alias) = app.alias() else {
         let k = &app.cfg.keys;
         let hint = match app.filter.is_empty() {
@@ -511,7 +595,14 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
         let spec = Span::raw(format!("  {kind} {value}  "));
         lines.push(Line::from(vec![spec, state]));
     }
-    let block = panel(alias, false, th).padding(Padding::new(1, 1, 1, 0));
+    // Outside landscape every row counts: no blank lines between the sections.
+    let dense = app.shape != Shape::Wide;
+    if dense {
+        lines.retain(|line| line.width() > 0);
+    }
+    // In a small window this panel is on top of the list, so it looks focused.
+    let on_top = app.shape == Shape::Compact;
+    let block = panel(alias, on_top, th).padding(Padding::new(1, 1, u16::from(!dense), 0));
     let details = Paragraph::new(lines).wrap(Wrap { trim: false });
     f.render_widget(details.block(block), area);
 }
@@ -578,9 +669,13 @@ fn snippets(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     );
 }
 
-fn files(view: &SftpView, th: &Theme, lang: Lang, f: &mut Frame, area: Rect) {
+fn files(view: &SftpView, th: &Theme, lang: Lang, tall: bool, f: &mut Frame, area: Rect) {
     let [panes, gauge] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
-    let split = Layout::horizontal([Constraint::Percentage(50); 2]).spacing(1);
+    // Portrait: local above remote, each with the full width.
+    let split = match tall {
+        true => Layout::vertical([Constraint::Percentage(50); 2]),
+        false => Layout::horizontal([Constraint::Percentage(50); 2]).spacing(1),
+    };
     let halves: [Rect; 2] = split.areas(panes);
     for side in [LOCAL, REMOTE] {
         let items = view.lists[side].iter().map(|e| match e.is_dir {
@@ -621,6 +716,7 @@ fn files(view: &SftpView, th: &Theme, lang: Lang, f: &mut Frame, area: Rect) {
 }
 
 /// One key hint. `on` is false when the key does nothing right now.
+#[derive(Clone)]
 struct Hint {
     key: String,
     text: &'static str,
@@ -723,14 +819,19 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                 true => hint("enter", "connect marked", "kết nối máy đã đánh dấu", true),
                 false => hint("enter", "shell", "shell", host),
             };
+            let mut connect = vec![enter];
+            if app.shape == Shape::Compact {
+                // Small windows keep the details off screen until asked for.
+                connect.push(hint(&key(k.info), "details", "chi tiết", host));
+            }
+            connect.extend([
+                hint(&key(k.sftp), "sftp", "sftp", host),
+                hint(&key(k.mark), "mark", "đánh dấu", host),
+                hint(&key(k.connect_tag), "by tag", "theo thẻ", host),
+                hint(&key(k.connect), "quick", "nhanh", true),
+            ]);
             vec![
-                vec![
-                    enter,
-                    hint(&key(k.sftp), "sftp", "sftp", host),
-                    hint(&key(k.mark), "mark", "đánh dấu", host),
-                    hint(&key(k.connect_tag), "by tag", "theo thẻ", host),
-                    hint(&key(k.connect), "quick", "nhanh", true),
-                ],
+                connect,
                 vec![
                     hint(&key(k.forwards), "forwards", "chuyển cổng", host),
                     hint(&key(k.snippets), "snippets", "snippet", host),
@@ -748,21 +849,80 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
     }
 }
 
-/// The line above the status line: a message if there is one, otherwise the
+/// Greedy line filling: hints in order, a new row when the next one does not
+/// fit. `None` marks the gap between two groups.
+fn lay(groups: &[Vec<Hint>], width: usize) -> Vec<Vec<Option<Hint>>> {
+    let mut rows: Vec<Vec<Option<Hint>>> = vec![vec![]];
+    let mut used = 0;
+    for group in groups {
+        for (i, hint) in group.iter().enumerate() {
+            let cells = hint.key.chars().count() + hint.text.chars().count() + 3;
+            let gap = if i == 0 && used > 0 { 2 } else { 0 };
+            if used > 0 && used + gap + cells > width {
+                rows.push(vec![]);
+                used = 0;
+            } else if gap > 0 {
+                rows.push_within(None);
+                used += gap;
+            }
+            rows.push_within(Some(hint.clone()));
+            used += cells;
+        }
+    }
+    rows
+}
+
+/// `Vec<Vec<T>>` as rows being filled: push onto the last row.
+trait PushWithin<T> {
+    fn push_within(&mut self, item: T);
+}
+
+impl<T> PushWithin<T> for Vec<Vec<T>> {
+    fn push_within(&mut self, item: T) {
+        if let Some(row) = self.last_mut() {
+            row.push(item);
+        }
+    }
+}
+
+/// Fits the hints into at most `rows` rows of `width` cells instead of
+/// cutting them off at the edge. If they still do not fit, the hints that do
+/// nothing right now are left out; only what remains after that is clipped.
+fn flow(mut groups: Vec<Vec<Hint>>, width: usize, rows: usize) -> Vec<Vec<Option<Hint>>> {
+    if lay(&groups, width).len() > rows {
+        for group in &mut groups {
+            group.retain(|hint| hint.on);
+        }
+        groups.retain(|group| !group.is_empty());
+    }
+    let mut out = lay(&groups, width);
+    while out.len() > rows.max(1) {
+        let extra = out.pop().unwrap_or_default();
+        out.push_within(None);
+        if let Some(last) = out.last_mut() {
+            last.extend(extra);
+        }
+    }
+    out
+}
+
+/// The lines above the status line: a message if there is one, otherwise the
 /// key hints. Hints that do nothing right now are faded.
-fn hints(app: &App, f: &mut Frame, area: Rect) {
+fn hints(app: &App, rows: Vec<Vec<Option<Hint>>>, f: &mut Frame, area: Rect) {
     let th = &app.cfg.theme;
+    let line = |y: u16| Rect::new(area.x, area.y + y, area.width, 1.min(area.height));
     if !app.msg.is_empty() {
         let msg = format!(" {}", clean(&app.msg).replace('\n', " "));
-        return f.render_widget(Line::styled(msg, th.accent), area);
+        return f.render_widget(Line::styled(msg, th.accent), line(0));
     }
     let faded = Style::new().fg(th.dim).add_modifier(Modifier::DIM);
-    let mut spans = vec![];
-    for (i, group) in hint_groups(app).into_iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" │", Style::new().fg(th.border)));
-        }
-        for hint in group {
+    for (y, row) in rows.into_iter().enumerate().take(area.height.into()) {
+        let mut spans = vec![];
+        for item in row {
+            let Some(hint) = item else {
+                spans.push(Span::styled(" │", Style::new().fg(th.border)));
+                continue;
+            };
             let (name, action) = match hint.on {
                 true => (Style::new().fg(th.key).bold(), Style::new().fg(th.dim)),
                 false => (faded, faded),
@@ -770,8 +930,8 @@ fn hints(app: &App, f: &mut Frame, area: Rect) {
             spans.push(Span::styled(format!(" {}", hint.key), name));
             spans.push(Span::styled(format!(" {} ", hint.text), action));
         }
+        f.render_widget(Line::from(spans), line(y as u16));
     }
-    f.render_widget(Line::from(spans), area);
 }
 
 /// Name and colour of the current mode, shown at the left of the status line.
@@ -814,7 +974,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
             let pane = at.saturating_sub(app.window) + 1;
             let word = lang.pick("pane", "khung");
             (
-                app.layout.name().to_string(),
+                app.layout.name(app.shape == Shape::Tall).to_string(),
                 format!("{alias} : {word} {pane}/{shown}"),
             )
         }
@@ -830,6 +990,27 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
             (format!("{} {word}", app.hosts.len()), alias.clone())
         }
     };
+    let meta = app.meta.get(&alias).filter(|_| tab.is_none_or(|t| t.saved));
+    if app.shape != Shape::Wide {
+        // Portrait and small windows: mode, host, one tag. Recording and
+        // broadcast stay, as marks: they change what typing does.
+        let mut left = vec![Span::styled(format!(" {name} "), badge)];
+        if tab.is_some_and(|t| t.log.is_some()) {
+            left.push(Span::styled(" ●", Style::new().fg(th.error).bg(th.bar)));
+        }
+        if app.broadcast {
+            let mark = Style::new().fg(BROADCAST).bg(th.bar).bold();
+            left.push(Span::styled(format!(" →{sessions}"), mark));
+        }
+        left.push(Span::styled(format!(" {middle}"), plain.fg(th.text)));
+        f.render_widget(Line::from(left), area);
+        let tag = meta.and_then(|m| tags(m).next().or(Some(m.grp.as_str())));
+        if let Some(tag) = tag.filter(|t| !t.is_empty()) {
+            let tag = Line::styled(format!(" {tag} "), section);
+            f.render_widget(tag.alignment(Alignment::Right), area);
+        }
+        return;
+    }
     let mut left = vec![
         Span::styled(format!(" {name} "), badge),
         Span::styled(format!(" {context} "), section),
@@ -853,7 +1034,6 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         ));
     }
 
-    let meta = app.meta.get(&alias).filter(|_| tab.is_none_or(|t| t.saved));
     let mut right = vec![];
     if let Some(meta) = meta {
         let all: Vec<&str> = tags(meta).collect();
@@ -929,7 +1109,9 @@ fn leader_menu(app: &App) -> (&'static str, Vec<(String, &'static str, &'static 
 fn which_key(app: &App, f: &mut Frame, body: Rect) {
     let th = &app.cfg.theme;
     let (title, entries) = leader_menu(app);
-    let rows = entries.len().div_ceil(2);
+    // Two columns where they fit, one on a narrow screen.
+    let columns = if body.width >= 64 { 2 } else { 1 };
+    let rows = entries.len().div_ceil(columns);
     let width = 76.min(body.width);
     let height = (rows as u16 + 2).min(body.height);
     let area = Rect::new(
@@ -938,7 +1120,7 @@ fn which_key(app: &App, f: &mut Frame, body: Rect) {
         width,
         height,
     );
-    let column = usize::from(width.saturating_sub(4)) / 2;
+    let column = usize::from(width.saturating_sub(4)) / columns;
     let cell = |i: usize| -> Vec<Span> {
         let Some((key, en, vi)) = entries.get(i) else {
             return vec![];
@@ -959,7 +1141,13 @@ fn which_key(app: &App, f: &mut Frame, body: Rect) {
         ]
     };
     let lines: Vec<Line> = (0..rows)
-        .map(|r| Line::from([cell(r), cell(r + rows)].concat()))
+        .map(|r| {
+            Line::from(
+                (0..columns)
+                    .flat_map(|c| cell(r + c * rows))
+                    .collect::<Vec<_>>(),
+            )
+        })
         .collect();
     f.render_widget(Clear, area);
     f.render_widget(Paragraph::new(lines).block(panel(title, true, th)), area);
