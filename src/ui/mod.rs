@@ -2,6 +2,7 @@
 
 mod draw;
 mod files;
+mod panes;
 mod term;
 
 use std::collections::{BTreeSet, HashMap};
@@ -33,6 +34,7 @@ use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
+use panes::Layout;
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -170,6 +172,10 @@ pub struct App {
     leader: bool,
     /// Typing in one session goes to every live session.
     broadcast: bool,
+    /// How many sessions the session view shows side by side.
+    layout: Layout,
+    /// Index, among the terminal sessions, of the first one shown.
+    window: usize,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
     popup: Option<Popup>,
@@ -277,6 +283,8 @@ impl App {
             next_id: 1,
             leader: false,
             broadcast: false,
+            layout: Layout::Single,
+            window: 0,
             body: (80, 24),
             popup: None,
             msg: String::new(),
@@ -404,14 +412,71 @@ impl App {
         }
     }
 
-    /// Opens one session per host and puts the view on the first of them.
+    /// Opens one session per host and shows them together.
     fn open_many(&mut self, aliases: &[String]) {
-        let first = self.tabs.len() + 1;
+        let first = self.tabs.len();
         for alias in aliases {
             self.open(alias, false);
         }
-        if self.tabs.len() >= first {
-            self.active = first;
+        if self.tabs.len() > first {
+            self.active = first + 1;
+            self.window = self.terms().len() - (self.tabs.len() - first);
+        }
+        // Side by side, unless the layout already has room.
+        let fit = Layout::fit(self.tabs.len() - first);
+        if fit.panes() > self.layout.panes() {
+            self.layout = fit;
+        }
+    }
+
+    /// Tab indices of the terminal sessions, in tab order.
+    fn terms(&self) -> Vec<usize> {
+        let is_term = |i: &usize| matches!(self.tabs[*i].kind, Kind::Term { .. });
+        (0..self.tabs.len()).filter(is_term).collect()
+    }
+
+    /// Tab indices of the sessions shown together with the active one.
+    fn shown(&mut self) -> Vec<usize> {
+        let terms = self.terms();
+        let active = self.active.checked_sub(1);
+        let Some(at) = terms.iter().position(|i| Some(*i) == active) else {
+            return vec![];
+        };
+        let size = self.layout.panes();
+        self.window = panes::window(self.window, at, size, terms.len());
+        terms[self.window..(self.window + size).min(terms.len())].to_vec()
+    }
+
+    /// Moves focus to the pane in a vim direction, if there is one.
+    fn focus_pane(&mut self, direction: char) {
+        let shown = self.shown();
+        let slot = shown.iter().position(|i| i + 1 == self.active);
+        let to = slot.and_then(|s| self.layout.neighbor(s, direction, shown.len()));
+        if let Some(to) = to {
+            self.active = shown[to] + 1;
+        }
+    }
+
+    /// Closes the active tab. From a session the view stays with the sessions:
+    /// the one that slides into its place, else the one before it.
+    fn close_pane(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        let is_term = |t: &Tab| matches!(t.kind, Kind::Term { .. });
+        if !is_term(&self.close_tab(i)) {
+            return;
+        }
+        let after = (i..self.tabs.len()).find(|j| is_term(&self.tabs[*j]));
+        let before = (0..i).rev().find(|j| is_term(&self.tabs[*j]));
+        self.active = after.or(before).map_or(0, |j| j + 1);
+    }
+
+    fn scroll(&mut self, by: isize) {
+        let kind = self.active.checked_sub(1).map(|i| &mut self.tabs[i].kind);
+        if let Some(Kind::Term { parser, .. }) = kind {
+            let at = parser.screen().scrollback().saturating_add_signed(by);
+            parser.screen_mut().set_scrollback(at);
         }
     }
 
@@ -728,30 +793,30 @@ impl App {
         self.active = (self.active + if forward { 1 } else { n - 1 }) % n;
     }
 
-    /// Tab control, reachable from every tab. Pressing the leader twice
-    /// sends it through to the remote shell.
+    /// Tab and pane control, reachable from every tab. Pressing the leader
+    /// twice sends it through to the remote shell.
     fn leader_key(&mut self, k: KeyEvent, again: bool) {
-        let term = match self.active.checked_sub(1).map(|i| &mut self.tabs[i].kind) {
-            Some(Kind::Term { parser, tx }) => Some((parser, tx)),
-            _ => None,
-        };
-        let scroll = |parser: &mut vt100::Parser<term::Replies>, by: isize| {
-            let at = parser.screen().scrollback().saturating_add_signed(by);
-            parser.screen_mut().set_scrollback(at);
-        };
-        match (k.code, term) {
-            (_, Some(_)) if again => {
+        let ctrl = k.modifiers == KeyModifiers::CONTROL;
+        match k.code {
+            _ if again && self.active > 0 => {
                 let input = TermInput::Key(k);
                 send_input(&mut self.tabs, self.active - 1, self.broadcast, &input);
             }
-            (KeyCode::Char('b'), _) => self.toggle_broadcast(),
-            (KeyCode::PageUp | KeyCode::Char('k'), Some((parser, _))) => scroll(parser, 10),
-            (KeyCode::PageDown | KeyCode::Char('j'), Some((parser, _))) => scroll(parser, -10),
-            (KeyCode::Tab | KeyCode::Char('n'), _) => self.cycle(true),
-            (KeyCode::BackTab | KeyCode::Char('p'), _) => self.cycle(false),
-            (KeyCode::Char('h'), _) => self.active = 0,
-            (KeyCode::Char('x'), _) if self.active > 0 => drop(self.close_tab(self.active - 1)),
-            (KeyCode::Char(c @ '1'..='9'), _) => {
+            KeyCode::PageUp => self.scroll(10),
+            KeyCode::PageDown => self.scroll(-10),
+            KeyCode::Char('u') if ctrl => self.scroll(10),
+            KeyCode::Char('d') if ctrl => self.scroll(-10),
+            KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) => self.focus_pane(c),
+            KeyCode::Char('L') => {
+                self.layout = self.layout.next();
+                self.msg = format!("layout: {}", self.layout.name());
+            }
+            KeyCode::Char('b') => self.toggle_broadcast(),
+            KeyCode::Tab | KeyCode::Char('n') => self.cycle(true),
+            KeyCode::BackTab | KeyCode::Char('p') => self.cycle(false),
+            KeyCode::Char('q') => self.active = 0,
+            KeyCode::Char('x' | 'd') => self.close_pane(),
+            KeyCode::Char(c @ '1'..='9') => {
                 let i = c as usize - '1' as usize;
                 if i <= self.tabs.len() {
                     self.active = i;
@@ -1008,7 +1073,7 @@ impl App {
             (KeyCode::Enter | KeyCode::Right | KeyCode::Char('l'), _) => view.enter(),
             (KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h'), _) => view.up(),
             (KeyCode::Char('R'), _) => view.refresh(),
-            (KeyCode::Char('q'), _) => return drop(self.close_tab(self.active - 1)),
+            (KeyCode::Char('q'), _) => return self.close_pane(),
             (KeyCode::Char('m'), _) => {
                 return self.prompt("New directory", "Name", false, After::SftpMkdir);
             }
@@ -1127,8 +1192,10 @@ impl App {
              \x20 forward syntax:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
              ANY TAB (leader = Ctrl-{leader})\n\
              \x20 leader Tab/n  next tab      leader p    previous tab\n\
-             \x20 leader 1-9    go to tab     leader h    host list\n\
-             \x20 leader x      close tab     leader k/j  scroll back / forward\n\
+             \x20 leader 1-9    go to tab     leader q    host list\n\
+             \x20 leader h/j/k/l focus pane   leader L    cycle layout: 1, 2 columns, 2x2, 3 columns\n\
+             \x20 leader b      broadcast typing to all sessions (also Alt-b)\n\
+             \x20 leader x / d  close pane    leader PgUp/PgDn  scroll (also Ctrl-u/Ctrl-d)\n\
              \x20 leader leader send Ctrl-{leader} to the remote\n\n\
              SFTP\n\
              \x20 Tab switch pane   Enter/l open dir   h/Backspace parent\n\
