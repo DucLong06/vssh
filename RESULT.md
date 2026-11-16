@@ -500,3 +500,199 @@ b46324a refactor: split into library and thin binary
 ```
 
 `BRIEF-CI.md` is still untracked; it was read and executed but not committed.
+
+
+---
+
+# Update: UI restyle, quick connect, README media (BRIEF-UI.md)
+
+Run on 2026-11-16 on the same machine, at commit `3acf538`. Output is pasted
+as produced. Test count and binary size here supersede the earlier sections.
+
+## What changed
+
+| Brief item | Result |
+|------------|--------|
+| Two-tier host rows | Line 1: status dot, pin, alias (bold), latency right-aligned. Line 2, quieter: `user@host[:port] · group` and tag badges. Badge colour is a hash of the name over a fixed 8-colour palette. A long address is shortened with `…` before group or tags are dropped. |
+| Detail panel | Sections CONNECTION (address, port, user, key), ORGANISATION (group, tags, notes), ACTIVITY (last used, sessions, vault), FORWARDS, under a summary line with address and reachability. |
+| Status dots | Green with connect time (`<1 ms` when it rounds to zero), red `down`, hollow gray when not checked. The red state covers refused as well as timed-out connections, so it is labelled `down`, not `timeout`. |
+| Borders and focus | Thick accent border on the focused panel, thin rounded muted border on the others, one cell of padding in every panel. |
+| Header and bottom bar | Header: `vssh` badge, tabs, and a breadcrumb on the hosts tab (`hosts › web-01 › forwards`, `hosts › /#web`), plus marked / forwarding / vault state on the right. Bottom bar: keys of whatever has focus, key names highlighted. |
+| Theme, backwards compatible | New entries `warn`, `bar`, `key` and key `connect`, all with defaults. A config written before this change is covered by a unit test (`config_from_before_the_restyle_still_loads`). |
+| Quick connect | `c`: form for `user@host[:port]` and an optional password, opens a session tab. |
+| README media | `docs/img/demo.gif` and four screenshots, embedded in both language sections. |
+
+All existing keys still do what they did; nothing was rebound.
+
+## Quick connect: checked live
+
+Against the demo container with an empty throwaway HOME (so no key could log in):
+
+- malformed input is rejected in the form (`expected user@host or user@host:port`);
+- a wrong password leads to the password prompt, the right one then logs in (`sshd` log: `Failed password`, then `Accepted password for root`);
+- afterwards the HOME contained only `.ssh/known_hosts` and vssh's database, with 0 host rows and 0 snippet rows; no `~/.ssh/config`, no vault file.
+
+`known_hosts` is written on purpose: the host key is verified for quick connects exactly as for saved hosts.
+
+## README media
+
+Recorded with vhs 0.12.1 (downloaded to a temp directory together with ttyd; the
+system Chrome and ffmpeg were used) by `docs/img/demo.sh`, which was run from a
+clean state for the committed files. The app in the pictures is the release
+binary; nothing is drawn or edited.
+
+What is staged in them: the six hosts are demo entries. Four point at one local
+Alpine container (`*.localhost:2222`), two at ports where nothing listens, to
+show the `down` state. Groups, tags, notes, pins and snippets are inserted into
+the app's database by the script. "Sessions 2" and "Last used" come from two
+real sessions the tape opens off camera. Latencies are real loopback numbers.
+Outbound port 22 is blocked on this network, so no internet host could be shown.
+
+## Real output
+
+### `cargo fmt --check`
+
+```
+exit code: 0
+```
+
+### `cargo build --release` (after `cargo clean --release`)
+
+```
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling subtle v2.6.1
+   ... (222 more "Compiling" lines elided) ...
+   Compiling russh v0.65.1
+   Compiling rusqlite v0.43.0
+   Compiling vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `release` profile [optimized] target(s) in 2m 25s
+exit code: 0
+```
+
+228 crates compiled, 0 warnings.
+
+```
+-rwxrwxr-x 2 longhd longhd 6235640 Nov 16 17:21 target/release/vssh
+vssh 0.1.0
+```
+
+### `cargo test`
+
+```
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.24s
+     Running unittests src/lib.rs (target/debug/deps/vssh-ec2a087e5b7d25dc)
+
+running 40 tests
+test config::tests::config_from_before_the_restyle_still_loads ... ok
+test ssh::tests::host_key_policy ... ok
+test config::tests::partial_config_keeps_defaults ... ok
+test ssh::tests::key_of_another_type_does_not_count_as_unknown ... ok
+test config::tests::rejects_typos_and_bad_colours ... ok
+test ssh::tests::known_key_types_are_offered_first ... ok
+test ssh::forward::tests::socks5_rejects_what_it_cannot_do ... ok
+test store::ssh_config::tests::glob_patterns ... ok
+test store::ssh_config::tests::lists_only_concrete_hosts ... ok
+test store::ssh_config::tests::multi_valued_add_remove ... ok
+test ssh::forward::tests::socks5_connect_requests ... ok
+test ssh::tests::target_resolution ... ok
+test store::ssh_config::tests::forwards_parse_and_format ... ok
+test ssh::tests::quick_connect_targets ... ok
+test store::ssh_config::tests::parses_separators_quotes_and_case ... ok
+test store::ssh_config::tests::first_host_in_empty_file ... ok
+test store::ssh_config::tests::line_breaks_cannot_inject_directives ... ok
+test store::ssh_config::tests::set_replaces_adds_and_removes ... ok
+test store::ssh_config::tests::host_lifecycle ... ok
+test ui::draw::tests::formats_sizes_and_ages ... ok
+test ui::draw::tests::chips_are_stable_and_popups_fit ... ok
+test ui::term::tests::answers_terminal_queries ... ok
+test ui::term::tests::renders_text_colours_and_wide_chars ... ok
+test ui::tests::clean_strips_escape_sequences ... ok
+test ui::term::tests::encodes_keys_like_xterm ... ok
+test ui::tests::tag_filter_matches_tags_and_group_by_prefix ... ok
+test store::ssh_config::tests::round_trip_is_lossless ... ok
+test store::ssh_config::tests::resolves_like_openssh ... ok
+test store::db::tests::metadata_and_snippets ... ok
+test ui::files::tests::remote_paths ... ok
+test ui::files::tests::local_pane_operations ... ok
+test vault::tests::malformed_plaintext_is_rejected_not_trusted ... ok
+test store::ssh_config::tests::save_backs_up_once_and_is_private ... ok
+test vault::tests::set_takes_the_secret_out_of_the_caller ... ok
+test vault::tests::file_is_private_opaque_and_renonced ... ok
+test vault::tests::debug_and_errors_never_show_secrets ... ok
+test vault::tests::create_refuses_to_overwrite_or_use_empty_passphrase ... ok
+test vault::tests::round_trip ... ok
+test vault::tests::wrong_passphrase_is_rejected ... ok
+test vault::tests::tampering_is_detected ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running unittests src/main.rs (target/debug/deps/vssh-a08097de3898dc4f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/security.rs (target/debug/deps/security-20489d7f43bd4846)
+
+running 11 tests
+test comments_and_includes_are_inert ... ok
+test db_module_builds_no_sql_from_strings ... ok
+test identity_file_expands_only_a_leading_home ... ok
+test pathological_patterns_do_not_hang ... ok
+test hostile_host_line_stays_in_its_own_block ... ok
+test edits_cannot_inject_blocks_or_directives ... ok
+test vault_debug_and_errors_do_not_leak ... ok
+test vault_file_stays_private_and_unique ... ok
+test vault_rejects_anything_that_is_not_an_intact_vault ... ok
+test parser_never_panics_and_keeps_its_meaning ... ok
+test sql_metacharacters_are_stored_as_data ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+   Doc-tests vssh
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit code: 0
+```
+
+51 tests: 40 in-crate, 11 in `tests/security.rs`.
+
+### `cargo clippy -- -D warnings`
+
+```
+    Checking vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.12s
+exit code: 0
+```
+
+### `cargo clippy --all-targets -- -D warnings` (what CI runs)
+
+```
+    Checking vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.21s
+exit code: 0
+```
+
+## Not done / not verified
+
+- Rendering is checked by looking at the recorded screenshots, not by automated tests; only the helpers (shortening, latency label, colour hashing, config defaults, target parsing) have unit tests.
+- Only one terminal theme and size was captured (1280x680, Catppuccin Mocha). Light terminal backgrounds and very narrow windows were not looked at; the new `bar` default is a dark colour.
+- The help popup and the forwards / snippets panels got the new panel style but no layout redesign.
+- Startup time was not re-measured.
+- `cargo audit` was not re-run in this round (no dependency changed).
+
+## Commits in this round
+
+```
+3acf538 docs: README shows the new UI and documents quick connect
+4924a19 docs(img): README media recorded from the real app with vhs
+9bc61b6 feat(ui): restyle the TUI
+2caab58 feat: quick connect without saving, new theme entries
+```
+
+`BRIEF-UI.md` and `BRIEF-CI.md` are untracked and left that way. A `plans/`
+directory appeared in the repo during this work; it is not mine and is untouched.
