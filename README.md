@@ -24,7 +24,7 @@ plain `ssh` keeps working with everything vssh edits.
 | **Leader menu (`Ctrl-a`)** | **SFTP** |
 | ![Which-key popup listing the session keys](docs/img/which-key.png) | ![Dual-pane SFTP browser](docs/img/sftp.png) |
 
-The pictures show the Vietnamese interface (`vssh --lang vi`); English is the default. They are captured from the real app by [`docs/img/demo.sh`](docs/img/demo.sh) (terminal contents rendered to images); the hosts in them are a local demo container.
+All pictures are captured from the real app by [`docs/img/demo.sh`](docs/img/demo.sh) (terminal contents rendered to images), in this interface language; the hosts in them are a local demo container.
 
 Linux and macOS. Pure Rust SSH ([russh](https://github.com/warp-tech/russh)); no `ssh` binary needed.
 

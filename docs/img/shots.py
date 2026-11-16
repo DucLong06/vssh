@@ -19,8 +19,10 @@ DEMO = Path("/tmp/vssh-demo")
 OUT = Path(__file__).resolve().parent
 COLS, ROWS = 124, 32
 SOCKET = "vssh-shots"
-# The README pictures show the Vietnamese interface.
-LANG = "vi"
+# Both languages: the English README shows the English interface, the
+# Vietnamese one shows Vietnamese. Shots run once per language; Vietnamese
+# files get a .vi suffix, demo GIFs demo.gif / demo.vi.gif.
+LANGS = [("en", ""), ("vi", ".vi")]
 # the demo password is assembled so no password-shaped literal sits in the tree
 DEMO_PW = "demo-" + "pass" + "word"
 
@@ -127,19 +129,19 @@ def text(string, wait=0.4):
     time.sleep(wait)
 
 
-def start():
+def start(lang):
     subprocess.run(["tmux", "-L", SOCKET, "kill-server"], capture_output=True)
     env = f"env -u SSH_AUTH_SOCK HOME={DEMO}/home TERM=xterm-256color"
     tmux("new-session", "-d", "-s", "v", "-x", str(COLS), "-y", str(ROWS), "-c", f"{DEMO}/work",
-         f"{env} {DEMO}/vssh --lang {LANG}; sleep 600")
+         f"{env} {DEMO}/vssh --lang {lang}; sleep 600")
     time.sleep(1.2)
 
 
 frames = []
 
 
-def shot(name=None):
-    """Captures the screen as a GIF frame, and as <name>.png if given."""
+def shot(name=None, suffix=""):
+    """Captures the screen as a GIF frame, and as <name><suffix>.png if given."""
     page = DEMO / f"frame{len(frames):02}.html"
     png = page.with_suffix(".png")
     page.write_text(to_html(tmux("capture-pane", "-e", "-p", "-t", "v")))
@@ -149,12 +151,15 @@ def shot(name=None):
                    check=True, capture_output=True)
     frames.append(png)
     if name:
-        (OUT / f"{name}.png").write_bytes(png.read_bytes())
+        (OUT / f"{name}{suffix}.png").write_bytes(png.read_bytes())
 
 
-def main():
+def run_shots(lang, suffix):
+    """One full pass of the shots, in one language. Fills `frames`."""
+    global frames
+    frames = []
     # Off camera: two real sessions, so the usage numbers in the pictures are real.
-    start()
+    start(lang)
     for _ in range(2):
         text("/web-01")
         keys("Enter", "Enter", wait=3)
@@ -183,12 +188,13 @@ def main():
         ("web-01", "reload nginx", "nginx -s reload"),
     ])
     db.commit()
+    db.close()
 
-    start()
+    start(lang)
     shot()
     keys("r", wait=2.5)           # reachability
     keys("j")
-    shot("hosts")
+    shot("hosts", suffix)
     text("/#web")                 # filter by tag
     shot()
     keys("Escape")
@@ -203,9 +209,9 @@ def main():
     keys("M-b")                   # broadcast: one command, three shells
     text('echo "shell $$ on $(hostname)"')
     keys("Enter", wait=1)
-    shot("broadcast")
+    shot("broadcast", suffix)
     keys("C-a")                   # the leader menu
-    shot("which-key")
+    shot("which-key", suffix)
     keys("w")
     keys("g")                     # 2x2 grid
     shot()
@@ -217,7 +223,7 @@ def main():
     keys("Tab")
     text(DEMO_PW)
     keys("C-s")                   # tick "save host and password"
-    shot("quick-connect")
+    shot("quick-connect", suffix)
     keys("Escape")
 
     keys("g")
@@ -225,7 +231,7 @@ def main():
     keys("s", wait=3)             # SFTP
     keys("Tab")
     keys("j", "j")
-    shot("sftp")
+    shot("sftp", suffix)
     keys("q")
     shot()
     subprocess.run(["tmux", "-L", SOCKET, "kill-server"], capture_output=True)
@@ -235,8 +241,14 @@ def main():
     listing.write_text("".join(f"file '{p}'\nduration 1.6\n" for p in frames + frames[-1:]))
     palette = "split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=none"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-                    "-vf", palette, str(OUT / "demo.gif")], check=True)
-    print(f"{len(frames)} frames, {sum(1 for _ in OUT.glob('*.png'))} screenshots in {OUT}")
+                    "-vf", palette, str(OUT / f"demo{suffix}.gif")], check=True)
+    print(f"[{lang}] {len(frames)} frames -> demo{suffix}.gif")
+
+
+def main():
+    for lang, suffix in LANGS:
+        run_shots(lang, suffix)
+    print(f"{sum(1 for _ in OUT.glob('*.png'))} screenshots in {OUT}")
 
 
 if __name__ == "__main__":
