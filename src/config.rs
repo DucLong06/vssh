@@ -1,5 +1,6 @@
 //! `~/.config/vssh/config.toml`: theme and keybindings. Every field is optional.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{fs, io};
 
@@ -20,11 +21,46 @@ pub fn data_dir() -> PathBuf {
     home().join(".local/share/vssh")
 }
 
+/// Language of the key hints, the leader menu and the help screen.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Lang {
+    #[default]
+    En,
+    Vi,
+}
+
+impl Lang {
+    /// `en` or `vi`, as written in the config, `--lang` and `VSSH_LANG`.
+    pub fn parse(code: &str) -> Result<Self> {
+        match code {
+            "en" => Ok(Self::En),
+            "vi" => Ok(Self::Vi),
+            other => anyhow::bail!("unknown language {other:?}: use en or vi"),
+        }
+    }
+
+    /// Picks the text for this language.
+    pub fn pick<'a>(self, en: &'a str, vi: &'a str) -> &'a str {
+        match self {
+            Self::En => en,
+            Self::Vi => vi,
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub theme: Theme,
     pub keys: Keys,
+    pub lang: Lang,
+    /// Log every session from the start. Off by default: a log holds
+    /// everything the terminal showed, secrets included.
+    pub log_sessions: bool,
+    /// Login scripts: host alias to a command typed into the shell once it
+    /// is up. (`RemoteCommand` in the ssh config replaces the shell instead.)
+    pub exec: HashMap<String, String>,
     /// TCP-probe every host at startup. Off by default: it touches every
     /// machine in the ssh config on each launch.
     pub ping_on_start: bool,
@@ -92,6 +128,8 @@ pub struct Keys {
     pub sftp: char,
     /// Quick connect: a one-off session that is not saved.
     pub connect: char,
+    /// Open a session on every host with a tag.
+    pub connect_tag: char,
     pub forwards: char,
     pub snippets: char,
     pub add: char,
@@ -114,6 +152,7 @@ impl Default for Keys {
             search: '/',
             sftp: 's',
             connect: 'c',
+            connect_tag: 'T',
             forwards: 'f',
             snippets: 'n',
             add: 'a',
@@ -196,6 +235,38 @@ mod tests {
             (d.warn, d.bar, d.key)
         );
         assert_eq!(c.keys.connect, 'c');
+    }
+
+    #[test]
+    fn login_scripts_and_logging() {
+        let c: Config = toml::from_str(
+            "log_sessions = true\n[exec]\nweb-01 = \"cd /srv/app && git status\"\n\"db.prod\" = \"psql\"\n",
+        )
+        .unwrap();
+        assert!(c.log_sessions);
+        assert_eq!(c.exec["web-01"], "cd /srv/app && git status");
+        assert_eq!(c.exec["db.prod"], "psql");
+        let none: Config = toml::from_str("").unwrap();
+        assert!(!none.log_sessions && none.exec.is_empty());
+    }
+
+    #[test]
+    fn language_setting() {
+        assert_eq!(toml::from_str::<Config>("").unwrap().lang, Lang::En);
+        assert_eq!(
+            toml::from_str::<Config>("lang = \"vi\"").unwrap().lang,
+            Lang::Vi
+        );
+        assert!(toml::from_str::<Config>("lang = \"fr\"").is_err());
+        assert_eq!(Lang::parse("vi").unwrap(), Lang::Vi);
+        assert!(Lang::parse("vi_VN").is_err() && Lang::parse("").is_err());
+        assert_eq!(
+            (
+                Lang::En.pick("quit", "thoát"),
+                Lang::Vi.pick("quit", "thoát")
+            ),
+            ("quit", "thoát")
+        );
     }
 
     #[test]
