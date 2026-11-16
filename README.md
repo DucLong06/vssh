@@ -8,10 +8,21 @@ A terminal SSH manager: host list on the left, details or a live session on
 the right, vim keys everywhere. Hosts live in your normal `~/.ssh/config`, so
 plain `ssh` keeps working with everything vssh edits.
 
+![vssh: host list, tag filter, port forward, quick connect, session and SFTP](docs/img/demo.gif)
+
 - SSH sessions in tabs, with a built-in terminal emulator
+- Quick connect to `user@host` without saving anything
 - Dual-pane SFTP browser with a progress bar
 - Local, remote and dynamic (SOCKS5) port forwards per host
 - Encrypted password vault, command snippets, groups and tags, fuzzy search
+
+| Host list and details | Quick connect |
+|---|---|
+| ![Host list with status dots, latency, groups and tag badges](docs/img/hosts.png) | ![Quick connect form](docs/img/quick-connect.png) |
+| **Session** | **SFTP** |
+| ![SSH session in a tab](docs/img/session.png) | ![Dual-pane SFTP browser](docs/img/sftp.png) |
+
+The media are recorded from the real app by [`docs/img/demo.sh`](docs/img/demo.sh); the hosts in them are a local demo container.
 
 Linux and macOS. Pure Rust SSH ([russh](https://github.com/warp-tech/russh)); no `ssh` binary needed.
 
@@ -31,6 +42,12 @@ cargo build --release
 3. Login tries your SSH agent, then key files, then the vault password. If all are refused, vssh asks for a password once.
 4. The first time you reach a host its key is saved to `~/.ssh/known_hosts`. If that key ever changes, vssh refuses to connect.
 5. `Ctrl-a h` returns to the host list, `Ctrl-a x` closes the tab, `q` quits.
+
+`r` checks which hosts answer: a green dot with the connect time, a red dot for hosts that are down, a hollow gray dot for hosts not checked yet.
+
+## Quick connect
+
+Press `c`, type `user@host` or `user@host:port`, optionally a password, and press `Enter`. A session opens in a tab. Nothing is saved: no entry in `~/.ssh/config`, no vault entry, no statistics; the password is used for that session only. The host key is still checked and recorded in `~/.ssh/known_hosts`, as with `ssh`.
 
 ## Adding a server
 
@@ -77,6 +94,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 |-------|-----|--------|
 | Host list | `j` `k` `g` `G` | move, first, last |
 | | `Enter` / `s` | open shell / SFTP browser |
+| | `c` | quick connect (not saved) |
 | | `/` | search (`#tag` for a tag or group) |
 | | `a` `e` `d` `y` | add, edit, delete, duplicate host |
 | | `p` / `Space` | pin / mark host (snippets run on all marked hosts) |
@@ -120,12 +138,14 @@ A forward is typed like the `ssh` flags: `L 8080 localhost:80`, `R 9000 localhos
 ping_on_start = false   # check every host at launch
 
 [theme]                 # colour names or "#rrggbb"
-accent = "cyan"         # also: border, text, dim, selection, ok, error
+accent = "cyan"         # also: border, text, dim, selection, ok, error, warn, bar, key
 
 [keys]                  # one character each; leader is pressed with Ctrl
-leader = "a"            # also: quit, search, sftp, forwards, snippets, add, edit,
-quit = "q"              # delete, duplicate, pin, mark, ping, password, vault, help
+leader = "a"            # also: quit, search, sftp, connect, forwards, snippets, add,
+quit = "q"              # edit, delete, duplicate, pin, mark, ping, password, vault, help
 ```
+
+Entries you leave out keep their defaults, so a config written for an older version still works.
 
 ## Not supported yet
 
@@ -155,10 +175,21 @@ chi tiết hoặc phiên làm việc bên phải, dùng phím kiểu vim ở m�
 được lưu ngay trong `~/.ssh/config` quen thuộc, nên lệnh `ssh` thông thường
 vẫn dùng được mọi thứ vssh chỉnh sửa.
 
+![vssh: danh sách máy chủ, lọc theo thẻ, chuyển tiếp cổng, kết nối nhanh, phiên làm việc và SFTP](docs/img/demo.gif)
+
 - Nhiều phiên SSH trong các tab, có sẵn trình giả lập terminal
+- Kết nối nhanh tới `user@host` mà không lưu lại gì
 - Trình duyệt SFTP hai khung, có thanh tiến độ
 - Chuyển tiếp cổng local, remote và dynamic (SOCKS5) cho từng máy chủ
 - Kho mật khẩu mã hoá, snippet lệnh, nhóm và thẻ (tag), tìm kiếm mờ
+
+| Danh sách máy chủ và chi tiết | Kết nối nhanh |
+|---|---|
+| ![Danh sách máy chủ với chấm trạng thái, độ trễ, nhóm và thẻ](docs/img/hosts.png) | ![Biểu mẫu kết nối nhanh](docs/img/quick-connect.png) |
+| **Phiên làm việc** | **SFTP** |
+| ![Phiên SSH trong một tab](docs/img/session.png) | ![Trình duyệt SFTP hai khung](docs/img/sftp.png) |
+
+Hình ảnh được ghi lại từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh); các máy chủ trong hình là một container demo chạy trên máy.
 
 Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
 
@@ -178,6 +209,12 @@ cargo build --release
 3. Việc đăng nhập thử lần lượt SSH agent, các file khoá, rồi mật khẩu trong kho. Nếu tất cả bị từ chối, vssh hỏi mật khẩu một lần.
 4. Lần đầu kết nối, khoá của máy chủ được lưu vào `~/.ssh/known_hosts`. Nếu sau này khoá đó thay đổi, vssh từ chối kết nối.
 5. `Ctrl-a h` quay về danh sách máy chủ, `Ctrl-a x` đóng tab, `q` thoát.
+
+`r` kiểm tra máy chủ nào phản hồi: chấm xanh kèm thời gian kết nối, chấm đỏ cho máy không kết nối được, chấm xám rỗng cho máy chưa kiểm tra.
+
+## Kết nối nhanh
+
+Nhấn `c`, gõ `user@host` hoặc `user@host:port`, có thể thêm mật khẩu, rồi nhấn `Enter`. Một phiên làm việc mở ra trong tab. Không có gì được lưu: không thêm vào `~/.ssh/config`, không lưu vào kho mật khẩu, không ghi thống kê; mật khẩu chỉ dùng cho phiên đó. Khoá máy chủ vẫn được kiểm tra và ghi vào `~/.ssh/known_hosts`, giống như `ssh`.
 
 ## Thêm máy chủ
 
@@ -224,6 +261,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 |-------|------|----------|
 | Danh sách máy chủ | `j` `k` `g` `G` | di chuyển, về đầu, về cuối |
 | | `Enter` / `s` | mở shell / trình duyệt SFTP |
+| | `c` | kết nối nhanh (không lưu) |
 | | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm) |
 | | `a` `e` `d` `y` | thêm, sửa, xoá, nhân bản máy chủ |
 | | `p` / `Space` | ghim / đánh dấu máy chủ (snippet chạy trên mọi máy đã đánh dấu) |
@@ -267,12 +305,14 @@ Chuyển tiếp cổng được gõ giống cờ của `ssh`: `L 8080 localhost:
 ping_on_start = false   # kiểm tra mọi máy chủ khi khởi động
 
 [theme]                 # tên màu hoặc "#rrggbb"
-accent = "cyan"         # còn có: border, text, dim, selection, ok, error
+accent = "cyan"         # còn có: border, text, dim, selection, ok, error, warn, bar, key
 
 [keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
-leader = "a"            # còn có: quit, search, sftp, forwards, snippets, add, edit,
-quit = "q"              # delete, duplicate, pin, mark, ping, password, vault, help
+leader = "a"            # còn có: quit, search, sftp, connect, forwards, snippets, add,
+quit = "q"              # edit, delete, duplicate, pin, mark, ping, password, vault, help
 ```
+
+Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hình viết cho phiên bản cũ vẫn dùng được.
 
 ## Chưa hỗ trợ
 
