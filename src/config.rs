@@ -20,11 +20,40 @@ pub fn data_dir() -> PathBuf {
     home().join(".local/share/vssh")
 }
 
+/// Language of the key hints, the leader menu and the help screen.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Lang {
+    #[default]
+    En,
+    Vi,
+}
+
+impl Lang {
+    /// `en` or `vi`, as written in the config, `--lang` and `VSSH_LANG`.
+    pub fn parse(code: &str) -> Result<Self> {
+        match code {
+            "en" => Ok(Self::En),
+            "vi" => Ok(Self::Vi),
+            other => anyhow::bail!("unknown language {other:?}: use en or vi"),
+        }
+    }
+
+    /// Picks the text for this language.
+    pub fn pick<'a>(self, en: &'a str, vi: &'a str) -> &'a str {
+        match self {
+            Self::En => en,
+            Self::Vi => vi,
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub theme: Theme,
     pub keys: Keys,
+    pub lang: Lang,
     /// TCP-probe every host at startup. Off by default: it touches every
     /// machine in the ssh config on each launch.
     pub ping_on_start: bool,
@@ -199,6 +228,25 @@ mod tests {
             (d.warn, d.bar, d.key)
         );
         assert_eq!(c.keys.connect, 'c');
+    }
+
+    #[test]
+    fn language_setting() {
+        assert_eq!(toml::from_str::<Config>("").unwrap().lang, Lang::En);
+        assert_eq!(
+            toml::from_str::<Config>("lang = \"vi\"").unwrap().lang,
+            Lang::Vi
+        );
+        assert!(toml::from_str::<Config>("lang = \"fr\"").is_err());
+        assert_eq!(Lang::parse("vi").unwrap(), Lang::Vi);
+        assert!(Lang::parse("vi_VN").is_err() && Lang::parse("").is_err());
+        assert_eq!(
+            (
+                Lang::En.pick("quit", "thoát"),
+                Lang::Vi.pick("quit", "thoát")
+            ),
+            ("quit", "thoát")
+        );
     }
 
     #[test]
