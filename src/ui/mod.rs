@@ -2,14 +2,16 @@
 
 mod draw;
 mod files;
+mod panes;
 mod term;
 
 use std::collections::{BTreeSet, HashMap};
-use std::io::stdout;
+use std::fs::File;
+use std::io::{self, stdout, Write};
 use std::mem;
 use std::num::NonZeroU16;
-use std::os::unix::fs::DirBuilderExt;
-use std::path::PathBuf;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Context, Result};
@@ -28,11 +30,12 @@ use zeroize::Zeroizing;
 
 use crate::config::{data_dir, ssh_config_path, Config};
 use crate::sftp;
-use crate::ssh::{self, forward, AuthFailed, SessionCmd, Target};
+use crate::ssh::{self, forward, AuthFailed, Login, SessionCmd, Target};
 use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
+use panes::Layout;
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -83,6 +86,8 @@ struct Tab {
     /// Set once the first byte or listing arrives.
     connected: bool,
     closed: bool,
+    /// Session log, while logging is on.
+    log: Option<File>,
 }
 
 /// What to do with a submitted form or a confirmed question.
@@ -99,6 +104,8 @@ enum After {
     },
     /// Connect to a typed `user@host[:port]` without saving it.
     QuickConnect,
+    /// Open a session on every host that has the typed tag or group.
+    ConnectTag,
     /// Unlock, then optionally go on to set this host's password.
     VaultUnlock(Option<String>),
     /// Same, for a new vault; the second field is the first passphrase entry.
@@ -131,6 +138,21 @@ enum Popup {
         body: String,
         scroll: u16,
     },
+    /// Choose a snippet (name, command) to type into the session.
+    Pick {
+        items: Vec<(String, String)>,
+        sel: usize,
+    },
+}
+
+/// Where a leader sequence is: not started, after the leader, or in the
+/// window menu (`leader w`).
+#[derive(Clone, Copy, Default, PartialEq)]
+enum Leader {
+    #[default]
+    Off,
+    Root,
+    Window,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -165,7 +187,13 @@ pub struct App {
     /// 0 is the host list, `i` is `tabs[i - 1]`.
     active: usize,
     next_id: u64,
-    leader: bool,
+    leader: Leader,
+    /// Typing in one session goes to every live session.
+    broadcast: bool,
+    /// How many sessions the session view shows side by side.
+    layout: Layout,
+    /// Index, among the terminal sessions, of the first one shown.
+    window: usize,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
     popup: Option<Popup>,
@@ -200,6 +228,67 @@ fn has_tag(meta: &Meta, query: &str) -> bool {
         .any(|t| !t.is_empty() && t.to_lowercase().starts_with(&query))
 }
 
+/// Opens the log file of a session: `<dir>/<alias>-<stamp>.log`, private to
+/// the user. The alias is reduced to file-name characters, so a host called
+/// `../x` cannot write outside the log directory.
+fn start_log(dir: &Path, alias: &str, stamp: &str) -> io::Result<(File, PathBuf)> {
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    let safe = |c: char| c.is_ascii_alphanumeric() || "._@-".contains(c);
+    let name: String = alias
+        .chars()
+        .map(|c| if safe(c) { c } else { '_' })
+        .collect();
+    let path = dir.join(format!("{name}-{stamp}.log"));
+    let mut options = File::options();
+    let file = options.append(true).create(true).mode(0o600).open(&path)?;
+    Ok((file, path))
+}
+
+/// Exact, case-insensitive match on a tag or the group: what "connect
+/// everything tagged web" means, unlike the prefix match of the search box.
+fn tag_is(meta: &Meta, tag: &str) -> bool {
+    meta.tags
+        .split([' ', ','])
+        .chain([meta.grp.as_str()])
+        .any(|t| !t.is_empty() && t.eq_ignore_ascii_case(tag))
+}
+
+/// Something typed or pasted into a terminal session.
+enum TermInput<'a> {
+    Key(KeyEvent),
+    Paste(&'a str),
+}
+
+/// Sends input to the focused session, or to every live session when
+/// broadcasting. Each session encodes it for its own terminal modes, so
+/// arrow keys stay right for a pane that happens to be inside vim.
+/// Returns how many sessions received it.
+fn send_input(tabs: &mut [Tab], focused: usize, broadcast: bool, input: &TermInput) -> usize {
+    let mut sent = 0;
+    for (i, tab) in tabs.iter_mut().enumerate() {
+        let Kind::Term { parser, tx } = &mut tab.kind else {
+            continue;
+        };
+        if tab.closed || !(broadcast || i == focused) {
+            continue;
+        }
+        parser.screen_mut().set_scrollback(0);
+        let screen = parser.screen();
+        let bytes = match input {
+            TermInput::Key(k) => term::encode_key(*k, screen.application_cursor()),
+            TermInput::Paste(text) if screen.bracketed_paste() => {
+                format!("\x1b[200~{text}\x1b[201~").into_bytes()
+            }
+            TermInput::Paste(text) => text.replace('\n', "\r").into_bytes(),
+        };
+        sent += usize::from(tx.send(SessionCmd::Data(bytes)).is_ok());
+    }
+    sent
+}
+
 impl App {
     fn new(cfg: Config, tx: UnboundedSender<Event>) -> Result<Self> {
         let sshc = SshConfig::load(&ssh_config_path()).context("cannot read ~/.ssh/config")?;
@@ -229,7 +318,10 @@ impl App {
             tabs: vec![],
             active: 0,
             next_id: 1,
-            leader: false,
+            leader: Leader::Off,
+            broadcast: false,
+            layout: Layout::Single,
+            window: 0,
             body: (80, 24),
             popup: None,
             msg: String::new(),
@@ -357,6 +449,91 @@ impl App {
         }
     }
 
+    /// Opens one session per host and shows them together.
+    fn open_many(&mut self, aliases: &[String]) {
+        let first = self.tabs.len();
+        for alias in aliases {
+            self.open(alias, false);
+        }
+        if self.tabs.len() > first {
+            self.active = first + 1;
+            self.window = self.terms().len() - (self.tabs.len() - first);
+        }
+        // Side by side, unless the layout already has room.
+        let fit = Layout::fit(self.tabs.len() - first);
+        if fit.panes() > self.layout.panes() {
+            self.layout = fit;
+        }
+    }
+
+    /// Tab indices of the terminal sessions, in tab order.
+    fn terms(&self) -> Vec<usize> {
+        let is_term = |i: &usize| matches!(self.tabs[*i].kind, Kind::Term { .. });
+        (0..self.tabs.len()).filter(is_term).collect()
+    }
+
+    /// Tab indices of the sessions shown together with the active one.
+    fn shown(&mut self) -> Vec<usize> {
+        let terms = self.terms();
+        let active = self.active.checked_sub(1);
+        let Some(at) = terms.iter().position(|i| Some(*i) == active) else {
+            return vec![];
+        };
+        let size = self.layout.panes();
+        self.window = panes::window(self.window, at, size, terms.len());
+        terms[self.window..(self.window + size).min(terms.len())].to_vec()
+    }
+
+    /// Moves focus to the pane in a vim direction, if there is one.
+    fn focus_pane(&mut self, direction: char) {
+        let shown = self.shown();
+        let slot = shown.iter().position(|i| i + 1 == self.active);
+        let to = slot.and_then(|s| self.layout.neighbor(s, direction, shown.len()));
+        if let Some(to) = to {
+            self.active = shown[to] + 1;
+        }
+    }
+
+    /// Closes the active tab. From a session the view stays with the sessions:
+    /// the one that slides into its place, else the one before it.
+    fn close_pane(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        let is_term = |t: &Tab| matches!(t.kind, Kind::Term { .. });
+        if !is_term(&self.close_tab(i)) {
+            return;
+        }
+        let after = (i..self.tabs.len()).find(|j| is_term(&self.tabs[*j]));
+        let before = (0..i).rev().find(|j| is_term(&self.tabs[*j]));
+        self.active = after.or(before).map_or(0, |j| j + 1);
+    }
+
+    fn scroll(&mut self, by: isize) {
+        let kind = self.active.checked_sub(1).map(|i| &mut self.tabs[i].kind);
+        if let Some(Kind::Term { parser, .. }) = kind {
+            let at = parser.screen().scrollback().saturating_add_signed(by);
+            parser.screen_mut().set_scrollback(at);
+        }
+    }
+
+    /// Number of sessions that would receive typed input right now.
+    fn live_sessions(&self) -> usize {
+        let live = |t: &&Tab| matches!(t.kind, Kind::Term { .. }) && !t.closed;
+        self.tabs.iter().filter(live).count()
+    }
+
+    fn toggle_broadcast(&mut self) {
+        self.broadcast ^= true;
+        self.msg = match self.broadcast {
+            true => format!(
+                "BROADCAST ON: typing goes to all {} live session(s)",
+                self.live_sessions()
+            ),
+            false => "broadcast off".into(),
+        };
+    }
+
     /// Opens a tab; the connection runs in its own task.
     fn open_target(
         &mut self,
@@ -369,6 +546,11 @@ impl App {
         let (id, tx, size) = (self.next_id, self.tx.clone(), self.body);
         let tab_target = target.clone();
         self.next_id += 1;
+        // Login scripts belong to saved hosts; a quick connect runs none.
+        let login = Login {
+            command: target.remote_command.clone(),
+            script: self.cfg.exec.get(alias).filter(|_| saved).cloned(),
+        };
         let (kind, task) = if sftp {
             let (cmd_tx, cmd_rx) = unbounded_channel();
             let task = tokio::spawn(async move {
@@ -388,7 +570,7 @@ impl App {
                     let pw = password.as_ref().map(|p| p.as_str());
                     let h = ssh::connect(&target, pw, None).await?;
                     let data = |d: &[u8]| drop(tx.send(Event::Data(id, d.to_vec())));
-                    ssh::shell(h, size, cmd_rx, data).await
+                    ssh::shell(h, size, login, cmd_rx, data).await
                 };
                 let _ = tx.send(Event::ended(id, res.await));
             });
@@ -409,8 +591,66 @@ impl App {
             task,
             connected: false,
             closed: false,
+            log: None,
         });
         self.active = self.tabs.len();
+        if self.cfg.log_sessions && !sftp {
+            self.toggle_log();
+        }
+    }
+
+    /// Starts or stops logging the active session to a file.
+    fn toggle_log(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        let Kind::Term { parser, .. } = &self.tabs[i].kind else {
+            return;
+        };
+        // What is on screen now goes in first, then everything that follows.
+        let screen = parser.screen().contents();
+        if self.tabs[i].log.take().is_some() {
+            return self.msg = "session log closed".into();
+        }
+        let alias = self.tabs[i].alias.clone();
+        let res = (|| {
+            let stamp = self.db.timestamp()?;
+            let (mut file, path) = start_log(&data_dir().join("logs"), &alias, &stamp)?;
+            writeln!(
+                file,
+                "# vssh session log: {alias}, started {stamp}\n{screen}"
+            )?;
+            anyhow::Ok((file, path))
+        })();
+        match res {
+            Ok((file, path)) => {
+                self.tabs[i].log = Some(file);
+                self.msg = format!(
+                    "LOGGING to {}: everything shown is written as is, secrets included",
+                    path.display()
+                );
+            }
+            Err(e) => self.msg = format!("cannot start the session log: {e:#}"),
+        }
+    }
+
+    /// Offers the snippets that apply to the active session, to type one in.
+    fn pick_snippet(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        if !matches!(self.tabs[i].kind, Kind::Term { .. }) {
+            return;
+        }
+        let snippets = self.host_snippets(&self.tabs[i].alias);
+        let items: Vec<_> = snippets
+            .into_iter()
+            .map(|s| (s.name.clone(), s.command.clone()))
+            .collect();
+        match items.is_empty() {
+            true => self.msg = "no snippets yet: add some with n on the host list".into(),
+            false => self.popup = Some(Popup::Pick { items, sel: 0 }),
+        }
     }
 
     /// Removes a tab. The view stays on the tab it was on; if that is the one
@@ -516,6 +756,12 @@ impl App {
                         let _ = tx.send(SessionCmd::Data(reply));
                     }
                 }
+                // A log that cannot be written is closed, loudly, not half kept.
+                let tab = &mut self.tabs[i];
+                if let Some(Err(e)) = tab.log.as_mut().map(|log| log.write_all(&data)) {
+                    tab.log = None;
+                    self.msg = format!("session log of {} stopped: {e}", tab.alias);
+                }
             }
             Event::Sftp(id, reply) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
@@ -612,12 +858,9 @@ impl App {
                 self.sel = 0;
                 self.refilter();
             }
-        } else if let Kind::Term { parser, tx } = &self.tabs[self.active - 1].kind {
-            let data = match parser.screen().bracketed_paste() {
-                true => format!("\x1b[200~{text}\x1b[201~"),
-                false => text.replace('\n', "\r"),
-            };
-            let _ = tx.send(SessionCmd::Data(data.into_bytes()));
+        } else {
+            let input = TermInput::Paste(text);
+            send_input(&mut self.tabs, self.active - 1, self.broadcast, &input);
         }
     }
 
@@ -625,27 +868,37 @@ impl App {
         if let Some(popup) = self.popup.take() {
             return self.popup_key(popup, k);
         }
+        if k.modifiers == KeyModifiers::ALT {
+            match k.code {
+                KeyCode::Char('b') => return self.toggle_broadcast(),
+                // Window navigation, only while there is more than one pane:
+                // with a single pane these keys still reach the shell.
+                KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) if self.shown().len() > 1 => {
+                    return self.focus_pane(c);
+                }
+                _ => {}
+            }
+        }
         let is_leader =
             k.modifiers == KeyModifiers::CONTROL && k.code == KeyCode::Char(self.cfg.keys.leader);
-        if mem::take(&mut self.leader) {
-            return self.leader_key(k, is_leader);
+        match mem::take(&mut self.leader) {
+            Leader::Root => return self.leader_key(k, is_leader),
+            Leader::Window => return self.window_key(k),
+            Leader::Off => {}
         }
         if is_leader {
-            return self.leader = true;
+            return self.leader = Leader::Root;
         }
         if self.active == 0 {
             return self.hosts_key(k);
         }
         let i = self.active - 1;
-        let closed = self.tabs[i].closed;
-        match &mut self.tabs[i].kind {
-            // A dead session swallows keys. Closing on "any key" would let the
-            // rest of a half-typed command run as host-list commands.
-            Kind::Term { .. } if closed => {}
-            Kind::Term { parser, tx } => {
-                parser.screen_mut().set_scrollback(0);
-                let bytes = term::encode_key(k, parser.screen().application_cursor());
-                let _ = tx.send(SessionCmd::Data(bytes));
+        match self.tabs[i].kind {
+            // A dead session swallows keys (`send_input` skips it). Closing on
+            // "any key" would let the rest of a half-typed command run as
+            // host-list commands.
+            Kind::Term { .. } => {
+                send_input(&mut self.tabs, i, self.broadcast, &TermInput::Key(k));
             }
             Kind::Sftp(_) => self.sftp_key(k),
         }
@@ -656,28 +909,36 @@ impl App {
         self.active = (self.active + if forward { 1 } else { n - 1 }) % n;
     }
 
-    /// Tab control, reachable from every tab. Pressing the leader twice
-    /// sends it through to the remote shell.
+    /// Tab and pane control, reachable from every tab. Pressing the leader
+    /// twice sends it through to the remote shell.
     fn leader_key(&mut self, k: KeyEvent, again: bool) {
-        let term = match self.active.checked_sub(1).map(|i| &mut self.tabs[i].kind) {
-            Some(Kind::Term { parser, tx }) => Some((parser, tx)),
-            _ => None,
-        };
-        let scroll = |parser: &mut vt100::Parser<term::Replies>, by: isize| {
-            let at = parser.screen().scrollback().saturating_add_signed(by);
-            parser.screen_mut().set_scrollback(at);
-        };
-        match (k.code, term) {
-            (_, Some((_, tx))) if again => {
-                let _ = tx.send(SessionCmd::Data(term::encode_key(k, false)));
+        let ctrl = k.modifiers == KeyModifiers::CONTROL;
+        match k.code {
+            _ if again && self.active > 0 => {
+                let input = TermInput::Key(k);
+                send_input(&mut self.tabs, self.active - 1, self.broadcast, &input);
             }
-            (KeyCode::PageUp | KeyCode::Char('k'), Some((parser, _))) => scroll(parser, 10),
-            (KeyCode::PageDown | KeyCode::Char('j'), Some((parser, _))) => scroll(parser, -10),
-            (KeyCode::Tab | KeyCode::Char('n'), _) => self.cycle(true),
-            (KeyCode::BackTab | KeyCode::Char('p'), _) => self.cycle(false),
-            (KeyCode::Char('h'), _) => self.active = 0,
-            (KeyCode::Char('x'), _) if self.active > 0 => drop(self.close_tab(self.active - 1)),
-            (KeyCode::Char(c @ '1'..='9'), _) => {
+            KeyCode::PageUp => self.scroll(10),
+            KeyCode::PageDown => self.scroll(-10),
+            KeyCode::Char('u') if ctrl => self.scroll(10),
+            KeyCode::Char('d') if ctrl => self.scroll(-10),
+            KeyCode::Left => self.focus_pane('h'),
+            KeyCode::Down => self.focus_pane('j'),
+            KeyCode::Up => self.focus_pane('k'),
+            KeyCode::Right => self.focus_pane('l'),
+            KeyCode::Char('L') => {
+                self.layout = self.layout.next();
+                self.msg = format!("layout: {}", self.layout.name());
+            }
+            KeyCode::Char('b') => self.toggle_broadcast(),
+            KeyCode::Char('w') => self.leader = Leader::Window,
+            KeyCode::Char('l') => self.toggle_log(),
+            KeyCode::Char('s') => self.pick_snippet(),
+            KeyCode::Tab | KeyCode::Char('n') => self.cycle(true),
+            KeyCode::BackTab | KeyCode::Char('p') => self.cycle(false),
+            KeyCode::Char('q') => self.active = 0,
+            KeyCode::Char('x' | 'd') => self.close_pane(),
+            KeyCode::Char(c @ '1'..='9') => {
                 let i = c as usize - '1' as usize;
                 if i <= self.tabs.len() {
                     self.active = i;
@@ -685,6 +946,35 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// The window menu, `leader w`: focus, layout presets, close.
+    fn window_key(&mut self, k: KeyEvent) {
+        let layout = match k.code {
+            KeyCode::Char(c @ ('h' | 'j' | 'k' | 'l')) => return self.focus_pane(c),
+            KeyCode::Left => return self.focus_pane('h'),
+            KeyCode::Down => return self.focus_pane('j'),
+            KeyCode::Up => return self.focus_pane('k'),
+            KeyCode::Right => return self.focus_pane('l'),
+            KeyCode::Char('d' | 'x') => return self.close_pane(),
+            KeyCode::Char('s') => Layout::Single,
+            KeyCode::Char('v') => Layout::Columns2,
+            KeyCode::Char('g') => Layout::Grid,
+            KeyCode::Char('t') => Layout::Columns3,
+            KeyCode::Char('L') => self.layout.next(),
+            _ => return,
+        };
+        self.layout = layout;
+        self.msg = format!("layout: {}", layout.name());
+    }
+
+    fn ask_quit(&mut self) {
+        let (tabs, fwds) = (self.tabs.len(), self.fwds.len());
+        if tabs + fwds == 0 {
+            return self.quit = true;
+        }
+        let text = format!("Quit? This closes {tabs} tab(s) and {fwds} forward(s).");
+        self.popup = Some(Popup::Confirm(text, After::Quit));
     }
 
     fn move_sel(&mut self, delta: isize) {
@@ -699,7 +989,17 @@ impl App {
             Focus::List => {}
         }
         let keys = &self.cfg.keys;
-        let ctrl = k.modifiers == KeyModifiers::CONTROL;
+        if k.modifiers == KeyModifiers::CONTROL {
+            // Half a screen of two-line rows, like Ctrl-d / Ctrl-u in vim.
+            let half = (self.body.1.saturating_sub(2) / 4).max(1) as isize;
+            return match k.code {
+                KeyCode::Char('d') => self.move_sel(half),
+                KeyCode::Char('u') => self.move_sel(-half),
+                KeyCode::Char('c') => self.ask_quit(),
+                // Never let Ctrl-d fall through to `d` (delete).
+                _ => {}
+            };
+        }
         match k.code {
             KeyCode::Down | KeyCode::Char('j') => self.move_sel(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_sel(-1),
@@ -713,14 +1013,7 @@ impl App {
                 self.filter.clear();
                 self.refilter();
             }
-            KeyCode::Char(c) if c == keys.quit || (c == 'c' && ctrl) => {
-                let (tabs, fwds) = (self.tabs.len(), self.fwds.len());
-                if tabs + fwds == 0 {
-                    return self.quit = true;
-                }
-                let text = format!("Quit? This closes {tabs} tab(s) and {fwds} forward(s).");
-                self.popup = Some(Popup::Confirm(text, After::Quit));
-            }
+            KeyCode::Char(c) if c == keys.quit || c == 'Q' => self.ask_quit(),
             KeyCode::Char(c) if c == keys.search => self.focus = Focus::Search,
             KeyCode::Char(c) if c == keys.add => self.host_form(None),
             KeyCode::Char(c) if c == keys.connect => {
@@ -733,6 +1026,25 @@ impl App {
                     fields,
                     true,
                     After::QuickConnect,
+                );
+            }
+            KeyCode::Enter if !self.marked.is_empty() => {
+                let marked: Vec<String> = mem::take(&mut self.marked).into_iter().collect();
+                self.open_many(&marked);
+            }
+            KeyCode::Char(c) if c == keys.connect_tag => {
+                // Offer the tag being filtered on, else the selected host's first tag or group.
+                let meta = self.alias().and_then(|a| self.meta.get(&a).cloned());
+                let meta = meta.unwrap_or_default();
+                let own = meta.tags.split([' ', ',']).chain([meta.grp.as_str()]);
+                let own = own.into_iter().find(|t| !t.is_empty()).unwrap_or("");
+                let tag = self.filter.strip_prefix('#').unwrap_or(own).to_string();
+                let fields = vec![("Tag or group", tag)];
+                self.form(
+                    "Connect to every host with",
+                    fields,
+                    false,
+                    After::ConnectTag,
                 );
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
@@ -915,7 +1227,8 @@ impl App {
             (KeyCode::Enter | KeyCode::Right | KeyCode::Char('l'), _) => view.enter(),
             (KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h'), _) => view.up(),
             (KeyCode::Char('R'), _) => view.refresh(),
-            (KeyCode::Char('q'), _) => return drop(self.close_tab(self.active - 1)),
+            (KeyCode::Char('q'), _) => return self.close_pane(),
+            (KeyCode::Char('Q'), _) => return self.ask_quit(),
             (KeyCode::Char('m'), _) => {
                 return self.prompt("New directory", "Name", false, After::SftpMkdir);
             }
@@ -1015,51 +1328,110 @@ impl App {
 
     fn help(&mut self) {
         let k = &self.cfg.keys;
-        let body = format!(
+        let en = format!(
             "HOST LIST\n\
-             \x20 j/k ↑/↓      move            g/G     first / last\n\
-             \x20 Enter        open shell      {}       SFTP browser\n\
-             \x20 {}            search (fuzzy)  Esc     clear search\n\
+             \x20 j/k ↑/↓      move              g/G     first / last\n\
+             \x20 Ctrl-d/u     half a screen     Tab     next tab\n\
+             \x20 Enter        open shell (on every marked host, if any are marked)\n\
+             \x20 Space        mark host         {tag}       connect to every host with a tag\n\
+             \x20 {sftp}            SFTP browser      {connect}       quick connect, nothing saved\n\
+             \x20 {search}            search (fuzzy)    Esc     clear search\n\
              \x20              search #tag shows only hosts with that tag or group\n\
-             \x20 {}            add host        {}       edit host\n\
-             \x20 {}            delete host     {}       duplicate host\n\
-             \x20 {}            pin / unpin     Space   mark for snippets\n\
-             \x20 {}            port forwards   {}       snippets\n\
-             \x20 {}            check reachability\n\
-             \x20 {}            store password  {}       unlock / lock vault\n\
-             \x20 {}            quick connect: user@host[:port], nothing is saved\n\
-             \x20 Tab          next tab        {}       quit\n\n\
+             \x20 {add}            add host          {edit}       edit host\n\
+             \x20 {delete}            delete host       {duplicate}       duplicate host\n\
+             \x20 {pin}            pin / unpin       {ping}       check reachability\n\
+             \x20 {forwards}            port forwards     {snippets}       snippets\n\
+             \x20 {password}            store password    {vault}       unlock / lock vault\n\
+             \x20 {quit}            quit              Q       quit (from SFTP too)\n\n\
              FORWARDS / SNIPPETS PANEL\n\
              \x20 a add   e edit   d delete   Enter start/stop or run   Esc back\n\
              \x20 forward syntax:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
-             ANY TAB (leader = Ctrl-{leader})\n\
-             \x20 leader Tab/n  next tab      leader p    previous tab\n\
-             \x20 leader 1-9    go to tab     leader h    host list\n\
-             \x20 leader x      close tab     leader k/j  scroll back / forward\n\
-             \x20 leader leader send Ctrl-{leader} to the remote\n\n\
+             SESSIONS (leader = Ctrl-{leader}; a menu of these keys appears after it)\n\
+             \x20 Alt-h/j/k/l      focus pane (also leader + arrow, leader w h/j/k/l)\n\
+             \x20 leader L         cycle layout      leader w      window menu:\n\
+             \x20                  s single, v 2 columns, g 2x2 grid, t 3 columns\n\
+             \x20 leader b, Alt-b  broadcast: typing goes to every live session\n\
+             \x20 leader l         log this session to a file (everything shown, as is)\n\
+             \x20 leader s         type a snippet into the session\n\
+             \x20 leader d / x     close pane        leader q      back to the host list\n\
+             \x20 leader Tab/n     next tab          leader p      previous tab\n\
+             \x20 leader 1-9       go to tab         leader PgUp/PgDn  scroll (also Ctrl-u/d)\n\
+             \x20 leader leader    send Ctrl-{leader} to the remote\n\n\
              SFTP\n\
              \x20 Tab switch pane   Enter/l open dir   h/Backspace parent\n\
              \x20 c copy to other pane   m mkdir   r rename   d delete\n\
-             \x20 R refresh   q close\n",
-            k.sftp,
-            k.search,
-            k.add,
-            k.edit,
-            k.delete,
-            k.duplicate,
-            k.pin,
-            k.forwards,
-            k.snippets,
-            k.ping,
-            k.password,
-            k.vault,
-            k.connect,
-            k.quit,
+             \x20 R refresh   q close   Q quit\n",
+            tag = k.connect_tag,
+            sftp = k.sftp,
+            connect = k.connect,
+            search = k.search,
+            add = k.add,
+            edit = k.edit,
+            delete = k.delete,
+            duplicate = k.duplicate,
+            pin = k.pin,
+            ping = k.ping,
+            forwards = k.forwards,
+            snippets = k.snippets,
+            password = k.password,
+            vault = k.vault,
+            quit = k.quit,
             leader = k.leader,
         );
+        let vi = format!(
+            "DANH SÁCH MÁY CHỦ\n\
+             \x20 j/k ↑/↓      di chuyển         g/G     về đầu / về cuối\n\
+             \x20 Ctrl-d/u     nửa màn hình      Tab     tab kế tiếp\n\
+             \x20 Enter        mở shell (trên mọi máy đã đánh dấu, nếu có)\n\
+             \x20 Space        đánh dấu máy      {tag}       kết nối mọi máy có cùng thẻ\n\
+             \x20 {sftp}            trình duyệt SFTP  {connect}       kết nối nhanh, không lưu\n\
+             \x20 {search}            tìm (mờ)          Esc     xoá tìm kiếm\n\
+             \x20              tìm #tag chỉ hiện máy có thẻ hoặc nhóm đó\n\
+             \x20 {add}            thêm máy          {edit}       sửa máy\n\
+             \x20 {delete}            xoá máy           {duplicate}       nhân bản máy\n\
+             \x20 {pin}            ghim / bỏ ghim    {ping}       kiểm tra kết nối\n\
+             \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
+             \x20 {password}            lưu mật khẩu      {vault}       mở / khoá kho mật khẩu\n\
+             \x20 {quit}            thoát             Q       thoát (cả từ SFTP)\n\n\
+             KHUNG CHUYỂN TIẾP CỔNG / SNIPPET\n\
+             \x20 a thêm   e sửa   d xoá   Enter bật/tắt hoặc chạy   Esc quay lại\n\
+             \x20 cú pháp:  L 8080 localhost:80 | R 9000 localhost:3000 | D 1080\n\n\
+             PHIÊN LÀM VIỆC (leader = Ctrl-{leader}; nhấn xong sẽ hiện menu các phím này)\n\
+             \x20 Alt-h/j/k/l      chuyển khung (hoặc leader + mũi tên, leader w h/j/k/l)\n\
+             \x20 leader L         đổi bố cục        leader w      menu cửa sổ:\n\
+             \x20                  s một khung, v 2 cột, g lưới 2x2, t 3 cột\n\
+             \x20 leader b, Alt-b  phát: gõ một lần, gửi tới mọi phiên đang mở\n\
+             \x20 leader l         ghi log phiên này ra file (mọi thứ hiện ra, nguyên văn)\n\
+             \x20 leader s         gõ một snippet vào phiên\n\
+             \x20 leader d / x     đóng khung        leader q      về danh sách máy chủ\n\
+             \x20 leader Tab/n     tab kế tiếp       leader p      tab trước\n\
+             \x20 leader 1-9       tới tab số        leader PgUp/PgDn  cuộn (hoặc Ctrl-u/d)\n\
+             \x20 leader leader    gửi Ctrl-{leader} tới máy từ xa\n\n\
+             SFTP\n\
+             \x20 Tab đổi khung   Enter/l vào thư mục   h/Backspace thư mục cha\n\
+             \x20 c chép sang khung kia   m tạo thư mục   r đổi tên   d xoá\n\
+             \x20 R tải lại   q đóng   Q thoát\n",
+            tag = k.connect_tag,
+            sftp = k.sftp,
+            connect = k.connect,
+            search = k.search,
+            add = k.add,
+            edit = k.edit,
+            delete = k.delete,
+            duplicate = k.duplicate,
+            pin = k.pin,
+            ping = k.ping,
+            forwards = k.forwards,
+            snippets = k.snippets,
+            password = k.password,
+            vault = k.vault,
+            quit = k.quit,
+            leader = k.leader,
+        );
+        let lang = self.cfg.lang;
         self.popup = Some(Popup::Text {
-            title: "Help".into(),
-            body,
+            title: lang.pick("Help", "Trợ giúp").into(),
+            body: lang.pick(&en, &vi).to_string(),
             scroll: 0,
         });
     }
@@ -1077,6 +1449,17 @@ impl App {
                     self.popup = Some(Popup::Form(form));
                 }
             }
+            (Popup::Pick { items, sel }, KeyCode::Enter) => {
+                // Pasted, then Enter: the command arrives as one piece of text.
+                if let (Some((_, command)), Some(i)) = (items.get(sel), self.active.checked_sub(1))
+                {
+                    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+                    for input in [TermInput::Paste(command), TermInput::Key(enter)] {
+                        send_input(&mut self.tabs, i, self.broadcast, &input);
+                    }
+                }
+            }
+            (Popup::Pick { .. }, KeyCode::Esc | KeyCode::Char('q')) => {}
             (Popup::Text { .. }, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q'))
             | (Popup::Confirm(..), KeyCode::Esc | KeyCode::Char('n'))
             | (Popup::Form(_), KeyCode::Esc) => {}
@@ -1093,6 +1476,12 @@ impl App {
                     }
                     (Popup::Text { scroll, .. }, KeyCode::PageUp) => {
                         *scroll = scroll.saturating_sub(10)
+                    }
+                    (Popup::Pick { items, sel }, KeyCode::Down | KeyCode::Char('j')) => {
+                        *sel = (*sel + 1).min(items.len().saturating_sub(1))
+                    }
+                    (Popup::Pick { sel, .. }, KeyCode::Up | KeyCode::Char('k')) => {
+                        *sel = sel.saturating_sub(1)
                     }
                     (Popup::Form(f), KeyCode::Tab | KeyCode::Down) => {
                         f.idx = (f.idx + 1) % f.fields.len()
@@ -1206,6 +1595,13 @@ impl App {
                 // The password lives in this session's task only.
                 let password = (!secret.is_empty()).then_some(secret);
                 self.open_target(&title, target, false, false, password);
+            }
+            After::ConnectTag => {
+                let tag = text(0);
+                let with_tag = |a: &String| self.meta.get(a).is_some_and(|m| tag_is(m, &tag));
+                let hosts: Vec<String> = self.sshc.hosts().into_iter().filter(with_tag).collect();
+                ensure!(!hosts.is_empty(), "no host has the tag or group {tag}");
+                self.open_many(&hosts);
             }
             After::VaultUnlock(next) => {
                 self.vault = Some(Vault::open(&vault_path(), &secret)?);
@@ -1337,6 +1733,142 @@ mod tests {
             assert!(!has_tag(&meta, miss), "{miss}");
         }
         assert!(!has_tag(&Meta::default(), ""));
+    }
+
+    /// A live terminal tab whose "connection" is just the receiving end of its channel.
+    fn term_tab(id: u64) -> (Tab, tokio::sync::mpsc::UnboundedReceiver<SessionCmd>) {
+        let (tx, rx) = unbounded_channel();
+        let size = NonZeroU16::new(10).unwrap();
+        let parser = vt100::Parser::new_with_callbacks(size, size, 100, term::Replies::default());
+        let tab = Tab {
+            id,
+            alias: format!("host{id}"),
+            target: Target::parse("user@host").unwrap(),
+            saved: true,
+            kind: Kind::Term {
+                parser: Box::new(parser),
+                tx,
+            },
+            task: tokio::spawn(async {}),
+            connected: true,
+            closed: false,
+            log: None,
+        };
+        (tab, rx)
+    }
+
+    fn received(rx: &mut tokio::sync::mpsc::UnboundedReceiver<SessionCmd>) -> Vec<u8> {
+        let mut all = vec![];
+        while let Ok(SessionCmd::Data(bytes)) = rx.try_recv() {
+            all.extend(bytes);
+        }
+        all
+    }
+
+    #[tokio::test]
+    async fn broadcast_sends_keys_to_every_live_session() {
+        let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=4).map(term_tab).unzip();
+        let (sftp_tx, _sftp_rx) = unbounded_channel();
+        tabs.push(Tab {
+            kind: Kind::Sftp(Box::new(SftpView::new(sftp_tx))),
+            ..term_tab(9).0
+        });
+        tabs[3].closed = true;
+        let key = |c| TermInput::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+
+        // Broadcast off: only the focused session hears the key.
+        assert_eq!(send_input(&mut tabs, 1, false, &key('a')), 1);
+        let got: Vec<_> = rxs.iter_mut().map(received).collect();
+        assert_eq!(
+            got,
+            [b"".to_vec(), b"a".to_vec(), b"".to_vec(), b"".to_vec()]
+        );
+
+        // Broadcast on: every live terminal does; the closed one and SFTP do not.
+        assert_eq!(send_input(&mut tabs, 1, true, &key('l')), 3);
+        assert_eq!(send_input(&mut tabs, 1, true, &key('s')), 3);
+        let enter = TermInput::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        send_input(&mut tabs, 1, true, &enter);
+        let got: Vec<_> = rxs.iter_mut().map(received).collect();
+        assert_eq!(
+            got,
+            [
+                b"ls\r".to_vec(),
+                b"ls\r".to_vec(),
+                b"ls\r".to_vec(),
+                b"".to_vec()
+            ]
+        );
+
+        // Focus on a dead pane still broadcasts to the others, and types nowhere without it.
+        assert_eq!(send_input(&mut tabs, 3, true, &key('x')), 3);
+        assert_eq!(send_input(&mut tabs, 3, false, &key('x')), 0);
+    }
+
+    #[tokio::test]
+    async fn broadcast_encodes_for_each_sessions_own_mode() {
+        let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=2).map(term_tab).unzip();
+        // Session 2 is in a full-screen program: application cursor keys, bracketed paste.
+        if let Kind::Term { parser, .. } = &mut tabs[1].kind {
+            parser.process(b"\x1b[?1h\x1b[?2004h");
+        }
+        let up = TermInput::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        send_input(&mut tabs, 0, true, &up);
+        send_input(&mut tabs, 0, true, &TermInput::Paste("a\nb"));
+        assert_eq!(received(&mut rxs[0]), b"\x1b[Aa\rb");
+        assert_eq!(received(&mut rxs[1]), b"\x1bOA\x1b[200~a\nb\x1b[201~");
+    }
+
+    #[test]
+    fn session_logs_are_private_and_stay_in_their_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("vssh-logs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let logs = dir.join("logs");
+
+        let (mut file, path) = start_log(&logs, "web-01", "20261116-101500").unwrap();
+        assert_eq!(path, logs.join("web-01-20261116-101500.log"));
+        file.write_all(b"hello").unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!((mode(&path), mode(&logs)), (0o600, 0o700));
+
+        // Names that try to leave the directory, and a quick-connect title.
+        for (alias, name) in [
+            ("../../etc/cron.d/x", ".._.._etc_cron.d_x-s.log"),
+            ("/abs/path", "_abs_path-s.log"),
+            ("a b\n$(c)", "a_b___c_-s.log"),
+            ("root@10.0.0.5:2222", "root@10.0.0.5_2222-s.log"),
+        ] {
+            let (_, path) = start_log(&logs, alias, "s").unwrap();
+            assert_eq!(path, logs.join(name), "{alias}");
+        }
+        // Logging the same session twice in one second appends, it does not truncate.
+        let (mut again, _) = start_log(&logs, "web-01", "20261116-101500").unwrap();
+        again.write_all(b" again").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello again");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_picked_snippet_is_typed_into_every_broadcast_session() {
+        let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=2).map(term_tab).unzip();
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        for input in [TermInput::Paste("df -h /"), TermInput::Key(enter)] {
+            send_input(&mut tabs, 0, true, &input);
+        }
+        assert_eq!(received(&mut rxs[0]), b"df -h /\r");
+        assert_eq!(received(&mut rxs[1]), b"df -h /\r");
+    }
+
+    #[test]
+    fn connect_by_tag_is_exact() {
+        let meta = Meta {
+            grp: "Prod".into(),
+            tags: "web, eu-west".into(),
+            ..Meta::default()
+        };
+        assert!(tag_is(&meta, "web") && tag_is(&meta, "WEB") && tag_is(&meta, "prod"));
+        assert!(!tag_is(&meta, "we") && !tag_is(&meta, "eu") && !tag_is(&meta, ""));
     }
 
     #[test]
