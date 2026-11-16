@@ -11,6 +11,8 @@ Usage: vssh [--help | --version]
 Hosts come from ~/.ssh/config. Press ? inside vssh for the keys.
 Theme and keybindings: ~/.config/vssh/config.toml";
 
+// The only output is --help / --version, before the TUI starts.
+#[allow(clippy::print_stdout)]
 fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         None => {}
