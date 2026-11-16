@@ -65,15 +65,16 @@ fn latency(ms: u128) -> String {
     }
 }
 
-fn ago(ts: i64) -> String {
+fn ago(ts: i64, lang: Lang) -> String {
     let now = SystemTime::now().duration_since(UNIX_EPOCH);
     let secs = now.map_or(0, |d| d.as_secs() as i64).saturating_sub(ts);
+    let unit = |n: i64, en: &str, vi: &str| format!("{n} {}", lang.pick(en, vi));
     match secs {
-        _ if ts == 0 => "never".into(),
-        ..60 => "just now".into(),
-        60..3600 => format!("{} min ago", secs / 60),
-        3600..86400 => format!("{} h ago", secs / 3600),
-        _ => format!("{} d ago", secs / 86400),
+        _ if ts == 0 => lang.pick("never", "chưa lần nào").into(),
+        ..60 => lang.pick("just now", "vừa xong").into(),
+        60..3600 => unit(secs / 60, "min ago", "phút trước"),
+        3600..86400 => unit(secs / 3600, "h ago", "giờ trước"),
+        _ => unit(secs / 86400, "d ago", "ngày trước"),
     }
 }
 
@@ -126,7 +127,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     match app.active.checked_sub(1).map(|i| &mut app.tabs[i].kind) {
         None => hosts(app, f, body),
         Some(Kind::Term { .. }) => sessions(app, f, body),
-        Some(Kind::Sftp(view)) => files(view, th, f, body),
+        Some(Kind::Sftp(view)) => files(view, th, app.cfg.lang, f, body),
     }
     hints(app, f, keys);
     status_line(app, f, status);
@@ -204,9 +205,10 @@ fn term_pane(tab: &mut Tab, area: Rect, f: &mut Frame, focused: bool) {
 
 /// Where the host list is: `hosts › web1 › forwards › /query`.
 fn breadcrumb(app: &App) -> String {
-    let mut crumbs = vec!["hosts".to_string()];
+    let lang = app.cfg.lang;
+    let mut crumbs = vec![lang.pick("hosts", "máy chủ").to_string()];
     let panel = match app.focus {
-        Focus::Forwards => Some("forwards"),
+        Focus::Forwards => Some(lang.pick("forwards", "chuyển tiếp cổng")),
         Focus::Snippets => Some("snippets"),
         _ => None,
     };
@@ -252,13 +254,18 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
         status.push(Span::styled(" · ", Style::new().fg(th.dim)));
     };
     if !app.marked.is_empty() {
-        push(format!("{} marked", app.marked.len()), th.warn);
+        let word = app.cfg.lang.pick("marked", "đã đánh dấu");
+        push(format!("{} {word}", app.marked.len()), th.warn);
     }
     if !app.fwds.is_empty() {
-        push(format!("{} forwarding", app.fwds.len()), th.ok);
+        let word = app.cfg.lang.pick("forwarding", "cổng đang chuyển tiếp");
+        push(format!("{} {word}", app.fwds.len()), th.ok);
     }
     if app.vault.is_some() {
-        push("vault unlocked".into(), th.ok);
+        push(
+            app.cfg.lang.pick("vault unlocked", "kho đã mở").into(),
+            th.ok,
+        );
     }
     status.pop();
     status.push(Span::raw(" "));
@@ -273,7 +280,11 @@ fn host_item<'a>(app: &'a App, alias: &'a str, width: usize, selected: bool) -> 
     let quiet = Style::new().fg(if selected { th.text } else { th.dim });
     let (dot, colour, latency) = match app.reach.get(alias) {
         Some(Some(ms)) => ("●", th.ok, latency(*ms)),
-        Some(None) => ("●", th.error, "down".to_string()),
+        Some(None) => (
+            "●",
+            th.error,
+            app.cfg.lang.pick("down", "mất kết nối").to_string(),
+        ),
         None => ("○", th.dim, String::new()),
     };
     let pin = if meta.is_some_and(|m| m.pinned) {
@@ -359,7 +370,11 @@ fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, alias)| host_item(app, alias, width, i == app.sel));
-    let title = format!("Hosts {}", app.hosts.len());
+    let title = format!(
+        "{} {}",
+        app.cfg.lang.pick("Hosts", "Máy chủ"),
+        app.hosts.len()
+    );
     let block = panel(&title, on_list, th).padding(Padding::right(1));
     let list = List::new(items)
         .block(block)
@@ -397,28 +412,46 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     let dim = Style::new().fg(th.dim);
     let section = |name: &str| Line::styled(name.to_string(), Style::new().fg(th.accent).bold());
     let row = |label: &str, value: Vec<Span<'static>>| {
-        let mut spans = vec![Span::styled(format!("  {label:<11}"), dim)];
+        let mut spans = vec![Span::styled(format!("  {label:<12}"), dim)];
         spans.extend(value);
         Line::from(spans)
     };
     let text = |s: String| vec![Span::raw(s)];
+    let lang = app.cfg.lang;
+    let t = |en: &'static str, vi: &'static str| lang.pick(en, vi);
 
     let (dot, state, colour) = match app.reach.get(alias) {
-        Some(Some(ms)) => ("●", format!("reachable · {}", latency(*ms)), th.ok),
-        Some(None) => ("●", "unreachable".to_string(), th.error),
-        None => ("○", "not checked".to_string(), th.dim),
+        Some(Some(ms)) => {
+            let word = t("reachable", "kết nối được");
+            ("●", format!("{word} · {}", latency(*ms)), th.ok)
+        }
+        Some(None) => (
+            "●",
+            t("unreachable", "không kết nối được").to_string(),
+            th.error,
+        ),
+        None => ("○", t("not checked", "chưa kiểm tra").to_string(), th.dim),
     };
     let mut lines = vec![
         Line::styled(address(app, alias), Style::new().fg(th.text).bold()),
         Line::styled(format!("{dot} {state}"), Style::new().fg(colour)),
         Line::default(),
-        section("CONNECTION"),
-        row("Address", text(or(get("HostName"), alias))),
-        row("Port", text(or(get("Port"), "22"))),
-        row("User", text(or(get("User"), "(current user)"))),
+        section(t("CONNECTION", "KẾT NỐI")),
+        row(t("Address", "Địa chỉ"), text(or(get("HostName"), alias))),
+        row(t("Port", "Cổng"), text(or(get("Port"), "22"))),
         row(
-            "Key",
-            text(or(get("IdentityFile"), "(agent / default keys)")),
+            t("User", "Người dùng"),
+            text(or(
+                get("User"),
+                t("(current user)", "(người dùng hiện tại)"),
+            )),
+        ),
+        row(
+            t("Key", "Khoá"),
+            text(or(
+                get("IdentityFile"),
+                t("(agent / default keys)", "(agent / khoá mặc định)"),
+            )),
         ),
     ];
     for key in ["ProxyJump", "ProxyCommand"] {
@@ -428,44 +461,52 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
         }
     }
 
-    lines.extend([Line::default(), section("ORGANISATION")]);
+    lines.extend([Line::default(), section(t("ORGANISATION", "PHÂN LOẠI"))]);
     let group = match meta.grp.is_empty() {
         true => Span::styled("—", dim),
         false => Span::styled(meta.grp.clone(), Style::new().fg(chip(&meta.grp)).bold()),
     };
-    lines.push(row("Group", vec![group]));
+    lines.push(row(t("Group", "Nhóm"), vec![group]));
     let mut badges: Vec<Span> = tags(&meta)
         .flat_map(|t| [badge(t, false), Span::raw(" ")])
         .collect();
     if badges.is_empty() {
         badges.push(Span::styled("—", dim));
     }
-    lines.push(row("Tags", badges));
+    lines.push(row(t("Tags", "Thẻ"), badges));
     if !meta.notes.is_empty() {
-        lines.push(row("Notes", text(meta.notes.clone())));
+        lines.push(row(t("Notes", "Ghi chú"), text(meta.notes.clone())));
     }
 
-    lines.extend([Line::default(), section("ACTIVITY")]);
-    lines.push(row("Last used", text(ago(meta.last_connected))));
-    lines.push(row("Sessions", text(meta.connects.to_string())));
+    lines.extend([Line::default(), section(t("ACTIVITY", "HOẠT ĐỘNG"))]);
+    let last = text(ago(meta.last_connected, lang));
+    lines.push(row(t("Last used", "Lần cuối"), last));
+    lines.push(row(
+        t("Sessions", "Số phiên"),
+        text(meta.connects.to_string()),
+    ));
     let vault = match &app.vault {
-        Some(v) if v.get(alias).is_some() => {
-            Span::styled("password stored", Style::new().fg(th.ok))
-        }
-        Some(_) => Span::raw("no password"),
-        None => Span::styled("locked", dim),
+        Some(v) if v.get(alias).is_some() => Span::styled(
+            t("password stored", "đã lưu mật khẩu"),
+            Style::new().fg(th.ok),
+        ),
+        Some(_) => Span::raw(t("no password", "chưa có mật khẩu")),
+        None => Span::styled(t("locked", "đang khoá"), dim),
     };
-    lines.push(row("Vault", vec![vault]));
+    lines.push(row(t("Vault", "Kho"), vec![vault]));
 
     let forwards = app.forwards(alias);
     if !forwards.is_empty() {
-        lines.extend([Line::default(), section("FORWARDS")]);
+        lines.extend([Line::default(), section(t("FORWARDS", "CHUYỂN TIẾP CỔNG"))]);
     }
     for (kind, value) in forwards {
         let state = match app.fwds.get(&fwd_key(alias, kind, &value)) {
-            Some((_, true)) => Span::styled("● active", Style::new().fg(th.ok)),
-            Some((_, false)) => Span::styled("◌ connecting", Style::new().fg(th.warn)),
-            None => Span::styled("○ stopped", dim),
+            Some((_, true)) => Span::styled(t("● active", "● đang chạy"), Style::new().fg(th.ok)),
+            Some((_, false)) => Span::styled(
+                t("◌ connecting", "◌ đang kết nối"),
+                Style::new().fg(th.warn),
+            ),
+            None => Span::styled(t("○ stopped", "○ đã dừng"), dim),
         };
         let spec = Span::raw(format!("  {kind} {value}  "));
         lines.push(Line::from(vec![spec, state]));
@@ -491,9 +532,13 @@ fn forwards(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     let th = &app.cfg.theme;
     let items = app.forwards(alias).into_iter().map(|(kind, value)| {
         let (dot, state, colour) = match app.fwds.get(&fwd_key(alias, kind, &value)) {
-            Some((_, true)) => ("●", "active", th.ok),
-            Some((_, false)) => ("◌", "connecting", th.warn),
-            None => ("○", "stopped", th.dim),
+            Some((_, true)) => ("●", app.cfg.lang.pick("active", "đang chạy"), th.ok),
+            Some((_, false)) => (
+                "◌",
+                app.cfg.lang.pick("connecting", "đang kết nối"),
+                th.warn,
+            ),
+            None => ("○", app.cfg.lang.pick("stopped", "đã dừng"), th.dim),
         };
         Line::from(vec![
             Span::styled(format!("{dot} "), Style::new().fg(colour)),
@@ -533,7 +578,7 @@ fn snippets(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     );
 }
 
-fn files(view: &SftpView, th: &Theme, f: &mut Frame, area: Rect) {
+fn files(view: &SftpView, th: &Theme, lang: Lang, f: &mut Frame, area: Rect) {
     let [panes, gauge] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
     let split = Layout::horizontal([Constraint::Percentage(50); 2]).spacing(1);
     let halves: [Rect; 2] = split.areas(panes);
@@ -548,7 +593,10 @@ fn files(view: &SftpView, th: &Theme, f: &mut Frame, area: Rect) {
                 Span::styled(format!("  {}", human(e.size)), Style::new().fg(th.dim)),
             ]),
         });
-        let name = ["local", "remote"][side];
+        let name = [
+            lang.pick("local", "máy mình"),
+            lang.pick("remote", "máy từ xa"),
+        ][side];
         let title = format!("{name}  {}", clean(&view.dirs[side]));
         let list = List::new(items)
             .block(panel(&title, side == view.side, th))
@@ -1049,6 +1097,7 @@ mod tests {
         assert_eq!(human(5 * 1024 * 1024), "5.0 M");
         assert_eq!(human(3 * 1024 * 1024 * 1024 * 1024), "3.0 T");
         assert_eq!((latency(0), latency(42)), ("<1 ms".into(), "42 ms".into()));
+        let ago = |ts| ago(ts, Lang::En);
         assert_eq!(ago(0), "never");
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let now = now.as_secs() as i64;
@@ -1056,6 +1105,8 @@ mod tests {
         assert_eq!(ago(now - 150), "2 min ago");
         assert_eq!(ago(now - 7300), "2 h ago");
         assert_eq!(ago(now - 3 * 86400), "3 d ago");
+        assert_eq!(super::ago(now - 7300, Lang::Vi), "2 giờ trước");
+        assert_eq!(super::ago(0, Lang::Vi), "chưa lần nào");
     }
 
     #[test]

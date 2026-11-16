@@ -608,7 +608,8 @@ impl App {
             let replies = term::Replies::default();
             let parser = vt100::Parser::new_with_callbacks(rows, cols, 5000, replies);
             let mut parser = Box::new(parser);
-            parser.process(format!("Connecting to {alias}…\r\n").as_bytes());
+            let connecting = self.cfg.lang.pick("Connecting to", "Đang kết nối tới");
+            parser.process(format!("{connecting} {alias}…\r\n").as_bytes());
             (Kind::Term { parser, tx: cmd_tx }, task)
         };
         self.tabs.push(Tab {
@@ -1074,13 +1075,10 @@ impl App {
                 let own = meta.tags.split([' ', ',']).chain([meta.grp.as_str()]);
                 let own = own.into_iter().find(|t| !t.is_empty()).unwrap_or("");
                 let tag = self.filter.strip_prefix('#').unwrap_or(own).to_string();
-                let fields = vec![("Tag or group", tag)];
-                self.form(
-                    "Connect to every host with",
-                    fields,
-                    false,
-                    After::ConnectTag,
-                );
+                let lang = self.cfg.lang;
+                let fields = vec![(lang.pick("Tag or group", "Thẻ hoặc nhóm"), tag)];
+                let title = lang.pick("Connect to every host with", "Kết nối mọi máy chủ có");
+                self.form(title, fields, false, After::ConnectTag);
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
             KeyCode::Char(c) if c == keys.ping => self.ping_all(),

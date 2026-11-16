@@ -12,7 +12,7 @@ plain `ssh` keeps working with everything vssh edits.
 
 - SSH sessions in tabs, with a built-in terminal emulator
 - Several hosts side by side in split panes, and broadcast: type once, run everywhere
-- Quick connect to `user@host` without saving anything
+- Quick connect to `user@host`, with or without saving the host and its password
 - Dual-pane SFTP browser with a progress bar
 - Local, remote and dynamic (SOCKS5) port forwards per host
 - Encrypted password vault, command snippets, groups and tags, fuzzy search
@@ -24,7 +24,7 @@ plain `ssh` keeps working with everything vssh edits.
 | **Leader menu (`Ctrl-a`)** | **SFTP** |
 | ![Which-key popup listing the session keys](docs/img/which-key.png) | ![Dual-pane SFTP browser](docs/img/sftp.png) |
 
-The pictures are captured from the real app by [`docs/img/demo.sh`](docs/img/demo.sh) (terminal contents rendered to images); the hosts in them are a local demo container.
+The pictures show the Vietnamese interface (`vssh --lang vi`); English is the default. They are captured from the real app by [`docs/img/demo.sh`](docs/img/demo.sh) (terminal contents rendered to images); the hosts in them are a local demo container.
 
 Linux and macOS. Pure Rust SSH ([russh](https://github.com/warp-tech/russh)); no `ssh` binary needed.
 
@@ -59,7 +59,15 @@ cargo build --release
 
 Press `c`, type `user@host` or `user@host:port`, optionally a password, and press `Enter`. A session opens in a tab. Nothing is saved: no entry in `~/.ssh/config`, no vault entry, no statistics; the password is used for that session only. The host key is still checked and recorded in `~/.ssh/known_hosts`, as with `ssh`.
 
-![Quick connect form](docs/img/quick-connect.png)
+**Save while connecting.** Tick the checkbox in the form with `Ctrl-s` (or `Tab` to it and press `S`), then `Enter`:
+
+- the host is added to `~/.ssh/config` like any other host. Its alias is the host name, or `user@host` if that name is already taken;
+- a password you typed is stored in the vault under that alias, encrypted like every vault password. If the vault is locked you are asked for the master passphrase (or to create a vault); cancel that prompt and the password is dropped, not stored;
+- the password is never written to `~/.ssh/config` or `config.toml`.
+
+A plain `S` cannot be the toggle while the cursor is in a text field, because it is a letter you may need to type; that is why the shortcut is `Ctrl-s`.
+
+![Quick connect form with the save checkbox ticked](docs/img/quick-connect.png)
 
 ## Many hosts at once
 
@@ -122,7 +130,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Enter` / `s` | open shell / SFTP browser |
 | | `Space`, then `Enter` | mark hosts, then open a session on every marked host |
 | | `T` | connect to every host with a tag or group |
-| | `c` | quick connect (not saved) |
+| | `c` | quick connect; `Ctrl-s` in the form saves the host and its password |
 | | `/` | search (`#tag` for a tag or group); `Esc` clears |
 | | `a` `e` `d` `y` | add, edit, delete, duplicate host |
 | | `p` | pin host |

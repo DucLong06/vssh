@@ -11,7 +11,7 @@ vẫn dùng được mọi thứ vssh chỉnh sửa.
 
 - Nhiều phiên SSH trong các tab, có sẵn trình giả lập terminal
 - Nhiều máy chủ cạnh nhau trong các khung chia, và chế độ phát (broadcast): gõ một lần, chạy trên mọi máy
-- Kết nối nhanh tới `user@host` mà không lưu lại gì
+- Kết nối nhanh tới `user@host`, có thể lưu hoặc không lưu máy chủ và mật khẩu
 - Trình duyệt SFTP hai khung, có thanh tiến độ
 - Chuyển tiếp cổng local, remote và dynamic (SOCKS5) cho từng máy chủ
 - Kho mật khẩu mã hoá, snippet lệnh, nhóm và thẻ (tag), tìm kiếm mờ
@@ -23,7 +23,7 @@ vẫn dùng được mọi thứ vssh chỉnh sửa.
 | **Menu leader (`Ctrl-a`)** | **SFTP** |
 | ![Popup which-key liệt kê các phím của phiên làm việc](docs/img/which-key.png) | ![Trình duyệt SFTP hai khung](docs/img/sftp.png) |
 
-Hình ảnh được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh); các máy chủ trong hình là một container demo chạy trên máy.
+Hình ảnh là giao diện tiếng Việt (`vssh --lang vi`); mặc định là tiếng Anh. Chúng được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh); các máy chủ trong hình là một container demo chạy trên máy.
 
 Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
 
@@ -58,7 +58,15 @@ cargo build --release
 
 Nhấn `c`, gõ `user@host` hoặc `user@host:port`, có thể thêm mật khẩu, rồi nhấn `Enter`. Một phiên làm việc mở ra trong tab. Không có gì được lưu: không thêm vào `~/.ssh/config`, không lưu vào kho mật khẩu, không ghi thống kê; mật khẩu chỉ dùng cho phiên đó. Khoá máy chủ vẫn được kiểm tra và ghi vào `~/.ssh/known_hosts`, giống như `ssh`.
 
-![Biểu mẫu kết nối nhanh](docs/img/quick-connect.png)
+**Lưu ngay khi kết nối.** Đánh dấu ô chọn trong biểu mẫu bằng `Ctrl-s` (hoặc `Tab` tới ô đó rồi nhấn `S`), sau đó nhấn `Enter`:
+
+- máy chủ được thêm vào `~/.ssh/config` như mọi máy chủ khác. Alias là tên máy, hoặc `user@host` nếu tên đó đã được dùng;
+- mật khẩu bạn đã gõ được lưu vào kho mật khẩu dưới alias đó, mã hoá như mọi mật khẩu trong kho. Nếu kho đang khoá, vssh hỏi mật khẩu chủ (hoặc tạo kho mới); nếu bạn huỷ bước này thì mật khẩu bị bỏ đi, không được lưu;
+- mật khẩu không bao giờ được ghi vào `~/.ssh/config` hay `config.toml`.
+
+Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng để bật/tắt vì đó là một chữ cái bạn có thể cần gõ; vì vậy phím tắt là `Ctrl-s`.
+
+![Biểu mẫu kết nối nhanh, ô lưu đã được đánh dấu](docs/img/quick-connect.png)
 
 ## Nhiều máy chủ cùng lúc
 
@@ -121,7 +129,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Enter` / `s` | mở shell / trình duyệt SFTP |
 | | `Space`, rồi `Enter` | đánh dấu các máy, rồi mở phiên trên mọi máy đã đánh dấu |
 | | `T` | kết nối mọi máy có cùng thẻ hoặc nhóm |
-| | `c` | kết nối nhanh (không lưu) |
+| | `c` | kết nối nhanh; `Ctrl-s` trong biểu mẫu để lưu máy chủ và mật khẩu |
 | | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm); `Esc` để xoá |
 | | `a` `e` `d` `y` | thêm, sửa, xoá, nhân bản máy chủ |
 | | `p` | ghim máy chủ |
