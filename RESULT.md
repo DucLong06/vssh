@@ -696,3 +696,287 @@ exit code: 0
 
 `BRIEF-UI.md` and `BRIEF-CI.md` are untracked and left that way. A `plans/`
 directory appeared in the repo during this work; it is not mine and is untouched.
+
+
+---
+
+# Update: broadcast, split layouts, LazyVim-style UI (BRIEF-BROADCAST.md)
+
+Run on 2026-11-16 on branch `feat/broadcast-lazyvim`, at commit `0ee4c44`. Not
+pushed. Output is pasted as produced. Test count and binary size here
+supersede the earlier sections.
+
+## What the brief assumed that was not there
+
+- `install.sh` did not exist. It was written from scratch.
+- There was no which-key popup. It is new in this round.
+- Snippets were never typed into the active tab; they only ran over a separate
+  exec connection. `leader s` now types one into the session.
+
+## Milestones
+
+| Milestone | Commit | Result |
+|-----------|--------|--------|
+| M1 broadcast core | `100e868` | `Space` + `Enter` opens every marked host; `T` connects every host with a tag or group; `Alt-b` / `leader b` sends typing and pastes to every live session, encoded per session. |
+| M2 layouts | `51dc42a` | Single, 2 columns, 2x2 grid, 3 columns; `leader L` cycles; a sliding window keeps the focused session and its group on screen; `leader d` / `x` closes a pane. |
+| M3 install language | `a6efafc` | `install.sh` in English or Vietnamese (`--lang`, `VSSH_LANG`, `LC_ALL`, `LC_MESSAGES`, `LANG`); TUI `lang` setting, `--lang`, `VSSH_LANG`. |
+| M4 LazyVim UI | `c0e5ffb` | lualine-style status line with a coloured mode badge, grouped key hints with faded inactive keys, which-key popup with a window submenu, `Ctrl-d` / `Ctrl-u`, `Q`. |
+| M5 parity + docs | `28c60b5`, `0ee4c44` | Session logging, login scripts (`[exec]` and `RemoteCommand`), snippets typed into sessions, README in both languages, PLAN with the audit and the not-planned list, new screenshots. |
+
+## Decisions the brief left open or contradicted
+
+1. **`leader l` cannot be both "focus right" and "toggle log".** The brief
+   asks for pane focus on `h/j/k/l` and for `Ctrl-a l` to toggle logging. I
+   gave `leader l` to logging, as the brief spells out twice, and put focus on
+   `Alt-h/j/k/l` (only while several panes are shown), `leader` + arrow keys,
+   and `leader w` + `h/j/k/l`.
+2. **Existing leader keys moved.** `leader h` (host list) is now `leader q`;
+   `leader k` / `j` (scroll) are now `leader PgUp` / `PgDn` or
+   `leader Ctrl-u` / `Ctrl-d`.
+3. **`Alt-b` no longer reaches the remote shell**, where readline uses it for
+   "back one word". The brief asks for it as the broadcast toggle.
+4. **Broadcast reaches sessions that are not on screen.** The brief says all
+   connected sessions. The status line always shows how many are listening.
+5. **Panes are session tabs shown together**, not a separate pane tree, so
+   every pane is also in the tab bar and all tab keys keep working.
+6. **`q` still quits from the host list** (existing, configurable); `Q` quits
+   from the host list and SFTP; `leader q` leaves the session view.
+7. **TUI translation is partial**: key hints, leader menu, help screen and
+   status-line words. Forms, confirmations and error messages stay English
+   because those strings are not centralised.
+8. **Session logs are raw terminal output** (escape sequences included, like
+   `script`), starting with a plain-text copy of what is on screen.
+9. **`[exec]` is typed into the shell; `RemoteCommand` replaces the shell.**
+   That is how OpenSSH treats `RemoteCommand`; the typed command is echoed
+   once before the prompt appears.
+10. **Not done, marked optional in the brief:** per-pane broadcast switch,
+    pane resize with `<` / `>`. `gg` is the existing single `g`.
+
+## Checked live against a real SSH server
+
+A throwaway Alpine container on loopback and a temporary HOME, driven through
+tmux:
+
+- three marked hosts, `Enter`: three sessions in three columns;
+- `Alt-b`, one typed `echo pid-$$`: three different PIDs, one per pane;
+  broadcast off, typing reaches the focused pane only;
+- `leader L` cycles the four layouts; `leader w g` jumps to the grid;
+  `Alt-l` / `Alt-h`, `leader` + arrow and `leader w h` move focus; in the
+  single layout `Alt-l` is left to the shell;
+- `T` with a tag connects two hosts, with a group three, with an unknown tag
+  it reports `no host has the tag or group nope`; a second group opened later
+  is shown together, not split across pages;
+- `leader d` closes the focused pane and focus stays with the sessions;
+- `[exec]` runs `echo login-script-$((5+5))` on connect (`login-script-10`);
+  a host with `RemoteCommand echo remote-command-ran; sleep 2` prints it and
+  the session ends;
+- `leader l` writes `logs/a1-20261116-211044.log` (file 0600, directory 0700)
+  containing the screen at that moment and everything after;
+- `leader s` lists the snippets and types the chosen one (`whoami` → `root`);
+- `--lang vi`: Vietnamese hints, leader menu and help; `Ctrl-d` / `Ctrl-u`
+  move the selection; `Q` with an open tab asks before quitting.
+
+`install.sh` was run for real into a temporary prefix: from the checkout in
+Vietnamese and in English (the second run updating the first), and from
+outside a checkout with `cargo` hidden, where it reports that no release
+binary exists and that Rust is needed, in the chosen language, exit code 1.
+
+## Real output
+
+### `cargo fmt --check`
+
+```
+exit code: 0
+```
+
+### `cargo build --release` (after `cargo clean --release`)
+
+```
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling subtle v2.6.1
+   ... (222 more "Compiling" lines elided) ...
+   Compiling russh v0.65.1
+   Compiling rusqlite v0.43.0
+   Compiling vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `release` profile [optimized] target(s) in 1m 43s
+exit code: 0
+```
+
+228 crates compiled, 0 warnings.
+
+```
+-rwxrwxr-x 2 longhd longhd 6314488 Nov 16 21:19 target/release/vssh
+vssh 0.1.0
+```
+
+### `cargo test`
+
+```
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.13s
+     Running unittests src/lib.rs (target/debug/deps/vssh-ec2a087e5b7d25dc)
+
+running 54 tests
+test config::tests::partial_config_keeps_defaults ... ok
+test config::tests::login_scripts_and_logging ... ok
+test config::tests::language_setting ... ok
+test config::tests::config_from_before_the_restyle_still_loads ... ok
+test config::tests::rejects_typos_and_bad_colours ... ok
+test ssh::forward::tests::socks5_connect_requests ... ok
+test ssh::forward::tests::socks5_rejects_what_it_cannot_do ... ok
+test ssh::tests::known_key_types_are_offered_first ... ok
+test ssh::tests::key_of_another_type_does_not_count_as_unknown ... ok
+test ssh::tests::login_script_is_typed_line_by_line ... ok
+test ssh::tests::quick_connect_targets ... ok
+test store::ssh_config::tests::first_host_in_empty_file ... ok
+test store::ssh_config::tests::forwards_parse_and_format ... ok
+test ssh::tests::remote_command_comes_from_the_ssh_config ... ok
+test store::ssh_config::tests::glob_patterns ... ok
+test ssh::tests::host_key_policy ... ok
+test store::ssh_config::tests::line_breaks_cannot_inject_directives ... ok
+test store::ssh_config::tests::lists_only_concrete_hosts ... ok
+test store::ssh_config::tests::multi_valued_add_remove ... ok
+test ssh::tests::target_resolution ... ok
+test store::ssh_config::tests::round_trip_is_lossless ... ok
+test store::ssh_config::tests::parses_separators_quotes_and_case ... ok
+test ui::draw::tests::chips_are_stable_and_popups_fit ... ok
+test store::ssh_config::tests::resolves_like_openssh ... ok
+test store::ssh_config::tests::host_lifecycle ... ok
+test ui::panes::tests::focus_moves_like_vim_windows ... ok
+test ui::panes::tests::layouts_cycle_and_fit ... ok
+test ui::draw::tests::formats_sizes_and_ages ... ok
+test ui::files::tests::remote_paths ... ok
+test store::ssh_config::tests::set_replaces_adds_and_removes ... ok
+test ui::panes::tests::window_follows_the_active_session ... ok
+test ui::term::tests::encodes_keys_like_xterm ... ok
+test ui::term::tests::answers_terminal_queries ... ok
+test ui::term::tests::renders_text_colours_and_wide_chars ... ok
+test ui::tests::clean_strips_escape_sequences ... ok
+test ui::tests::connect_by_tag_is_exact ... ok
+test ui::tests::broadcast_encodes_for_each_sessions_own_mode ... ok
+test ui::tests::a_picked_snippet_is_typed_into_every_broadcast_session ... ok
+test ui::tests::tag_filter_matches_tags_and_group_by_prefix ... ok
+test vault::tests::malformed_plaintext_is_rejected_not_trusted ... ok
+test ui::tests::broadcast_sends_keys_to_every_live_session ... ok
+test store::db::tests::metadata_and_snippets ... ok
+test ui::panes::tests::geometry_of_each_preset ... ok
+test ui::panes::tests::panes_tile_the_area_without_gaps_or_overlap ... ok
+test ui::files::tests::local_pane_operations ... ok
+test ui::tests::session_logs_are_private_and_stay_in_their_directory ... ok
+test store::ssh_config::tests::save_backs_up_once_and_is_private ... ok
+test vault::tests::set_takes_the_secret_out_of_the_caller ... ok
+test vault::tests::debug_and_errors_never_show_secrets ... ok
+test vault::tests::file_is_private_opaque_and_renonced ... ok
+test vault::tests::create_refuses_to_overwrite_or_use_empty_passphrase ... ok
+test vault::tests::wrong_passphrase_is_rejected ... ok
+test vault::tests::round_trip ... ok
+test vault::tests::tampering_is_detected ... ok
+
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/main.rs (target/debug/deps/vssh-a08097de3898dc4f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/install.rs (target/debug/deps/install-0657114a08835ab6)
+
+running 1 test
+test installer_picks_its_language ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/security.rs (target/debug/deps/security-20489d7f43bd4846)
+
+running 11 tests
+test comments_and_includes_are_inert ... ok
+test hostile_host_line_stays_in_its_own_block ... ok
+test db_module_builds_no_sql_from_strings ... ok
+test pathological_patterns_do_not_hang ... ok
+test edits_cannot_inject_blocks_or_directives ... ok
+test identity_file_expands_only_a_leading_home ... ok
+test vault_debug_and_errors_do_not_leak ... ok
+test vault_file_stays_private_and_unique ... ok
+test parser_never_panics_and_keeps_its_meaning ... ok
+test vault_rejects_anything_that_is_not_an_intact_vault ... ok
+test sql_metacharacters_are_stored_as_data ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+   Doc-tests vssh
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit code: 0
+```
+
+66 tests: 54 in-crate, 1 for the installer, 11 in `tests/security.rs`. The
+tests the brief asks for: broadcast routing (`broadcast_sends_keys_to_every_live_session`,
+`broadcast_encodes_for_each_sessions_own_mode`), layout geometry
+(`ui::panes::tests`), installer language detection (`tests/install_lang.sh`,
+run by `tests/install.rs`), login script (`login_script_is_typed_line_by_line`,
+`remote_command_comes_from_the_ssh_config`, `login_scripts_and_logging`).
+
+### `sh tests/install_lang.sh` (18 cases; also passes under `dash` and `bash`)
+
+```
+install.sh language selection: ok
+exit code: 0
+```
+
+### `cargo clippy -- -D warnings`
+
+```
+    Checking vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.85s
+exit code: 0
+```
+
+### `cargo clippy --all-targets -- -D warnings` (what CI runs)
+
+```
+    Checking vssh v0.1.0 (/home/longhd/projects/vssh)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.08s
+exit code: 0
+```
+
+## README media
+
+vhs could not be used this round (fetching its binary was blocked by a
+permission check), so `docs/img/shots.py` captures the real app with tools
+already installed: `tmux capture-pane -e` for the screen and its colours,
+headless Chrome to render each capture to PNG, ffmpeg to join the frames into
+`demo.gif`. The GIF is therefore a sequence of real screens, 1.6 s each, not a
+smooth recording. The vhs tape was removed. Demo data is as before: six demo
+hosts, four on one local container, two on dead ports.
+
+## Not done / not verified
+
+- The release-download path of `install.sh` has never succeeded: no GitHub
+  release exists, and no release workflow was added. The `cargo install --git`
+  fallback was not run either (it would build the pushed default branch, not
+  this one).
+- No automated test drives the key handling of the TUI itself; the routing,
+  geometry and encoding it relies on are unit-tested, the rest was checked by
+  hand in tmux as listed above.
+- Sessions were only tested against one container playing several hosts, so
+  broadcast was never seen across genuinely different machines.
+- Startup time and `cargo audit` were not re-run; no dependency changed.
+- The Vietnamese strings were written by me and not reviewed by a native speaker.
+- The binary in `~/.local/bin` is still the previous build; it was not replaced this round.
+
+## Commits in this round
+
+```
+0ee4c44 docs: M5 README (EN + VI), plan, and fresh screenshots
+28c60b5 feat: M5 session logging, login scripts, snippets typed into sessions
+c0e5ffb feat: M4 LazyVim-style status line, grouped hints, which-key menu
+a6efafc feat: M3 bilingual installer and language setting
+51dc42a feat: M2 split layouts for sessions
+100e868 feat: M1 broadcast core, connect to many hosts at once
+```
+
+`BRIEF-BROADCAST.md` is untracked and left that way.
