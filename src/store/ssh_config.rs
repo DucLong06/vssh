@@ -232,14 +232,19 @@ impl SshConfig {
         }
     }
 
+    /// Adds an empty block for the alias, ahead of the first wildcard block
+    /// that matches it (typically a trailing `Host *`). OpenSSH keeps the
+    /// first value it sees, so the host's own options must come before defaults.
     pub fn add_host(&mut self, alias: &str) {
-        if let Some(last) = self.blocks.last_mut() {
-            last.end_with_blank();
-        }
-        self.blocks.push(Block {
-            header: format!("Host {alias}"),
-            lines: vec![],
-        });
+        let wildcard = self.blocks.iter().skip(1).position(|b| b.applies_to(alias));
+        let at = wildcard.map_or(self.blocks.len(), |i| i + 1);
+        self.blocks[at - 1].end_with_blank();
+        let lines = match wildcard {
+            Some(_) => vec![String::new()],
+            None => vec![],
+        };
+        let header = format!("Host {alias}");
+        self.blocks.insert(at, Block { header, lines });
     }
 
     /// Drops the alias; the block goes with it unless other aliases share it.
@@ -455,9 +460,13 @@ Host *
         let mut c = SshConfig::parse(SAMPLE);
         c.add_host("new");
         c.set("new", "HostName", "1.2.3.4");
+        c.set("new", "User", "me");
+        // Lands before the matching `Host *`, so its own values win over the defaults.
         assert!(c
             .to_string()
-            .ends_with("IdentityFile ~/.ssh/id_default\n\nHost new\n    HostName 1.2.3.4\n"));
+            .contains("    Port 2200\n\nHost new\n    HostName 1.2.3.4\n    User me\n\nHost *\n"));
+        assert_eq!(c.get("new", "User"), Some("me"));
+        assert_eq!(c.get("new", "IdentityFile"), Some("~/.ssh/id_default"));
 
         c.rename_host("new", "newer");
         c.duplicate_host("newer", "copy");
