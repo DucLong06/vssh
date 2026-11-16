@@ -47,6 +47,39 @@ pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
     out
 }
 
+/// Collects answers to the status queries programs send to the terminal.
+/// Without them vim waits seconds at startup for a reply that never comes.
+#[derive(Default)]
+pub struct Replies(pub Vec<u8>);
+
+impl vt100::Callbacks for Replies {
+    fn unhandled_csi(
+        &mut self,
+        screen: &mut vt100::Screen,
+        intermediate: Option<u8>,
+        _: Option<u8>,
+        params: &[&[u16]],
+        c: char,
+    ) {
+        let param = params.first().and_then(|p| p.first()).copied();
+        let reply = match (intermediate, c, param.unwrap_or(0)) {
+            // Primary device attributes: a VT220 with ANSI colour.
+            (None, 'c', 0) => "\x1b[?62;22c".to_string(),
+            // Secondary: version 0, so nobody assumes xterm-only features.
+            (Some(b'>'), 'c', 0) => "\x1b[>0;0;0c".to_string(),
+            // Device status: OK.
+            (None, 'n', 5) => "\x1b[0n".to_string(),
+            // Cursor position report, 1-based.
+            (None, 'n', 6) => {
+                let (row, col) = screen.cursor_position();
+                format!("\x1b[{};{}R", row + 1, col + 1)
+            }
+            _ => return,
+        };
+        self.0.extend_from_slice(reply.as_bytes());
+    }
+}
+
 fn color(c: vt100::Color) -> Color {
     match c {
         vt100::Color::Default => Color::Reset,
@@ -117,6 +150,17 @@ mod tests {
         // vim and less switch the cursor keys to application mode.
         let up = KeyEvent::new(KeyCode::Up, none);
         assert_eq!(encode_key(up, true), b"\x1bOA");
+    }
+
+    #[test]
+    fn answers_terminal_queries() {
+        let size = std::num::NonZeroU16::new(10).unwrap();
+        let mut parser = vt100::Parser::new_with_callbacks(size, size, 0, Replies::default());
+        parser.process(b"ab\r\ncd\x1b[c\x1b[>c\x1b[5n\x1b[6n\x1b[?1049h\x1b[2J\x1b[99n");
+        assert_eq!(
+            parser.callbacks().0,
+            b"\x1b[?62;22c\x1b[>0;0;0c\x1b[0n\x1b[2;3R"
+        );
     }
 
     #[test]
