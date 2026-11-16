@@ -1,0 +1,12 @@
+# Configuration of `cargo audit` (run by the CI `audit` job).
+
+[advisories]
+ignore = [
+    # rsa: "Marvin" timing side channel in private-key operations.
+    # The fix is in rsa 0.10.0, but russh 0.65.1 (the latest) pins
+    # rsa =0.10.0-rc.18, so it cannot be selected yet.
+    # Exposure in vssh: signing with an RSA key *file*. Keys held by an agent
+    # and Ed25519 / ECDSA keys do not go through this code.
+    # Remove this entry as soon as russh allows rsa >= 0.10.0.
+    "RUSTSEC-2023-0071",
+]
