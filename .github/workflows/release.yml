@@ -22,7 +22,7 @@ jobs:
       - name: Install cross tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq musl-tools dpkg-dev pkg-config
+          sudo apt-get install -y -qq musl-tools dpkg-dev pkg-config gcc-aarch64-linux-gnu
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
         env:
