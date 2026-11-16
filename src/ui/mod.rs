@@ -73,7 +73,11 @@ enum Kind {
 
 struct Tab {
     id: u64,
+    /// Tab title: the host alias, or `user@host` for a quick connect.
     alias: String,
+    target: Target,
+    /// False for a quick connect: no stats, nothing stored.
+    saved: bool,
     kind: Kind,
     task: JoinHandle<()>,
     /// Set once the first byte or listing arrives.
@@ -89,8 +93,12 @@ enum After {
     /// Retry a connection with a typed password.
     Password {
         alias: String,
+        target: Target,
+        saved: bool,
         sftp: bool,
     },
+    /// Connect to a typed `user@host[:port]` without saving it.
+    QuickConnect,
     /// Unlock, then optionally go on to set this host's password.
     VaultUnlock(Option<String>),
     /// Same, for a new vault; the second field is the first passphrase entry.
@@ -110,7 +118,7 @@ struct Form {
     title: String,
     fields: Vec<(&'static str, Zeroizing<String>)>,
     idx: usize,
-    /// Single secret field, shown as dots.
+    /// The last field is a secret, shown as dots.
     masked: bool,
     then: After,
 }
@@ -338,14 +346,28 @@ impl App {
 
     // ── background work ─────────────────────────────────────────────────
 
-    /// Opens a shell or SFTP tab; the connection runs in its own task.
-    fn open(&mut self, alias: &str, sftp: bool, password: Option<Zeroizing<String>>) {
-        let target = match Target::from_config(&self.sshc, alias) {
-            Ok(t) => t,
-            Err(e) => return self.msg = e.to_string(),
-        };
-        let password = password.or_else(|| self.vault_password(alias));
+    /// Opens a shell or SFTP tab for a host from the ssh config.
+    fn open(&mut self, alias: &str, sftp: bool) {
+        match Target::from_config(&self.sshc, alias) {
+            Ok(target) => {
+                let password = self.vault_password(alias);
+                self.open_target(alias, target, true, sftp, password);
+            }
+            Err(e) => self.msg = e.to_string(),
+        }
+    }
+
+    /// Opens a tab; the connection runs in its own task.
+    fn open_target(
+        &mut self,
+        alias: &str,
+        target: Target,
+        saved: bool,
+        sftp: bool,
+        password: Option<Zeroizing<String>>,
+    ) {
         let (id, tx, size) = (self.next_id, self.tx.clone(), self.body);
+        let tab_target = target.clone();
         self.next_id += 1;
         let (kind, task) = if sftp {
             let (cmd_tx, cmd_rx) = unbounded_channel();
@@ -381,6 +403,8 @@ impl App {
         self.tabs.push(Tab {
             id,
             alias: alias.to_string(),
+            target: tab_target,
+            saved,
             kind,
             task,
             connected: false,
@@ -529,6 +553,8 @@ impl App {
                 let then = After::Password {
                     sftp: matches!(tab.kind, Kind::Sftp(_)),
                     alias: tab.alias.clone(),
+                    target: tab.target.clone(),
+                    saved: tab.saved,
                 };
                 let title = format!("Keys were refused. Password for {}", tab.alias);
                 self.prompt(&title, "Password", true, then);
@@ -564,7 +590,7 @@ impl App {
 
     /// Records a successful connection the first time a tab hears back.
     fn mark_connected(&mut self, i: usize) {
-        if !mem::replace(&mut self.tabs[i].connected, true) {
+        if !mem::replace(&mut self.tabs[i].connected, true) && self.tabs[i].saved {
             let res = self.db.touch(&self.tabs[i].alias);
             let res = res.and_then(|()| self.db.metas().map(|m| self.meta = m));
             self.check(res.map_err(Into::into));
@@ -697,6 +723,18 @@ impl App {
             }
             KeyCode::Char(c) if c == keys.search => self.focus = Focus::Search,
             KeyCode::Char(c) if c == keys.add => self.host_form(None),
+            KeyCode::Char(c) if c == keys.connect => {
+                let fields = vec![
+                    ("user@host[:port]", String::new()),
+                    ("Password (optional)", String::new()),
+                ];
+                self.form(
+                    "Quick connect (not saved)",
+                    fields,
+                    true,
+                    After::QuickConnect,
+                );
+            }
             KeyCode::Char(c) if c == keys.help => self.help(),
             KeyCode::Char(c) if c == keys.ping => self.ping_all(),
             KeyCode::Char(c) if c == keys.vault => {
@@ -720,12 +758,12 @@ impl App {
         let keys = &self.cfg.keys;
         let KeyCode::Char(c) = code else {
             if code == KeyCode::Enter {
-                self.open(alias, false, None);
+                self.open(alias, false);
             }
             return Ok(());
         };
         if c == keys.sftp {
-            self.open(alias, true, None);
+            self.open(alias, true);
         } else if c == keys.edit {
             self.host_form(Some(alias));
         } else if c == keys.delete {
@@ -989,6 +1027,7 @@ impl App {
              \x20 {}            port forwards   {}       snippets\n\
              \x20 {}            check reachability\n\
              \x20 {}            store password  {}       unlock / lock vault\n\
+             \x20 {}            quick connect: user@host[:port], nothing is saved\n\
              \x20 Tab          next tab        {}       quit\n\n\
              FORWARDS / SNIPPETS PANEL\n\
              \x20 a add   e edit   d delete   Enter start/stop or run   Esc back\n\
@@ -1014,6 +1053,7 @@ impl App {
             k.ping,
             k.password,
             k.vault,
+            k.connect,
             k.quit,
             leader = k.leader,
         );
@@ -1109,8 +1149,8 @@ impl App {
     fn submit(&mut self, form: &mut Form) -> Result<()> {
         // A secret leaves the form here and is zeroized when this returns.
         let mut secret = Zeroizing::new(String::new());
-        if form.masked {
-            mem::swap(&mut *secret, &mut *form.fields[0].1);
+        if let Some((_, last)) = form.fields.last_mut().filter(|_| form.masked) {
+            mem::swap(&mut *secret, &mut **last);
         }
         let text = |i: usize| form.fields[i].1.trim().to_string();
         match &form.then {
@@ -1151,7 +1191,22 @@ impl App {
                 self.reload()?;
                 self.sel = self.hosts.iter().position(|h| *h == alias).unwrap_or(0);
             }
-            After::Password { alias, sftp } => self.open(alias, *sftp, Some(secret)),
+            After::Password {
+                alias,
+                target,
+                saved,
+                sftp,
+            } => self.open_target(alias, target.clone(), *saved, *sftp, Some(secret)),
+            After::QuickConnect => {
+                let target = Target::parse(&text(0))?;
+                let title = match target.port {
+                    22 => format!("{}@{}", target.user, target.host),
+                    port => format!("{}@{}:{port}", target.user, target.host),
+                };
+                // The password lives in this session's task only.
+                let password = (!secret.is_empty()).then_some(secret);
+                self.open_target(&title, target, false, false, password);
+            }
             After::VaultUnlock(next) => {
                 self.vault = Some(Vault::open(&vault_path(), &secret)?);
                 self.msg = "vault unlocked".into();

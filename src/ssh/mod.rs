@@ -66,9 +66,7 @@ impl Target {
             })
             .collect();
         if keys.is_empty() {
-            keys = ["id_ed25519", "id_ecdsa", "id_rsa"]
-                .map(|k| home.join(".ssh").join(k))
-                .into();
+            keys = default_keys();
         }
         Ok(Self {
             host: host.to_string(),
@@ -78,12 +76,48 @@ impl Target {
                 .unwrap_or(22),
             user: c
                 .get(alias, "User")
-                .map(str::to_string)
-                .or_else(|| std::env::var("USER").ok())
-                .unwrap_or_else(|| "root".into()),
+                .map_or_else(current_user, str::to_string),
             keys,
         })
     }
+
+    /// A one-off target typed as `[user@]host[:port]`; IPv6 as `[::1]:22`.
+    /// Nothing is read from or written to the ssh config.
+    pub fn parse(spec: &str) -> Result<Self> {
+        let (user, rest) = match spec.trim().rsplit_once('@') {
+            Some((user, rest)) => (user.to_string(), rest),
+            None => (current_user(), spec.trim()),
+        };
+        let (host, port) = match rest.rsplit_once(':') {
+            // More than one colon without brackets is a bare IPv6 address.
+            Some((host, _)) if host.contains(':') && !host.starts_with('[') => (rest, "22"),
+            Some((host, port)) => (host, port),
+            None => (rest, "22"),
+        };
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        let bad = |s: &str| s.is_empty() || s.contains(|c: char| c.is_whitespace() || c == '@');
+        if bad(&user) || bad(host) {
+            bail!("expected user@host or user@host:port");
+        }
+        crate::proto::ensure_ssh(host)?;
+        Ok(Self {
+            host: host.to_string(),
+            port: port.parse().context("port must be a number up to 65535")?,
+            user,
+            keys: default_keys(),
+        })
+    }
+}
+
+fn current_user() -> String {
+    std::env::var("USER").unwrap_or_else(|_| "root".into())
+}
+
+fn default_keys() -> Vec<PathBuf> {
+    let dir = crate::config::home().join(".ssh");
+    ["id_ed25519", "id_ecdsa", "id_rsa"]
+        .map(|k| dir.join(k))
+        .into()
 }
 
 pub struct Client {
@@ -371,6 +405,39 @@ mod tests {
         assert!(matches!(offered[2], Algorithm::Rsa { hash: None }));
         // Everything else is still offered, once.
         assert_eq!(offered.len(), default.len());
+    }
+
+    #[test]
+    fn quick_connect_targets() {
+        let t = |spec| Target::parse(spec).unwrap();
+        let parts = |t: &Target| (t.user.clone(), t.host.clone(), t.port);
+        assert_eq!(
+            parts(&t("root@10.0.0.5")),
+            ("root".into(), "10.0.0.5".into(), 22)
+        );
+        assert_eq!(
+            parts(&t(" deploy@web.example:2222 ")),
+            ("deploy".into(), "web.example".into(), 2222)
+        );
+        assert_eq!(
+            parts(&t("me@[::1]:2200")),
+            ("me".into(), "::1".into(), 2200)
+        );
+        assert_eq!(parts(&t("me@fe80::1")), ("me".into(), "fe80::1".into(), 22));
+        assert_eq!(t("box").host, "box");
+        assert_eq!(t("box").user, current_user());
+        assert_eq!(t("a@b").keys, default_keys());
+        for bad in [
+            "",
+            "@host",
+            "user@",
+            "user@ho st",
+            "a@b:port",
+            "a@b:70000",
+            "a@telnet://b",
+        ] {
+            assert!(Target::parse(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
