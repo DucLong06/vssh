@@ -242,7 +242,8 @@
     onsession={(id) => (active = id)}
   />
 
-  <main class="flex min-h-0 flex-col">
+  <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
+  <main class="flex min-h-0 min-w-0 flex-col">
     {#if sessions.length || files.length}
       <Tabs {sessions} {files} {active} onpick={(id) => (active = id)} onclose={close} />
     {/if}

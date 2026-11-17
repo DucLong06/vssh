@@ -28,8 +28,11 @@ test('sizes, in the TUI\'s units', () => {
   expect(human(3 * 1024 ** 4)).toBe('3.0 T')
 })
 
-test('when a file changed, in local time; a time nobody knows is a dash', () => {
-  expect(when(new Date(2025, 10, 16, 9, 5).getTime() / 1000)).toBe('2025-11-16 09:05')
+test('when a file changed, in local time, as ls has it; a time nobody knows is a dash', () => {
+  const year = new Date().getFullYear()
+  expect(when(new Date(year, 0, 6, 9, 5).getTime() / 1000)).toBe('01-06 09:05')
+  // Before this year the day is enough.
+  expect(when(new Date(2019, 2, 2, 9, 5).getTime() / 1000)).toBe('2019-03-02')
   expect(when(0)).toBe('—')
 })
 

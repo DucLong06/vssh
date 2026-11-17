@@ -364,7 +364,7 @@ test('Rename starts from the name there is; Delete asks first', async () => {
   await user.click(within(menu()).getByRole('menuitem', { name: 'Rename' }))
   const name = within(dialog()).getByRole('textbox', { name: 'Name' })
   expect(name).toHaveValue('auth.log')
-  await user.clear(name)
+  expect(name).toHaveFocus()
   await user.keyboard('auth.old{Enter}')
   expect(asked('sftp_rename')).toEqual([
     { host: 'web-01', from: '/home/deploy/auth.log', to: '/home/deploy/auth.old' },
@@ -387,8 +387,9 @@ test('Rename starts from the name there is; Delete asks first', async () => {
   expect(asked('local_rm')).toEqual([{ path: '/home/me/notes.txt', isDir: false }])
   await rightClick(user, await row('local', 'notes.txt'))
   await user.click(within(menu()).getByRole('menuitem', { name: 'Rename' }))
-  await user.keyboard('.bak{Enter}')
-  expect(asked('local_rename')).toEqual([{ from: '/home/me/notes.txt', to: '/home/me/notes.txt.bak' }])
+  // The name is selected: what is typed takes its place.
+  await user.keyboard('notes.bak{Enter}')
+  expect(asked('local_rename')).toEqual([{ from: '/home/me/notes.txt', to: '/home/me/notes.bak' }])
 })
 
 test('a change the host refuses is said, and can be put away', async () => {

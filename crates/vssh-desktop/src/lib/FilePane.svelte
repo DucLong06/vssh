@@ -50,6 +50,7 @@
   let name = $state('')
   let grid = $state<HTMLElement>()
   let search = $state<HTMLInputElement>()
+  let trail = $state<HTMLElement>()
 
   const visible = $derived(
     entries.filter(
@@ -66,6 +67,15 @@
   $effect(() => {
     if (selected) grid?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   })
+
+  // Of a path too long for its pane, the end is what is shown: where one is.
+  $effect(() => {
+    // Again when the label changes with the language: it takes room from the path.
+    if (path && label && trail) trail.scrollLeft = trail.scrollWidth
+  })
+
+  /** The last column: there from a pane of 20rem on. */
+  const late = 'hidden px-2 py-0.5 @xs:table-cell'
 
   const move = (to: number) => (name = visible[Math.min(Math.max(to, 0), visible.length - 1)]?.name ?? '')
 
@@ -141,11 +151,16 @@
     e.preventDefault()
     ondropped()
   }}
-  class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-edge bg-panel focus-within:border-blue"
+  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-edge bg-panel focus-within:border-blue"
 >
   <header class="flex items-center gap-2 border-b border-edge px-3 py-1.5">
     <strong class="shrink-0 text-cyan">{label}</strong>
-    <nav aria-label={t('path')} class="flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap">
+    <!-- It scrolls, to its end; a bar across the crumbs would say nothing more. -->
+    <nav
+      bind:this={trail}
+      aria-label={t('path')}
+      class="flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {#each crumbs(path) as crumb, i (crumb.path)}
         {#if i > 1}<span aria-hidden="true" class="text-dim">/</span>{/if}
         <button
@@ -198,13 +213,14 @@
       aria-busy={loading}
       aria-keyshortcuts="j k g Shift+G Enter Backspace Space c / ."
       {onkeydown}
-      class="w-full border-collapse aria-busy:opacity-60"
+      class="w-full table-fixed border-collapse outline-none aria-busy:opacity-60"
     >
-      <thead class="sticky top-0 bg-panel text-left text-white">
+      <thead class="sticky top-0 bg-panel text-left whitespace-nowrap text-white">
         <tr>
           <th scope="col" class="px-3 py-1 font-normal">{t('sort_name')}</th>
-          <th scope="col" class="w-20 px-3 py-1 text-right font-normal">{t('size')}</th>
-          <th scope="col" class="w-40 px-3 py-1 font-normal">{t('modified')}</th>
+          <th scope="col" class="w-24 px-2 py-1 text-right font-normal">{t('size')}</th>
+          <!-- A narrow pane keeps the names. -->
+          <th scope="col" class="{late} w-26 font-normal">{t('modified')}</th>
         </tr>
       </thead>
       {#if !error}
@@ -230,27 +246,29 @@
               }}
               class="cursor-default select-none hover:bg-selection/50 aria-selected:bg-selection data-[marked]:text-magenta"
             >
-              <td role="gridcell" class="flex items-center gap-2 px-3 py-0.5">
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 16 16"
-                  class="size-4 shrink-0 {entry.is_dir ? 'fill-blue' : 'fill-none stroke-dim'}"
-                >
-                  {#if entry.is_dir}
-                    <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.6l1.5 2h5.9A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5z" />
-                  {:else}
-                    <path d="M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3" />
+              <td role="gridcell" class="px-3 py-0.5">
+                <div class="flex items-center gap-2">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    class="size-4 shrink-0 {entry.is_dir ? 'fill-blue' : 'fill-none stroke-dim'}"
+                  >
+                    {#if entry.is_dir}
+                      <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.6l1.5 2h5.9A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5z" />
+                    {:else}
+                      <path d="M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3" />
+                    {/if}
+                  </svg>
+                  <span title={entry.name} class="truncate {entry.is_dir ? 'font-bold' : ''}">{entry.name}</span>
+                  {#if chosen}
+                    <span role="img" aria-label={t('selected')}>✓</span>
                   {/if}
-                </svg>
-                <span class="truncate {entry.is_dir ? 'font-bold' : ''}">{entry.name}</span>
-                {#if chosen}
-                  <span role="img" aria-label={t('selected')}>✓</span>
-                {/if}
+                </div>
               </td>
-              <td role="gridcell" class="px-3 py-0.5 text-right whitespace-nowrap text-white">
+              <td role="gridcell" class="px-2 py-0.5 text-right whitespace-nowrap text-white">
                 {entry.is_dir ? '—' : human(entry.size)}
               </td>
-              <td role="gridcell" class="px-3 py-0.5 whitespace-nowrap text-white">{when(entry.mtime)}</td>
+              <td role="gridcell" class="{late} whitespace-nowrap text-white">{when(entry.mtime)}</td>
             </tr>
           {/each}
         </tbody>

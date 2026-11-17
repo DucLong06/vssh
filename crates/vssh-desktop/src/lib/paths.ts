@@ -25,11 +25,17 @@ export function human(bytes: number): string {
 
 const two = (n: number) => String(n).padStart(2, '0')
 
-/** Unix seconds as `2025-11-16 09:05`, local time; 0 is a time nobody knows. */
+/**
+ * Unix seconds in local time, as `ls -l` has it: `11-16 09:05` this year,
+ * `2019-03-02` before. 0 is a time nobody knows.
+ */
 export function when(mtime: number): string {
   if (!mtime) return '—'
   const at = new Date(mtime * 1000)
-  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}:${two(at.getMinutes())}`
+  const day = `${two(at.getMonth() + 1)}-${two(at.getDate())}`
+  return at.getFullYear() === new Date().getFullYear()
+    ? `${day} ${two(at.getHours())}:${two(at.getMinutes())}`
+    : `${at.getFullYear()}-${day}`
 }
 
 /** Seconds still to go: `42s`, `3m05s`, `1h02m`. */

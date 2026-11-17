@@ -209,8 +209,10 @@
     typed = next.kind === 'rename' ? next.entry.name : ''
     ask = next
     // Once the dialog is open: before that nothing in it takes the focus.
+    // The name there is, selected: what is typed takes its place.
     await tick()
     field?.focus()
+    field?.select()
   }
 
   /** The yes to the question that is open. */
