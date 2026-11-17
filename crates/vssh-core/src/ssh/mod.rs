@@ -21,8 +21,8 @@ use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
 use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use vssh_core::conn_err::Fail;
-use vssh_core::store::ssh_config::SshConfig;
+use crate::conn_err::Fail;
+use crate::store::ssh_config::SshConfig;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
@@ -83,7 +83,7 @@ impl Target {
         };
         let host = c.get(alias, "HostName").unwrap_or(alias);
         crate::proto::ensure_ssh(host)?;
-        let home = vssh_core::config::home();
+        let home = crate::config::home();
         let mut keys: Vec<PathBuf> = c
             .get_all(alias, "IdentityFile")
             .iter()
@@ -199,7 +199,7 @@ fn current_user() -> String {
 }
 
 fn default_keys() -> Vec<PathBuf> {
-    let dir = vssh_core::config::home().join(".ssh");
+    let dir = crate::config::home().join(".ssh");
     ["id_ed25519", "id_ecdsa", "id_rsa"]
         .map(|k| dir.join(k))
         .into()
@@ -385,7 +385,7 @@ impl client::Handler for Client {
 }
 
 fn known_hosts_path() -> PathBuf {
-    vssh_core::config::home().join(".ssh/known_hosts")
+    crate::config::home().join(".ssh/known_hosts")
 }
 
 /// `known_hosts` policy, as `StrictHostKeyChecking accept-new`: a host with

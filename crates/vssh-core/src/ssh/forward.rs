@@ -11,7 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 use super::{connect, Client, Target};
-use vssh_core::store::ssh_config::Forward;
+use crate::store::ssh_config::Forward;
 
 async fn closed(h: &Handle<Client>) {
     while !h.is_closed() {

@@ -10,7 +10,7 @@ use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::ssh::Client;
+use vssh_core::ssh::Client;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {

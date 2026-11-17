@@ -5,5 +5,7 @@
 
 pub mod config;
 pub mod conn_err;
+pub mod proto;
+pub mod ssh;
 pub mod store;
 pub mod vault;

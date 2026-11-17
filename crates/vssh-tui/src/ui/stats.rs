@@ -7,7 +7,7 @@ use std::time::Duration;
 use russh::client::Handle;
 
 use super::panes::Shape;
-use crate::ssh::{self, Client};
+use vssh_core::ssh::{self, Client};
 
 /// One round of metrics. Linux reads `/proc`; anything else (macOS) falls
 /// back to `uptime`, `sysctl` and `vm_stat`. Wrapped in `sh -c` so the login

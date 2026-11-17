@@ -5,7 +5,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use vssh::ssh::Target;
+use vssh_core::ssh::Target;
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::ssh_config::{Forward, SshConfig};
 use vssh_core::vault::Vault;
@@ -413,7 +413,7 @@ fn sql_metacharacters_are_stored_as_data() {
 
 #[test]
 fn db_module_builds_no_sql_from_strings() {
-    let source = include_str!("../../vssh-core/src/store/db.rs");
+    let source = include_str!("../src/store/db.rs");
     let code = source.split("#[cfg(test)]").next().unwrap();
     for builder in ["format!", "push_str", "concat!", "+ &", ".join("] {
         assert!(

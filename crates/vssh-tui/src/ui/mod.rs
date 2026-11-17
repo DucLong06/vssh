@@ -30,13 +30,13 @@ use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
 
 use crate::sftp;
-use crate::ssh::{self, forward, Login, SessionCmd, Target};
 use crate::theme::Config;
 use files::SftpView;
 use panes::{Layout, Shape};
 use stats::{Peek, Stats};
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
 use vssh_core::conn_err::{self, Fail, Report};
+use vssh_core::ssh::{self, forward, Login, SessionCmd, Target};
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use vssh_core::vault::Vault;
