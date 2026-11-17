@@ -93,6 +93,13 @@ Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi
 - **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
 - **Chuyển tab:** tab được chuyển tới trượt vào từ bên phải trong ba khung hình (120 ms). Terminal từ xa không bị đổi kích thước trong lúc trượt. Trên đường truyền chậm, ba lần vẽ lại là ba lượt gửi nhận: đặt `transitions = false` để tắt.
 
+## Xem nhanh
+
+Nhấn `v` ở danh sách máy chủ để mở một cửa sổ nhỏ cho biết máy đó tự nói gì về mình: tên máy, hệ thống (`uname -srm`), thời gian đã chạy, ba chỉ số tải trung bình, CPU, bộ nhớ và đĩa gốc. Không mở shell nào: chỉ là một lệnh qua một kết nối ngắn, với cùng cách kiểm tra khoá máy chủ và đăng nhập như một phiên (agent, khoá, rồi mật khẩu trong kho).
+
+- Câu trả lời được giữ 30 giây, nên mở lại cửa sổ là có ngay; `r` hoặc `Enter` để hỏi lại, `Esc` hoặc `q` để đóng.
+- Mục nào máy không trả lời thì hiện dấu gạch; phần còn lại vẫn hiện. Nếu kết nối thất bại, cửa sổ cho biết vì sao, theo cách diễn đạt ở mục kế tiếp.
+
 ## Khi kết nối thất bại
 
 vssh cho biết vì sao, không chỉ báo là thất bại. Một hộp thoại hiện lý do cùng toàn bộ chuỗi lỗi; phần chi tiết của máy chủ giữ lỗi gần nhất, màu đỏ, cho tới khi kết nối được.
@@ -168,6 +175,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `p` | ghim máy chủ |
 | | `f` / `n` | chuyển tiếp cổng / snippet của máy chủ |
 | | `r` | kiểm tra máy chủ nào kết nối được |
+| | `v` | xem nhanh: uptime, tải, bộ nhớ và đĩa của máy, không cần mở phiên |
 | | `P` / `V` | lưu mật khẩu vào kho / mở hoặc khoá kho |
 | | `Tab` / `Shift-Tab` | tab kế tiếp / tab trước |
 | | `?` | trợ giúp |
@@ -228,7 +236,7 @@ accent = "cyan"         # còn có: border, text, dim, selection, ok, error, war
 
 [keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
 leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, password, vault, help
+quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, peek, password, vault, help
 ```
 
 Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hình viết cho phiên bản cũ vẫn dùng được. Cũng có thể chọn ngôn ngữ cho từng lần chạy bằng `vssh --lang vi` hoặc `VSSH_LANG=vi`; các biểu mẫu và thông báo lỗi vẫn bằng tiếng Anh.

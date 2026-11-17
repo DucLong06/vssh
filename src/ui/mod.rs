@@ -38,7 +38,7 @@ use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
 use panes::{Layout, Shape};
-use stats::Stats;
+use stats::{Peek, Stats};
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -59,6 +59,8 @@ pub enum Event {
     Snippet(String, Result<String>),
     /// Tab title or host alias and its metrics; `None` = it stopped answering.
     Stats(String, Option<Stats>),
+    /// Host alias and the answer to a quick peek.
+    Peek(String, Result<Peek>),
 }
 
 impl Event {
@@ -155,6 +157,8 @@ enum Popup {
         body: String,
         scroll: u16,
     },
+    /// Quick peek at a host, by alias; what it shows is in `App::peeks`.
+    Peek(String),
     /// Choose a snippet (name, command) to type into the session.
     Pick {
         items: Vec<(String, String)>,
@@ -203,6 +207,9 @@ pub struct App {
     /// Latest server metrics, by tab title or host alias. `None`: it was
     /// asked and had no answer, so the host list does not ask it again.
     stats: HashMap<String, Option<Stats>>,
+    /// Quick peeks by host alias: when the answer came and what it was.
+    /// `None` while the host is being asked.
+    peeks: HashMap<String, Option<Peeked>>,
     /// The host-list selection whose metrics were last asked for, and the
     /// task asking; replaced, and the task aborted, when the selection moves.
     probe: (Option<String>, Option<JoinHandle<()>>),
@@ -233,6 +240,9 @@ pub struct App {
     msg: String,
     quit: bool,
 }
+
+/// The answer to a quick peek, and when it came.
+type Peeked = (Instant, Result<Peek, Report>);
 
 fn vault_path() -> PathBuf {
     data_dir().join("vault")
@@ -370,6 +380,7 @@ impl App {
             reach: HashMap::new(),
             fails: HashMap::new(),
             stats: HashMap::new(),
+            peeks: HashMap::new(),
             probe: (None, None),
             fwds: HashMap::new(),
             tabs: vec![],
@@ -794,6 +805,45 @@ impl App {
         }));
     }
 
+    /// Opens the quick peek for a host. The answer is asked for over a
+    /// connection of its own (same host key rules and login as a session)
+    /// unless one from the last 30 seconds is there, or `refresh` says so.
+    fn peek(&mut self, alias: &str, refresh: bool) {
+        self.popup = Some(Popup::Peek(alias.to_string()));
+        let keep = match self.peeks.get(alias) {
+            Some(Some((at, _))) => !refresh && at.elapsed() < Duration::from_secs(30),
+            // Already asking: one request at a time.
+            Some(None) => true,
+            None => false,
+        };
+        if keep {
+            return;
+        }
+        self.peeks.insert(alias.to_string(), None);
+        let target = Target::from_config(&self.sshc, alias);
+        let password = self.vault_password(alias);
+        let (tx, alias) = (self.tx.clone(), alias.to_string());
+        tokio::spawn(async move {
+            let res = async {
+                let pw = password.as_ref().map(|p| p.as_str());
+                let h = ssh::connect(&target?, pw, None).await?;
+                let asking = ssh::exec(&h, stats::PEEK);
+                let out = tokio::time::timeout(Duration::from_secs(10), asking).await??;
+                anyhow::Ok(stats::parse_peek(&out))
+            };
+            let _ = tx.send(Event::Peek(alias, res.await));
+        });
+    }
+
+    /// True while something on screen is waiting for an answer and shows a
+    /// spinner: the main loop then redraws on a timer.
+    fn waiting(&self) -> bool {
+        match &self.popup {
+            Some(Popup::Peek(alias)) => matches!(self.peeks.get(alias), Some(None)),
+            _ => false,
+        }
+    }
+
     fn toggle_forward(&mut self, alias: &str, kind: char, value: &str) -> Result<()> {
         let key = fwd_key(alias, kind, value);
         if let Some((task, _)) = self.fwds.remove(&key) {
@@ -936,6 +986,17 @@ impl App {
             }
             Event::Stats(alias, stats) => {
                 self.stats.insert(alias, stats);
+            }
+            Event::Peek(alias, res) => {
+                if let Ok(peek) = &res {
+                    // It answered: the status line can use the numbers too.
+                    self.fails.remove(&alias);
+                    if peek.stats != Stats::default() {
+                        self.stats.insert(alias.clone(), Some(peek.stats.clone()));
+                    }
+                }
+                let res = res.map_err(|e| conn_err::classify(&e, self.cfg.lang));
+                self.peeks.insert(alias, Some((Instant::now(), res)));
             }
             Event::Forward(key, Ok(true)) => {
                 if let Some(state) = self.fwds.get_mut(&key) {
@@ -1226,6 +1287,11 @@ impl App {
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
             KeyCode::Char(c) if c == keys.ping => self.ping_all(),
+            KeyCode::Char(c) if c == keys.peek => {
+                if let Some(alias) = self.alias() {
+                    self.peek(&alias, false);
+                }
+            }
             KeyCode::Char(c) if c == keys.vault => {
                 if self.vault.take().is_some() {
                     self.msg = "vault locked".into();
@@ -1539,6 +1605,7 @@ impl App {
              \x20 {add}            add host          {edit}       edit host\n\
              \x20 {delete}            delete host       {duplicate}       duplicate host\n\
              \x20 {pin}            pin / unpin       {ping}       check reachability\n\
+             \x20 {peek}            quick peek: uptime, load, memory, disk, without a session\n\
              \x20 {forwards}            port forwards     {snippets}       snippets\n\
              \x20 {password}            store password    {vault}       unlock / lock vault\n\
              \x20 {quit}            quit              Q       quit (from SFTP too)\n\n\
@@ -1570,6 +1637,7 @@ impl App {
             duplicate = k.duplicate,
             pin = k.pin,
             ping = k.ping,
+            peek = k.peek,
             forwards = k.forwards,
             snippets = k.snippets,
             password = k.password,
@@ -1589,6 +1657,7 @@ impl App {
              \x20 {add}            thêm máy          {edit}       sửa máy\n\
              \x20 {delete}            xoá máy           {duplicate}       nhân bản máy\n\
              \x20 {pin}            ghim / bỏ ghim    {ping}       kiểm tra kết nối\n\
+             \x20 {peek}            xem nhanh: uptime, tải, bộ nhớ, đĩa, không cần mở phiên\n\
              \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
              \x20 {password}            lưu mật khẩu      {vault}       mở / khoá kho mật khẩu\n\
              \x20 {quit}            thoát             Q       thoát (cả từ SFTP)\n\n\
@@ -1620,6 +1689,7 @@ impl App {
             duplicate = k.duplicate,
             pin = k.pin,
             ping = k.ping,
+            peek = k.peek,
             forwards = k.forwards,
             snippets = k.snippets,
             password = k.password,
@@ -1658,7 +1728,8 @@ impl App {
                     }
                 }
             }
-            (Popup::Pick { .. }, KeyCode::Esc | KeyCode::Char('q')) => {}
+            (Popup::Pick { .. } | Popup::Peek(_), KeyCode::Esc | KeyCode::Char('q')) => {}
+            (Popup::Peek(alias), KeyCode::Char('r') | KeyCode::Enter) => self.peek(&alias, true),
             (Popup::Form(_), KeyCode::Esc) => {
                 // Cancelling the vault prompt also gives up the password waiting for it.
                 if self.pending.take().is_some() {
@@ -1932,10 +2003,16 @@ pub async fn run(cfg: Config) -> Result<()> {
             terminal.draw(|f| draw::draw(&mut app, f))?;
             app.probe_selected();
             let tab = app.active;
-            // A transition under way draws its next frame on time, event or not.
-            let ev = match app.slide {
-                0 => rx.recv().await,
-                _ => match tokio::time::timeout(draw::FRAME, rx.recv()).await {
+            // A transition under way, or a spinner on screen, draws its next
+            // frame on time, event or not.
+            let tick = match app.slide {
+                0 if app.waiting() => Some(draw::SPIN),
+                0 => None,
+                _ => Some(draw::FRAME),
+            };
+            let ev = match tick {
+                None => rx.recv().await,
+                Some(tick) => match tokio::time::timeout(tick, rx.recv()).await {
                     Ok(ev) => ev,
                     Err(_) => continue,
                 },

@@ -1,5 +1,6 @@
-//! Server metrics for the status line: the command that collects them, the
-//! parser for its output, and the compact text that fits what room there is.
+//! Server metrics for the status line and the quick peek: the command that
+//! collects them, the parser for its output, and the compact text that fits
+//! what room there is.
 
 use std::time::Duration;
 
@@ -12,18 +13,30 @@ use crate::ssh::{self, Client};
 /// back to `uptime`, `sysctl` and `vm_stat`. Wrapped in `sh -c` so the login
 /// shell (fish, csh) does not have to understand it; its own lines are
 /// labelled so the parser never has to guess which tool printed what.
-pub const COMMAND: &str = "sh -c 'exec 2>/dev/null; \
-    if [ -r /proc/loadavg ]; then \
-    echo load $(cat /proc/loadavg); \
-    echo cpus $(grep -c ^processor /proc/cpuinfo); \
-    grep MemTotal: /proc/meminfo; grep MemAvailable: /proc/meminfo; \
-    else \
-    echo load $(uptime); \
-    echo cpus $(sysctl -n hw.ncpu); \
-    echo membytes $(sysctl -n hw.memsize); \
-    vm_stat; \
-    fi; \
-    df -Pk / | tail -1'";
+macro_rules! script {
+    ($more:literal) => {
+        concat!(
+            "sh -c 'exec 2>/dev/null; ",
+            "if [ -r /proc/loadavg ]; then ",
+            "echo load $(cat /proc/loadavg); ",
+            "echo cpus $(grep -c ^processor /proc/cpuinfo); ",
+            "grep MemTotal: /proc/meminfo; grep MemAvailable: /proc/meminfo; ",
+            "else ",
+            "echo load $(uptime); ",
+            "echo cpus $(sysctl -n hw.ncpu); ",
+            "echo membytes $(sysctl -n hw.memsize); ",
+            "vm_stat; ",
+            "fi; ",
+            "df -Pk / | tail -1",
+            $more,
+            "'"
+        )
+    };
+}
+pub const COMMAND: &str = script!("");
+/// The same round, plus what a person looks at once: uptime, system, name.
+pub const PEEK: &str =
+    script!("; echo uptime $(uptime); echo uname $(uname -srm); echo host $(hostname)");
 
 /// How often a session asks.
 const EVERY: Duration = Duration::from_secs(5);
@@ -53,6 +66,60 @@ fn level(pct: u32, warn: u32, crit: u32) -> Level {
     }
 }
 
+/// The load averages of a `load` line. `/proc/loadavg` starts with them;
+/// `uptime` has them after "load average:" or "load averages:", with commas
+/// between them and, in some locales, a comma as the decimal sign.
+fn loads(v: &str) -> Vec<f64> {
+    let v = v.rsplit_once("load average").map_or(v, |(_, after)| after);
+    let words = v.trim_start_matches(['s', ':']).split_whitespace().take(3);
+    words
+        .map_while(|w| w.trim_end_matches(',').replace(',', ".").parse().ok())
+        .collect()
+}
+
+/// What the quick peek shows: the metrics, and the lines only [`PEEK`] asks
+/// for. Anything the host did not answer stays empty.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Peek {
+    pub stats: Stats,
+    /// The 1, 5 and 15 minute load averages.
+    pub load: Option<String>,
+    /// How long the machine has been up, in `uptime`'s words.
+    pub uptime: Option<String>,
+    /// `uname -srm`.
+    pub os: Option<String>,
+    pub host: Option<String>,
+}
+
+/// Parses the output of [`PEEK`]. Never fails: what parsed is filled in.
+pub fn parse_peek(out: &str) -> Peek {
+    let mut peek = Peek {
+        stats: parse(out).unwrap_or_default(),
+        ..Peek::default()
+    };
+    let text = |v: &str| Some(v.trim().to_string()).filter(|v| !v.is_empty());
+    for line in out.lines().map(str::trim) {
+        if let Some(v) = line.strip_prefix("load ") {
+            let all: Vec<String> = loads(v).iter().map(|l| format!("{l:.2}")).collect();
+            peek.load = text(&all.join(" "));
+        } else if let Some(v) = line.strip_prefix("uptime ") {
+            // " 10:15 up 3 days, 2:15, 2 users, load average: …": the part
+            // between "up" and the users or the load.
+            let up = v.split_once("up ").map_or("", |(_, after)| after);
+            let parts = up.split(',').map(str::trim);
+            let parts: Vec<&str> = parts
+                .take_while(|p| !p.contains("user") && !p.contains("load"))
+                .collect();
+            peek.uptime = text(&parts.join(", "));
+        } else if let Some(v) = line.strip_prefix("uname ") {
+            peek.os = text(v);
+        } else if let Some(v) = line.strip_prefix("host ") {
+            peek.host = text(v);
+        }
+    }
+    peek
+}
+
 /// Parses the output of [`COMMAND`]. Lines it does not know are skipped, so
 /// a login banner or a missing tool costs one metric, not all of them.
 /// `None` if nothing usable came back.
@@ -68,16 +135,7 @@ pub fn parse(out: &str) -> Option<Stats> {
     let mut stats = Stats::default();
     for line in out.lines().map(str::trim) {
         if let Some(v) = line.strip_prefix("load ") {
-            // `/proc/loadavg` starts with the number. `uptime` has it after
-            // "load average:" or "load averages:", with a decimal comma in some locales.
-            let v = v.rsplit_once("load average").map_or(v, |(_, after)| after);
-            let word = v.trim_start_matches(['s', ':']).split_whitespace().next();
-            load = word.and_then(|w| {
-                w.trim_end_matches(',')
-                    .replace(',', ".")
-                    .parse::<f64>()
-                    .ok()
-            });
+            load = loads(v).first().copied();
         } else if let Some(v) = line.strip_prefix("cpus ") {
             cpus = num(v);
         } else if let Some(v) = line.strip_prefix("membytes ") {
@@ -132,7 +190,7 @@ pub fn width(parts: &[(String, String, Level)]) -> usize {
 
 impl Stats {
     /// Label, value and level of every metric there is, most important first.
-    fn parts(&self, mem_label: &str, bars: bool) -> Vec<(String, String, Level)> {
+    pub fn parts(&self, mem_label: &str, bars: bool) -> Vec<(String, String, Level)> {
         let gauge = |pct: u32| match bars {
             true => format!("{} ", bar(pct)),
             false => String::new(),
@@ -259,6 +317,43 @@ mod tests {
         for noise in ["", "\n\n", "This account is restricted.\n", "load\ncpus\n"] {
             assert_eq!(parse(noise), None, "{noise:?}");
         }
+    }
+
+    #[test]
+    fn peek_adds_uptime_system_and_name() {
+        let linux = format!(
+            "{LINUX}uptime 10:15:01 up 3 days, 2:15, 2 users, load average: 0.92, 0.58, 0.59\n\
+             uname Linux 6.14.0-37-generic x86_64\nhost web-01\n"
+        );
+        let peek = parse_peek(&linux);
+        assert_eq!(peek.stats, parse(LINUX).unwrap());
+        assert_eq!(peek.load.as_deref(), Some("0.92 0.58 0.59"));
+        assert_eq!(peek.uptime.as_deref(), Some("3 days, 2:15"));
+        assert_eq!(peek.os.as_deref(), Some("Linux 6.14.0-37-generic x86_64"));
+        assert_eq!(peek.host.as_deref(), Some("web-01"));
+
+        // macOS: the load comes from `uptime`.
+        let mac = format!("{MACOS}uname Darwin 24.1.0 arm64\n");
+        let peek = parse_peek(&mac);
+        assert_eq!(peek.load.as_deref(), Some("6.80 1.60 1.71"));
+        assert_eq!(peek.os.as_deref(), Some("Darwin 24.1.0 arm64"));
+        assert_eq!(peek.host, None);
+        // busybox has no users in it; a young machine has minutes only; a decimal comma.
+        let up = |line: &str| parse_peek(line).uptime;
+        let young = "uptime 08:00:01 up 12 min, load average: 0.00, 0.01, 0.05";
+        assert_eq!(up(young).as_deref(), Some("12 min"));
+        let old = "uptime 08:00:01 up 41 days, 3 min, 1 user, load average: 0,10, 0,20, 0,30";
+        assert_eq!(up(old).as_deref(), Some("41 days, 3 min"));
+
+        // What did not come back stays empty, and what did is kept.
+        let partial = parse_peek("uname Linux 5.10 aarch64\nuptime\nhost\n[exit status 127]\n");
+        assert_eq!(partial.os.as_deref(), Some("Linux 5.10 aarch64"));
+        assert_eq!(
+            (partial.uptime, partial.host, partial.load),
+            (None, None, None)
+        );
+        assert_eq!(partial.stats, Stats::default());
+        assert_eq!(parse_peek(""), Peek::default());
     }
 
     fn text(parts: &[(String, String, Level)]) -> String {

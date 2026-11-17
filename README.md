@@ -94,6 +94,13 @@ The bottom line shows the mode, the focused host and pane, then its tags, group 
 - **Rounded badges:** the mode, the latency and the `vssh` mark are pills with half-circle ends (`◖NORMAL◗`). With a Nerd Font, `nerd_font = true` uses its full-height Powerline caps instead; without such a font those would show as empty boxes, so it is off by default.
 - **Tab switches:** the tab you switch to slides in from the right over three frames (120 ms). Remote terminals are not resized while it moves. On a slow link three redraws are three round trips: `transitions = false` turns it off.
 
+## Quick peek
+
+`v` on the host list opens a small window with what the host says about itself: name, system (`uname -srm`), uptime, the three load averages, CPU, memory and root disk. No shell is opened: it is one command over a short connection, with the same host key check and login as a session (agent, keys, then the vault password).
+
+- The answer is kept for 30 seconds, so opening the window again is instant; `r` or `Enter` asks again, `Esc` or `q` closes.
+- What the host did not answer is a dash; the rest is still shown. If the connection fails, the window says why, in the wording of the next section.
+
 ## When a connection fails
 
 vssh says why, not only that it failed. A popup shows the reason and the full error chain; the host's details keep the last failure, in red, until a connection to it succeeds.
@@ -169,6 +176,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `p` | pin host |
 | | `f` / `n` | port forwards / snippets of the host |
 | | `r` | check which hosts are reachable |
+| | `v` | quick peek: uptime, load, memory and disk of the host, without a session |
 | | `P` / `V` | store a password in the vault / unlock or lock the vault |
 | | `Tab` / `Shift-Tab` | next / previous tab |
 | | `?` | help |
@@ -229,7 +237,7 @@ accent = "cyan"         # also: border, text, dim, selection, ok, error, warn, b
 
 [keys]                  # one character each; leader is pressed with Ctrl
 leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, password, vault, help
+quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, peek, password, vault, help
 ```
 
 Entries you leave out keep their defaults, so a config written for an older version still works. The language can also be set per run with `vssh --lang vi` or `VSSH_LANG=vi`; forms and error messages stay in English.

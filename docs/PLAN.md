@@ -127,3 +127,18 @@ free row there would cost every pane a line of terminal.
   `App::fails`, which the details pane shows until a connection succeeds. An
   auth failure opens the password prompt, titled with what was refused. A
   session that drops later keeps its tab, with the classified reason in it.
+
+## Quick peek (brief 9, M1)
+
+- **Shared module.** `ui/stats.rs` builds both commands from one script: the
+  status line's `COMMAND`, and `PEEK`, which adds `uptime`, `uname -srm` and
+  `hostname` as labelled lines. `parse_peek` runs the status line's `parse`
+  for the metrics and reads the extra lines itself; it cannot fail, a line
+  that is missing leaves its field empty and the popup shows a dash.
+- **An explicit action, so a full connect**: unlike the host-list probe, the
+  peek accepts a new host key and uses the vault password, as `Enter` would.
+- **Cache.** `App::peeks` keeps the answer and when it came; 30 seconds of
+  reuse, `r` forces a new request, and a request in flight is not doubled.
+  A good answer also feeds the status line and clears the host's last failure.
+- **Spinner.** While a host is being asked the main loop redraws every
+  100 ms (`App::waiting`), the same timed wait the tab slide uses.

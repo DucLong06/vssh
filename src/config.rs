@@ -181,6 +181,8 @@ pub struct Keys {
     pub pin: char,
     pub mark: char,
     pub ping: char,
+    /// Quick peek: the selected host's uptime, load, memory and disk, without a session.
+    pub peek: char,
     pub password: char,
     pub vault: char,
     pub help: char,
@@ -205,6 +207,7 @@ impl Default for Keys {
             pin: 'p',
             mark: ' ',
             ping: 'r',
+            peek: 'v',
             password: 'P',
             vault: 'V',
             help: '?',

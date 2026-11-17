@@ -132,6 +132,8 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 pub const SLIDE: u16 = 3;
 /// How long one of those frames stays up: three frames, 120 ms.
 pub const FRAME: Duration = Duration::from_millis(40);
+/// How long one frame of a spinner stays up.
+pub const SPIN: Duration = Duration::from_millis(100);
 
 /// Takes one frame off the countdown and returns the columns to shift it by:
 /// 2, 1, then 0 for good. While frames are left the main loop redraws on a
@@ -181,7 +183,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         which_key(app, f, body);
     }
     if let Some(p) = &app.popup {
-        popup(p, &app.cfg.theme, app.cfg.lang, f);
+        popup(p, app, f);
     }
 }
 
@@ -899,6 +901,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                 vec![
                     hint(&key(k.search), "search", "tìm", true),
                     hint(&key(k.ping), "ping", "kiểm tra", true),
+                    hint(&key(k.peek), "peek", "xem nhanh", host),
                     hint(&key(k.help), "help", "trợ giúp", true),
                     hint(&key(k.quit), "quit", "thoát", true),
                 ],
@@ -1237,9 +1240,110 @@ fn which_key(app: &App, f: &mut Frame, body: Rect) {
     f.render_widget(Paragraph::new(lines).block(panel(title, true, th)), area);
 }
 
-fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
+/// One frame of the spinner shown while a host is being asked, by the clock.
+fn spinner() -> &'static str {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let now = SystemTime::now().duration_since(UNIX_EPOCH);
+    let step = now.map_or(0, |d| d.as_millis() / SPIN.as_millis());
+    FRAMES[step as usize % FRAMES.len()]
+}
+
+/// Key hints at the foot of a popup.
+fn foot(th: &Theme, pairs: &[(&'static str, &'static str)]) -> Line<'static> {
+    Line::from_iter(pairs.iter().flat_map(|(key, action)| {
+        [
+            Span::styled(*key, Style::new().fg(th.key).bold()),
+            Span::styled(format!(" {action}   "), Style::new().fg(th.dim)),
+        ]
+    }))
+}
+
+/// The quick peek: what the host said about itself, one row per fact. A fact
+/// it did not give is a dim dash, a failed connection is its classified
+/// reason; neither hides the rest.
+fn peek_lines(app: &App, alias: &str) -> Vec<Line<'static>> {
+    let th = &app.cfg.theme;
+    let lang = app.cfg.lang;
+    let dim = Style::new().fg(th.dim);
+    let close = ("esc", lang.pick("close", "đóng"));
+    let (at, peek) = match app.peeks.get(alias) {
+        Some(Some((at, Ok(peek)))) => (at, peek),
+        Some(Some((_, Err(fail)))) => {
+            let class = format!("✗ {}", fail.class.label(lang));
+            return vec![
+                Line::default(),
+                Line::styled(class, Style::new().fg(RED).bold()),
+                Line::styled(clean(&fail.message), dim),
+                Line::default(),
+                foot(th, &[("r", lang.pick("try again", "thử lại")), close]),
+            ];
+        }
+        _ => {
+            let asking = lang.pick("asking", "đang hỏi");
+            let line = format!("{} {asking} {alias}…", spinner());
+            return vec![
+                Line::default(),
+                Line::styled(line, dim),
+                Line::default(),
+                foot(th, &[close]),
+            ];
+        }
+    };
+    let row = |label: &str, value: Option<Span<'static>>| {
+        let value = value.unwrap_or_else(|| Span::styled("—", dim));
+        Line::from(vec![Span::styled(format!("{label:<10}"), dim), value])
+    };
+    let text = |v: &Option<String>| v.as_ref().map(|v| Span::raw(clean(v)));
+    let mut lines = vec![
+        Line::default(),
+        row(lang.pick("Host", "Tên máy"), text(&peek.host)),
+        row(lang.pick("System", "Hệ thống"), text(&peek.os)),
+        row(lang.pick("Uptime", "Đã chạy"), text(&peek.uptime)),
+        row(lang.pick("Load", "Tải"), text(&peek.load)),
+    ];
+    let mem = lang.pick("MEM", "RAM");
+    let parts = peek.stats.parts(mem, true);
+    for label in ["CPU", mem, "/"] {
+        let part = parts.iter().find(|(l, ..)| l == label);
+        let value = part.map(|(_, value, level)| {
+            let colour = match level {
+                Level::Ok => GREEN,
+                Level::Warn => YELLOW,
+                Level::Crit => RED,
+            };
+            Span::styled(value.clone(), Style::new().fg(colour))
+        });
+        let label = match label {
+            "/" => lang.pick("Disk /", "Đĩa /"),
+            other => other,
+        };
+        lines.push(row(label, value));
+    }
+    let secs = at.elapsed().as_secs();
+    let age = match lang {
+        Lang::En => format!("{secs}s ago"),
+        Lang::Vi => format!("{secs} giây trước"),
+    };
+    let mut keys = foot(th, &[("r", lang.pick("refresh", "làm mới")), close]);
+    keys.push_span(Span::styled(age, dim));
+    lines.extend([Line::default(), keys]);
+    lines
+}
+
+fn popup(popup: &Popup, app: &App, f: &mut Frame) {
+    let (th, lang) = (&app.cfg.theme, app.cfg.lang);
     let screen = f.area();
     match popup {
+        Popup::Peek(alias) => {
+            let lines = peek_lines(app, alias);
+            // A long failure message wraps: count the rows it takes inside the frame.
+            let rows: usize = lines.iter().map(|l| l.width().div_ceil(56).max(1)).sum();
+            let area = centered(screen, 60, rows as u16 + 2);
+            let title = format!("{} {alias}", lang.pick("Quick peek:", "Xem nhanh:"));
+            let body = Paragraph::new(lines).wrap(Wrap { trim: false });
+            f.render_widget(Clear, area);
+            f.render_widget(body.block(panel(&title, true, th)), area);
+        }
         Popup::Confirm(text, _) => {
             let area = centered(screen, text.chars().count() as u16 + 8, 5);
             let lines = vec![
