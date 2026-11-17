@@ -51,9 +51,22 @@ if [ -z "${VSSH_SMOKE_DISPLAY:-}" ]; then
     for tool in xvfb-run xdotool ffmpeg npm ssh-keygen ssh-keyscan python3 "$SSHD" /usr/lib/openssh/sftp-server; do
         command -v "$tool" >/dev/null || { echo "FAIL: $tool is not installed"; exit 1; }
     done
-    # `tauri build` puts the frontend inside the binary; a plain `cargo
-    # build` makes one that looks for the dev server.
-    (cd crates/vssh-desktop && npm run tauri build -- --debug --no-bundle)
+    # `tauri build` needs an inotify watcher; `npm run build` + plain
+    # `cargo build --release` embeds the same frontendDist without one —
+    # but only when the config has no devUrl, so stash it for the build.
+    conf=crates/vssh-desktop/src-tauri/tauri.conf.json
+    cp "$conf" "$conf.smoke-bak"
+    trap 'mv "$conf.smoke-bak" "$conf"' EXIT
+    python3 - "$conf" <<'PY'
+import json, sys
+p = sys.argv[1]
+c = json.load(open(p))
+c['build'].pop('devUrl', None)
+c['build'].pop('beforeDevCommand', None)
+json.dump(c, open(p, 'w'), indent=2)
+PY
+    (cd crates/vssh-desktop && npm run build && cd ../.. && cargo build --release -p vssh-desktop)
+    mv "$conf.smoke-bak" "$conf"; trap - EXIT
     exec env VSSH_SMOKE_DISPLAY=1 xvfb-run -a -s "-screen 0 ${SIZE}x24" "$0"
 fi
 
@@ -182,7 +195,7 @@ accepted() { grep -c 'Accepted publickey' "$home/sshd/log" || true; }
 pixel() { ffmpeg -loglevel error -i "$1" -vf "crop=1:1:$2:$3" -f rawvideo -pix_fmt rgb24 - | od -An -tx1 | tr -d ' \n'; }
 
 # No GPU on a virtual display. No agent: only the throwaway key is offered.
-env -u SSH_AUTH_SOCK HOME="$home" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/debug/vssh-desktop &
+env -u SSH_AUTH_SOCK HOME="$home" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/release/vssh-desktop &
 app=$!
 
 win=$(timeout 60 xdotool search --sync --onlyvisible --name '^vssh$' | head -n 1)
