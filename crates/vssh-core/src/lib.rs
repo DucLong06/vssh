@@ -8,5 +8,6 @@ pub mod conn_err;
 pub mod proto;
 pub mod sftp;
 pub mod ssh;
+pub mod stats;
 pub mod store;
 pub mod vault;

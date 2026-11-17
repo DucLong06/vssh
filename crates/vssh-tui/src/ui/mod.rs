@@ -32,11 +32,11 @@ use zeroize::Zeroizing;
 use crate::theme::Config;
 use files::SftpView;
 use panes::{Layout, Shape};
-use stats::{Peek, Stats};
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
 use vssh_core::conn_err::{self, Fail, Report};
 use vssh_core::sftp;
 use vssh_core::ssh::{self, forward, Login, SessionCmd, Target};
+use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use vssh_core::vault::Vault;
@@ -823,7 +823,7 @@ impl App {
                     // The metrics ride on the session's own connection and end with it.
                     tokio::select! {
                         res = ssh::shell(&h, size, login, cmd_rx, data) => res,
-                        () = stats::poll(&h, report), if with_stats => Ok(()),
+                        () = vssh_core::stats::poll(&h, report), if with_stats => Ok(()),
                     }
                 };
                 let _ = tx.send(Event::ended(id, res.await));
@@ -978,7 +978,7 @@ impl App {
                 return;
             }
             let stats = match ssh::connect(&target, None, None).await {
-                Ok(h) => stats::fetch(&h).await,
+                Ok(h) => vssh_core::stats::fetch(&h).await,
                 Err(_) => None,
             };
             let _ = tx.send(Event::Stats(alias, stats));
@@ -1007,9 +1007,9 @@ impl App {
             let res = async {
                 let pw = password.as_ref().map(|p| p.as_str());
                 let h = ssh::connect(&target?, pw, None).await?;
-                let asking = ssh::exec(&h, stats::PEEK);
+                let asking = ssh::exec(&h, vssh_core::stats::PEEK);
                 let out = tokio::time::timeout(Duration::from_secs(10), asking).await??;
-                anyhow::Ok(stats::parse_peek(&out))
+                anyhow::Ok(vssh_core::stats::parse_peek(&out))
             };
             let _ = tx.send(Event::Peek(alias, res.await));
         });
