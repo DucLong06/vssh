@@ -2,7 +2,7 @@
 # Language selection of install.sh, observed through its --help text (which
 # has no side effects). Run by `cargo test` via tests/install.rs.
 set -eu
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../../.."
 
 EN="Usage: install.sh"
 VI="Cách dùng: install.sh"

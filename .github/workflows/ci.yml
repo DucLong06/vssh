@@ -25,6 +25,8 @@ jobs:
       - run: cargo build --release
       - run: cargo test
       - run: cargo clippy --all-targets -- -D warnings
+      # vssh-core stays free of TUI crates: the desktop app builds on it too.
+      - run: ./scripts/check-core-deps.sh
 
   audit:
     runs-on: ubuntu-latest

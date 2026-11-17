@@ -1,7 +1,8 @@
 //! vssh: a terminal SSH connection manager.
 
 use anyhow::Result;
-use vssh::{config, ui};
+use vssh::{theme::Config, ui};
+use vssh_core::config::Lang;
 
 const HELP: &str = "\
 vssh - terminal SSH connection manager
@@ -37,14 +38,10 @@ fn main() -> Result<()> {
             },
         }
     }
-    let mut cfg = config::Config::load()?;
+    let mut cfg = Config::load()?;
     if let Some(code) = lang {
-        cfg.lang = config::Lang::parse(&code)?;
+        cfg.lang = Lang::parse(&code)?;
     }
-    // Two workers are plenty for I/O-bound work and keep startup cheap.
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()?
-        .block_on(ui::run(cfg))
+    // The UI runs on this thread; its connections on the core's runtime.
+    vssh_core::task::run(|| ui::run(cfg))?
 }

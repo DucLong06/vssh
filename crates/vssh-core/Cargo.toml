@@ -1,0 +1,21 @@
+[package]
+name = "vssh-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "vssh without a user interface: SSH, SFTP, the vault and the stores"
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+chacha20poly1305.workspace = true
+rusqlite.workspace = true
+russh.workspace = true
+russh-sftp.workspace = true
+serde.workspace = true
+tokio.workspace = true
+toml.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

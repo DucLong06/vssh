@@ -15,11 +15,13 @@ use ratatui::Frame;
 use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
 use super::panes::Shape;
-use super::stats::Level;
+use super::stats::compact;
 use super::{batch_lines, clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Row, Tab};
-use crate::config::{Lang, Theme};
-use crate::ssh::SessionCmd;
-use crate::store::db::Meta;
+use crate::theme::Theme;
+use vssh_core::config::Lang;
+use vssh_core::ssh::SessionCmd;
+use vssh_core::stats::Level;
+use vssh_core::store::db::Meta;
 
 /// Stable colour per group or tag name. 256-colour pastels, so they look the
 /// same on every terminal theme and stay readable under black badge text.
@@ -1201,7 +1203,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     let room = free.saturating_sub(taken + 4);
     let mem = lang.pick("MEM", "RAM");
     let stats = app.stats.get(&alias).and_then(Option::as_ref);
-    let parts = stats.map(|s| s.compact(mem, room, app.shape));
+    let parts = stats.map(|s| compact(s, mem, room, app.shape));
     for (i, (label, value, level)) in parts.unwrap_or_default().into_iter().enumerate() {
         let colour = match level {
             Level::Ok => GREEN,

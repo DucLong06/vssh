@@ -1,12 +1,11 @@
 //! Server metrics for the status line and the quick peek: the command that
-//! collects them, the parser for its output, and the compact text that fits
-//! what room there is.
+//! collects them, the parser for its output, and each metric as a labelled
+//! value with its level. How many of them fit on screen is the frontend's call.
 
 use std::time::Duration;
 
 use russh::client::Handle;
 
-use super::panes::Shape;
 use crate::ssh::{self, Client};
 
 /// One round of metrics. Linux reads `/proc`; anything else (macOS) falls
@@ -213,30 +212,6 @@ impl Stats {
         }
         parts
     }
-
-    /// What the status line shows in `room` cells: `CPU 23% · MEM 4.2/16G ·
-    /// / 61%`, with a one-cell bar per metric if those fit too, and metrics
-    /// dropped from the end if even the plain form does not. Nothing outside
-    /// landscape: a portrait or small status line keeps to mode and host.
-    pub fn compact(
-        &self,
-        mem_label: &str,
-        room: usize,
-        shape: Shape,
-    ) -> Vec<(String, String, Level)> {
-        if shape != Shape::Wide {
-            return vec![];
-        }
-        let with_bars = self.parts(mem_label, true);
-        if width(&with_bars) <= room {
-            return with_bars;
-        }
-        let mut plain = self.parts(mem_label, false);
-        while width(&plain) > room {
-            plain.pop();
-        }
-        plain
-    }
 }
 
 /// One round over an open connection: a second channel, not a second login.
@@ -362,42 +337,6 @@ mod tests {
     }
 
     #[test]
-    fn compact_text_fits_the_room() {
-        let stats = parse(LINUX).unwrap();
-        let show = |room| text(&stats.compact("MEM", room, Shape::Wide));
-        let full = "CPU 23% · MEM 4.2/16G · / 61%";
-        let bars = "CPU ▂ 23% · MEM ▂ 4.2/16G · / ▅ 61%";
-        assert_eq!((full.chars().count(), bars.chars().count()), (29, 35));
-
-        assert_eq!(show(80), bars);
-        assert_eq!(show(35), bars);
-        assert_eq!(show(34), full);
-        assert_eq!(show(29), full);
-        assert_eq!(show(28), "CPU 23% · MEM 4.2/16G");
-        assert_eq!(show(20), "CPU 23%");
-        assert_eq!(show(7), "CPU 23%");
-        assert_eq!(show(6), "");
-        assert_eq!(show(0), "");
-        // Whatever is shown never takes more than the room it was given.
-        for room in 0..60 {
-            let parts = stats.compact("MEM", room, Shape::Wide);
-            assert!(width(&parts) <= room, "{room}");
-            assert_eq!(width(&parts), text(&parts).chars().count());
-        }
-        // The label is the caller's, so it can be translated.
-        assert!(text(&stats.compact("RAM", 80, Shape::Wide)).contains("RAM ▂ 4.2/16G"));
-    }
-
-    #[test]
-    fn portrait_and_small_windows_hide_the_stats() {
-        let stats = parse(LINUX).unwrap();
-        for shape in [Shape::Tall, Shape::Compact] {
-            assert!(stats.compact("MEM", 200, shape).is_empty(), "{shape:?}");
-        }
-        assert_eq!(stats.compact("MEM", 200, Shape::Wide).len(), 3);
-    }
-
-    #[test]
     fn levels_and_small_machines() {
         // cpu warns over 50 and is critical over 80; memory over 70 and 85.
         assert_eq!(
@@ -409,7 +348,7 @@ mod tests {
             mem: Some((460_000, 512_000)),
             disk: Some(85),
         };
-        let parts = stats.compact("MEM", 31, Shape::Wide);
+        let parts = stats.parts("MEM", false);
         assert_eq!(text(&parts), "CPU 250% · MEM 0.4/0.5G · / 85%");
         let levels: Vec<Level> = parts.iter().map(|p| p.2).collect();
         assert_eq!(levels, [Level::Crit, Level::Crit, Level::Warn]);

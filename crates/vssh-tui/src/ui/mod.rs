@@ -13,6 +13,7 @@ use std::mem;
 use std::num::NonZeroU16;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Context, Result};
@@ -24,61 +25,31 @@ use ratatui::crossterm::event::{
 };
 use ratatui::crossterm::execute;
 use ratatui::widgets::ListState;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
-use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
 
-use crate::config::{data_dir, ssh_config_path, Config, Lang};
-use crate::conn_err::{self, Fail, Report};
-use crate::sftp;
-use crate::ssh::{self, forward, Login, SessionCmd, Target};
-use crate::store::db::{Db, Meta, Snippet};
-use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
-use crate::vault::Vault;
+use crate::theme::Config;
 use files::SftpView;
 use panes::{Layout, Shape};
-use stats::{Peek, Stats};
+use vssh_core::config::{data_dir, ssh_config_path, Lang};
+use vssh_core::conn_err::{self, Report};
+use vssh_core::ssh::{Login, SessionCmd, Target};
+use vssh_core::stats::{Peek, Stats};
+use vssh_core::store::db::{Db, Meta, Snippet};
+use vssh_core::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
+use vssh_core::task::{self, Task};
+use vssh_core::vault::Vault;
 
-/// Everything that can wake the UI. Background tasks only ever talk to the
-/// app through these.
+/// Everything that can wake the UI: the keyboard, and what the background
+/// work the app asked `vssh_core::task` for has to report.
 pub enum Event {
     Input(Input),
-    /// Output of a shell session.
-    Data(u64, Vec<u8>),
-    /// A tab's connection ended: cleanly, or with the error that ended it.
-    Closed(u64, Option<anyhow::Error>),
-    /// A tab could not authenticate; ask for a password and retry.
-    AuthFailed(u64, anyhow::Error),
-    Sftp(u64, sftp::Reply),
-    /// Host alias and TCP connect time in ms, `None` if unreachable.
-    Ping(String, Option<u128>),
-    /// Forward key; `Ok(true)` = now listening, anything else = it ended.
-    Forward(String, Result<bool>),
-    /// One host's answer in a batch: batch id, host alias, command output.
-    Batch(u64, String, Result<String>),
-    /// Tab title or host alias and its metrics; `None` = it stopped answering.
-    Stats(String, Option<Stats>),
-    /// Host alias and the answer to a quick peek.
-    Peek(String, Result<Peek>),
-}
-
-impl Event {
-    fn ended(id: u64, res: Result<()>) -> Self {
-        match res {
-            Ok(()) => Self::Closed(id, None),
-            Err(e) if matches!(e.downcast_ref(), Some(Fail::Auth { .. })) => {
-                Self::AuthFailed(id, e)
-            }
-            Err(e) => Self::Closed(id, Some(e)),
-        }
-    }
+    Task(task::Event),
 }
 
 enum Kind {
     Term {
         parser: Box<vt100::Parser<term::Replies>>,
-        tx: UnboundedSender<SessionCmd>,
+        tx: task::Sender<SessionCmd>,
     },
     Sftp(Box<SftpView>),
 }
@@ -91,7 +62,7 @@ struct Tab {
     /// False for a quick connect: no stats, nothing stored.
     saved: bool,
     kind: Kind,
-    task: JoinHandle<()>,
+    task: Task,
     /// Set once the first byte or listing arrives.
     connected: bool,
     closed: bool,
@@ -165,7 +136,7 @@ struct Batch {
     filter: String,
     /// The filter is being typed.
     typing: bool,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: Vec<Task>,
 }
 
 /// Closing the results gives up on the hosts that have not answered.
@@ -247,7 +218,7 @@ enum Focus {
 
 pub struct App {
     cfg: Config,
-    tx: UnboundedSender<Event>,
+    tx: Sender<Event>,
     sshc: SshConfig,
     db: Db,
     meta: HashMap<String, Meta>,
@@ -275,9 +246,9 @@ pub struct App {
     peeks: HashMap<String, Option<Peeked>>,
     /// The host-list selection whose metrics were last asked for, and the
     /// task asking; replaced, and the task aborted, when the selection moves.
-    probe: (Option<String>, Option<JoinHandle<()>>),
+    probe: (Option<String>, Option<Task>),
     /// Running forwards by key, with whether they are listening yet.
-    fwds: HashMap<String, (JoinHandle<()>, bool)>,
+    fwds: HashMap<String, (Task, bool)>,
     tabs: Vec<Tab>,
     /// 0 is the host list, `i` is `tabs[i - 1]`.
     active: usize,
@@ -438,7 +409,13 @@ fn send_input(tabs: &mut [Tab], focused: usize, broadcast: bool, input: &TermInp
 }
 
 impl App {
-    fn new(cfg: Config, tx: UnboundedSender<Event>) -> Result<Self> {
+    /// Where background work reports: back into the event loop.
+    fn sink(&self) -> impl task::Sink {
+        let tx = self.tx.clone();
+        move |ev| drop(tx.send(Event::Task(ev)))
+    }
+
+    fn new(cfg: Config, tx: Sender<Event>) -> Result<Self> {
         let sshc = SshConfig::load(&ssh_config_path()).context("cannot read ~/.ssh/config")?;
         std::fs::DirBuilder::new()
             .recursive(true)
@@ -449,7 +426,7 @@ impl App {
     }
 
     /// The app over an already loaded ssh config and database.
-    fn with(cfg: Config, tx: UnboundedSender<Event>, sshc: SshConfig, db: Db) -> Result<Self> {
+    fn with(cfg: Config, tx: Sender<Event>, sshc: SshConfig, db: Db) -> Result<Self> {
         db.import(&sshc.hosts())?;
         let mut app = Self {
             cfg,
@@ -790,7 +767,7 @@ impl App {
         sftp: bool,
         password: Option<Zeroizing<String>>,
     ) {
-        let (id, tx, size) = (self.next_id, self.tx.clone(), self.body);
+        let (id, sink, size) = (self.next_id, self.sink(), self.body);
         let tab_target = target.clone();
         self.next_id += 1;
         // Login scripts belong to saved hosts; a quick connect runs none.
@@ -799,34 +776,11 @@ impl App {
             script: self.cfg.exec.get(alias).filter(|_| saved).cloned(),
         };
         let (kind, task) = if sftp {
-            let (cmd_tx, cmd_rx) = unbounded_channel();
-            let task = tokio::spawn(async move {
-                let res = async {
-                    let pw = password.as_ref().map(|p| p.as_str());
-                    let h = ssh::connect(&target, pw, None).await?;
-                    let reply = |r| drop(tx.send(Event::Sftp(id, r)));
-                    sftp::worker(h, cmd_rx, reply).await
-                };
-                let _ = tx.send(Event::ended(id, res.await));
-            });
+            let (task, cmd_tx) = task::sftp(id, target, password, sink);
             (Kind::Sftp(Box::new(SftpView::new(cmd_tx))), task)
         } else {
-            let (cmd_tx, cmd_rx) = unbounded_channel();
-            let (title, with_stats) = (alias.to_string(), self.cfg.status_stats);
-            let task = tokio::spawn(async move {
-                let res = async {
-                    let pw = password.as_ref().map(|p| p.as_str());
-                    let h = ssh::connect(&target, pw, None).await?;
-                    let data = |d: &[u8]| drop(tx.send(Event::Data(id, d.to_vec())));
-                    let report = |s| drop(tx.send(Event::Stats(title.clone(), s)));
-                    // The metrics ride on the session's own connection and end with it.
-                    tokio::select! {
-                        res = ssh::shell(&h, size, login, cmd_rx, data) => res,
-                        () = stats::poll(&h, report), if with_stats => Ok(()),
-                    }
-                };
-                let _ = tx.send(Event::ended(id, res.await));
-            });
+            let stats = self.cfg.status_stats.then(|| alias.to_string());
+            let (task, cmd_tx) = task::session(id, target, password, size, login, stats, sink);
             let rows = NonZeroU16::new(size.1).unwrap_or(NonZeroU16::MIN);
             let cols = NonZeroU16::new(size.0).unwrap_or(NonZeroU16::MIN);
             let replies = term::Replies::default();
@@ -926,14 +880,7 @@ impl App {
             let Ok(t) = Target::from_config(&self.sshc, &alias) else {
                 continue;
             };
-            let tx = self.tx.clone();
-            tokio::spawn(async move {
-                let start = Instant::now();
-                let attempt = TcpStream::connect((t.host, t.port));
-                let res = tokio::time::timeout(Duration::from_secs(3), attempt).await;
-                let ms = matches!(res, Ok(Ok(_))).then(|| start.elapsed().as_millis());
-                let _ = tx.send(Event::Ping(alias, ms));
-            });
+            task::ping(alias, t, self.sink());
         }
         self.msg = "checking reachability…".into();
     }
@@ -963,25 +910,7 @@ impl App {
         let Ok(target) = Target::from_config(&self.sshc, &alias) else {
             return;
         };
-        // Nor through a jump host or a proxy command: that would log in to
-        // other machines, or run a local program, for a cursor movement.
-        if target.via != ssh::Via::Direct {
-            return;
-        }
-        let tx = self.tx.clone();
-        self.probe.1 = Some(tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(700)).await;
-            // Resting on a row is not a decision to connect: only hosts whose
-            // key is already on record, and keys only, never a vault password.
-            if !ssh::is_known(&target) {
-                return;
-            }
-            let stats = match ssh::connect(&target, None, None).await {
-                Ok(h) => stats::fetch(&h).await,
-                Err(_) => None,
-            };
-            let _ = tx.send(Event::Stats(alias, stats));
-        }));
+        self.probe.1 = Some(task::probe(alias, target, self.sink()));
     }
 
     /// Opens the quick peek for a host. The answer is asked for over a
@@ -1001,17 +930,7 @@ impl App {
         self.peeks.insert(alias.to_string(), None);
         let target = Target::from_config(&self.sshc, alias);
         let password = self.vault_password(alias);
-        let (tx, alias) = (self.tx.clone(), alias.to_string());
-        tokio::spawn(async move {
-            let res = async {
-                let pw = password.as_ref().map(|p| p.as_str());
-                let h = ssh::connect(&target?, pw, None).await?;
-                let asking = ssh::exec(&h, stats::PEEK);
-                let out = tokio::time::timeout(Duration::from_secs(10), asking).await??;
-                anyhow::Ok(stats::parse_peek(&out))
-            };
-            let _ = tx.send(Event::Peek(alias, res.await));
-        });
+        task::peek(alias.to_string(), target, password, self.sink());
     }
 
     /// True while something on screen is waiting for an answer and shows a
@@ -1033,13 +952,7 @@ impl App {
         let fwd = Forward::parse(kind, value).context("cannot parse this forward")?;
         let target = Target::from_config(&self.sshc, alias)?;
         let password = self.vault_password(alias);
-        let (tx, k) = (self.tx.clone(), key.clone());
-        let task = tokio::spawn(async move {
-            let pw = password.as_ref().map(|p| p.as_str());
-            let ready = || drop(tx.send(Event::Forward(k.clone(), Ok(true))));
-            let res = forward::run(&target, pw, fwd, ready).await;
-            let _ = tx.send(Event::Forward(k.clone(), res.map(|()| false)));
-        });
+        let task = task::forward(key.clone(), target, password, fwd, self.sink());
         self.fwds.insert(key, (task, false));
         Ok(())
     }
@@ -1064,15 +977,14 @@ impl App {
         let tasks = hosts.iter().map(|host| {
             let target = Target::from_config(&self.sshc, host);
             let password = self.vault_password(host);
-            let (tx, host, command) = (self.tx.clone(), host.clone(), command.to_string());
-            tokio::spawn(async move {
-                let res = async {
-                    let pw = password.as_ref().map(|p| p.as_str());
-                    let h = ssh::connect(&target?, pw, None).await?;
-                    ssh::exec(&h, &command).await
-                };
-                let _ = tx.send(Event::Batch(id, host, res.await));
-            })
+            task::batch(
+                id,
+                host.clone(),
+                target,
+                password,
+                command.to_string(),
+                self.sink(),
+            )
         });
         let tasks = tasks.collect();
         self.popup = Some(Popup::Batch(Batch {
@@ -1089,7 +1001,6 @@ impl App {
     // ── events ──────────────────────────────────────────────────────────
 
     fn on_event(&mut self, ev: Event) {
-        let tab_index = |tabs: &[Tab], id| tabs.iter().position(|t| t.id == id);
         match ev {
             Event::Input(Input::Key(k)) if k.kind == KeyEventKind::Press => {
                 self.msg.clear();
@@ -1098,7 +1009,14 @@ impl App {
             Event::Input(Input::Paste(text)) => self.on_paste(&text),
             // Resize and focus changes only need the redraw that follows.
             Event::Input(_) => {}
-            Event::Data(id, data) => {
+            Event::Task(ev) => self.on_task(ev),
+        }
+    }
+
+    fn on_task(&mut self, ev: task::Event) {
+        let tab_index = |tabs: &[Tab], id| tabs.iter().position(|t| t.id == id);
+        match ev {
+            task::Event::Data(id, data) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
@@ -1117,7 +1035,7 @@ impl App {
                     self.msg = format!("session log of {} stopped: {e}", tab.alias);
                 }
             }
-            Event::Sftp(id, reply) => {
+            task::Event::Sftp(id, reply) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
@@ -1129,7 +1047,7 @@ impl App {
                     }
                 }
             }
-            Event::Closed(id, err) => {
+            task::Event::Closed(id, err) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
@@ -1160,7 +1078,7 @@ impl App {
                     Kind::Sftp(_) => self.msg = why,
                 }
             }
-            Event::AuthFailed(id, err) => {
+            task::Event::AuthFailed(id, err) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
@@ -1176,13 +1094,13 @@ impl App {
                 self.prompt(&report.message, "Password", true, then);
                 self.fails.insert(tab.alias, report);
             }
-            Event::Ping(alias, ms) => {
+            task::Event::Ping(alias, ms) => {
                 self.reach.insert(alias, ms);
             }
-            Event::Stats(alias, stats) => {
+            task::Event::Stats(alias, stats) => {
                 self.stats.insert(alias, stats);
             }
-            Event::Peek(alias, res) => {
+            task::Event::Peek(alias, res) => {
                 if let Ok(peek) = &res {
                     // It answered: the status line can use the numbers too.
                     self.fails.remove(&alias);
@@ -1193,12 +1111,12 @@ impl App {
                 let res = res.map_err(|e| conn_err::classify(&e, self.cfg.lang));
                 self.peeks.insert(alias, Some((Instant::now(), res)));
             }
-            Event::Forward(key, Ok(true)) => {
+            task::Event::Forward(key, Ok(true)) => {
                 if let Some(state) = self.fwds.get_mut(&key) {
                     state.1 = true;
                 }
             }
-            Event::Forward(key, res) => {
+            task::Event::Forward(key, res) => {
                 self.fwds.remove(&key);
                 let why = match res {
                     Err(e) => conn_err::classify(&e, self.cfg.lang).message,
@@ -1206,7 +1124,7 @@ impl App {
                 };
                 self.msg = format!("forward {key}: {why}");
             }
-            Event::Batch(id, host, out) => {
+            task::Event::Batch(id, host, out) => {
                 // An answer to a batch that was closed has nowhere to go.
                 let Some(Popup::Batch(batch)) = &mut self.popup else {
                     return;
@@ -2241,8 +2159,10 @@ impl App {
     }
 }
 
-pub async fn run(cfg: Config) -> Result<()> {
-    let (tx, mut rx) = unbounded_channel();
+/// Runs the TUI until the user quits. Call it inside `vssh_core::task::run`:
+/// the connections it opens are that runtime's work.
+pub fn run(cfg: Config) -> Result<()> {
+    let (tx, rx) = channel();
     // Everything that can fail on startup fails here, before the screen is taken over.
     let mut app = App::new(cfg, tx.clone())?;
     let mut terminal = ratatui::try_init()?;
@@ -2254,7 +2174,7 @@ pub async fn run(cfg: Config) -> Result<()> {
             }
         }
     });
-    let res = async {
+    let res = (|| {
         while !app.quit {
             terminal.draw(|f| draw::draw(&mut app, f))?;
             app.probe_selected();
@@ -2267,10 +2187,11 @@ pub async fn run(cfg: Config) -> Result<()> {
                 _ => Some(draw::FRAME),
             };
             let ev = match tick {
-                None => rx.recv().await,
-                Some(tick) => match tokio::time::timeout(tick, rx.recv()).await {
-                    Ok(ev) => ev,
-                    Err(_) => continue,
+                None => rx.recv().ok(),
+                Some(tick) => match rx.recv_timeout(tick) {
+                    Ok(ev) => Some(ev),
+                    Err(RecvTimeoutError::Timeout) => continue,
+                    Err(RecvTimeoutError::Disconnected) => None,
                 },
             };
             let Some(ev) = ev else { break };
@@ -2284,8 +2205,7 @@ pub async fn run(cfg: Config) -> Result<()> {
             }
         }
         anyhow::Ok(())
-    }
-    .await;
+    })();
     let _ = execute!(stdout(), DisableBracketedPaste);
     ratatui::restore();
     res
@@ -2312,8 +2232,8 @@ mod tests {
     }
 
     /// A live terminal tab whose "connection" is just the receiving end of its channel.
-    fn term_tab(id: u64) -> (Tab, tokio::sync::mpsc::UnboundedReceiver<SessionCmd>) {
-        let (tx, rx) = unbounded_channel();
+    fn term_tab(id: u64) -> (Tab, task::Receiver<SessionCmd>) {
+        let (tx, rx) = task::channel();
         let size = NonZeroU16::new(10).unwrap();
         let parser = vt100::Parser::new_with_callbacks(size, size, 100, term::Replies::default());
         let tab = Tab {
@@ -2325,7 +2245,7 @@ mod tests {
                 parser: Box::new(parser),
                 tx,
             },
-            task: tokio::spawn(async {}),
+            task: Task::default(),
             connected: true,
             closed: false,
             log: None,
@@ -2333,7 +2253,7 @@ mod tests {
         (tab, rx)
     }
 
-    fn received(rx: &mut tokio::sync::mpsc::UnboundedReceiver<SessionCmd>) -> Vec<u8> {
+    fn received(rx: &mut task::Receiver<SessionCmd>) -> Vec<u8> {
         let mut all = vec![];
         while let Ok(SessionCmd::Data(bytes)) = rx.try_recv() {
             all.extend(bytes);
@@ -2341,10 +2261,10 @@ mod tests {
         all
     }
 
-    #[tokio::test]
-    async fn broadcast_sends_keys_to_every_live_session() {
+    #[test]
+    fn broadcast_sends_keys_to_every_live_session() {
         let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=4).map(term_tab).unzip();
-        let (sftp_tx, _sftp_rx) = unbounded_channel();
+        let (sftp_tx, _sftp_rx) = task::channel();
         tabs.push(Tab {
             kind: Kind::Sftp(Box::new(SftpView::new(sftp_tx))),
             ..term_tab(9).0
@@ -2381,8 +2301,8 @@ mod tests {
         assert_eq!(send_input(&mut tabs, 3, false, &key('x')), 0);
     }
 
-    #[tokio::test]
-    async fn broadcast_encodes_for_each_sessions_own_mode() {
+    #[test]
+    fn broadcast_encodes_for_each_sessions_own_mode() {
         let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=2).map(term_tab).unzip();
         // Session 2 is in a full-screen program: application cursor keys, bracketed paste.
         if let Kind::Term { parser, .. } = &mut tabs[1].kind {
@@ -2425,8 +2345,8 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[tokio::test]
-    async fn a_picked_snippet_is_typed_into_every_broadcast_session() {
+    #[test]
+    fn a_picked_snippet_is_typed_into_every_broadcast_session() {
         let (mut tabs, mut rxs): (Vec<_>, Vec<_>) = (1..=2).map(term_tab).unzip();
         let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         for input in [TermInput::Paste("df -h /"), TermInput::Key(enter)] {

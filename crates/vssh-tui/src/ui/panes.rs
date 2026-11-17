@@ -3,7 +3,7 @@
 
 use ratatui::layout::{Constraint, Layout as Split, Rect};
 
-use crate::config::Orientation;
+use vssh_core::config::Orientation;
 
 /// Columns needed to put two panels side by side.
 pub const SIDE_BY_SIDE: u16 = 80;

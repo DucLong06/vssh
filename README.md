@@ -289,6 +289,7 @@ Entries you leave out keep their defaults, so a config written for an older vers
 
 ```sh
 cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
+./scripts/check-core-deps.sh    # crates/vssh-core must stay free of TUI crates
 cargo audit    # needs: cargo install cargo-audit
 ```
 

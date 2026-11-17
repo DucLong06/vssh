@@ -93,7 +93,7 @@ trap 'rm -rf "$TMP"' EXIT
 # Leaves the new binary at $TMP/vssh, or returns 1.
 from_checkout() {
     dir=$(dirname "$0")
-    grep -qs '^name = "vssh"$' "$dir/Cargo.toml" || return 1
+    grep -qs '^name = "vssh"$' "$dir/crates/vssh-tui/Cargo.toml" || return 1
     command -v cargo >/dev/null ||
         die "This is a source checkout, but cargo was not found. Install Rust: https://rustup.rs" \
             "Đây là thư mục mã nguồn nhưng không tìm thấy cargo. Hãy cài Rust: https://rustup.rs"

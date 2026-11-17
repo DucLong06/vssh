@@ -5,10 +5,10 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use vssh::ssh::Target;
-use vssh::store::db::{Db, Meta, Snippet};
-use vssh::store::ssh_config::{Forward, SshConfig};
-use vssh::vault::Vault;
+use vssh_core::ssh::Target;
+use vssh_core::store::db::{Db, Meta, Snippet};
+use vssh_core::store::ssh_config::{Forward, SshConfig};
+use vssh_core::vault::Vault;
 
 /// A fresh, empty directory per test.
 fn temp(name: &str) -> PathBuf {
@@ -213,7 +213,7 @@ fn identity_file_expands_only_a_leading_home() {
         "Host h\n  IdentityFile ~/.ssh/k\n  IdentityFile ~other/k\n  IdentityFile /abs/~/k\n  \
          IdentityFile rel/k\n  IdentityFile \"~/with space/k\"\n",
     );
-    let home = vssh::config::home();
+    let home = vssh_core::config::home();
     let keys = Target::from_config(&c, "h").unwrap().keys;
     let expected = [
         home.join(".ssh/k"),

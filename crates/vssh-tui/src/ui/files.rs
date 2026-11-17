@@ -3,15 +3,14 @@
 use std::path::Path;
 use std::{fs, io};
 
-use tokio::sync::mpsc::UnboundedSender;
-
-use crate::sftp::{list_local, Cmd, Entry, Reply};
+use vssh_core::sftp::{list_local, Cmd, Entry, Reply};
+use vssh_core::task::Sender;
 
 pub const LOCAL: usize = 0;
 pub const REMOTE: usize = 1;
 
 pub struct SftpView {
-    tx: UnboundedSender<Cmd>,
+    tx: Sender<Cmd>,
     pub dirs: [String; 2],
     pub lists: [Vec<Entry>; 2],
     pub sel: [usize; 2],
@@ -33,7 +32,7 @@ fn parent(dir: &str) -> String {
 }
 
 impl SftpView {
-    pub fn new(tx: UnboundedSender<Cmd>) -> Self {
+    pub fn new(tx: Sender<Cmd>) -> Self {
         let cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
         let mut view = Self {
             tx,
@@ -223,7 +222,7 @@ mod tests {
         fs::create_dir_all(dir.join("sub")).unwrap();
         fs::write(dir.join("b.txt"), "hello").unwrap();
 
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = vssh_core::task::channel();
         let mut v = SftpView::new(tx);
         assert_eq!(v.chdir(dir.to_string_lossy().into_owned()), "");
         // Directories sort first.

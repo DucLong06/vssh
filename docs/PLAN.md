@@ -8,8 +8,8 @@ record for those.
 
 ### Server stats
 
-- **One command, one round.** `ui/stats.rs` holds the command, the parser and
-  the formatter. The command is wrapped in `sh -c` so a fish or csh login
+- **One command, one round.** `vssh_core::stats` holds the command, the parser
+  and the formatter. The command is wrapped in `sh -c` so a fish or csh login
   shell does not have to parse it. Linux reads `/proc/loadavg`,
   `/proc/cpuinfo` and `/proc/meminfo`; anything without `/proc` falls back to
   `uptime`, `sysctl` and `vm_stat` (macOS). `df -Pk /` is the same everywhere.
@@ -39,7 +39,7 @@ record for those.
   again until a session to it has been opened and closed: each refusal is a
   failed login in that server's log.
 - **Room.** The stats take what is free between the centred text and the
-  tags; `Stats::compact` picks bars, then plain text, then fewer metrics.
+  tags; `ui::stats::compact` picks bars, then plain text, then fewer metrics.
   Outside the wide layout it returns nothing.
 
 ### Rounded everything
@@ -130,7 +130,7 @@ free row there would cost every pane a line of terminal.
 
 ## Quick peek (brief 9, M1)
 
-- **Shared module.** `ui/stats.rs` builds both commands from one script: the
+- **Shared module.** `vssh_core::stats` builds both commands from one script: the
   status line's `COMMAND`, and `PEEK`, which adds `uptime`, `uname -srm` and
   `hostname` as labelled lines. `parse_peek` runs the status line's `parse`
   for the metrics and reads the extra lines itself; it cannot fail, a line
@@ -215,3 +215,37 @@ free row there would cost every pane a line of terminal.
   a target the last hop cannot reach is `Fail::Unreachable`.
 - **Limits.** Hops authenticate with keys only. No bracketed IPv6 or
   `ssh://` hops. The host-list probe skips hosts that are not direct.
+
+## Workspace split (brief D0, branch `feat/workspace-split`)
+
+The first step towards the desktop app (v0.2.0): one repository, two crates.
+
+- **`crates/vssh-core`** is vssh without a user interface: `config`,
+  `conn_err`, `proto`, `ssh` (with `forward`), `sftp`, `stats`, `store`
+  (`db`, `ssh_config`), `vault` and `task`. **`crates/vssh-tui`** is the
+  ratatui frontend: `theme`, `ui/*` and `main.rs`. It is still the package
+  and the binary `vssh`, so `cargo install`, `target/release/vssh`, the
+  release workflow and `install.sh` see the same names as before.
+- **The line is checked, not promised.** `scripts/check-core-deps.sh` (CI
+  runs it) fails if vssh-core depends on or names ratatui or crossterm, and
+  if the TUI depends on tokio directly.
+- **`vssh_core::task` is the boundary.** The UI used to call `tokio::spawn`
+  itself. Now a frontend asks for work (`session`, `sftp`, `ping`, `probe`,
+  `peek`, `forward`, `batch`) and hears back as `task::Event` through its
+  `Sink`, which any `Fn(Event)` closure is. A `Task` aborts the work. The TUI
+  wraps a std channel in its sink and its event loop is a blocking `recv`;
+  `task::run` supplies the runtime. Under Tauri, which runs tokio already,
+  the same functions are called from a command and the sink emits to the
+  window.
+- **The theme is the frontend's.** `[theme]` holds terminal colour names, so
+  `Config<T>` is generic over its type: the TUI reads `Config<Theme>` with
+  ratatui colours, and the default `Config` keeps the raw table for a
+  frontend that wants to map the names itself.
+- **Paths come from the caller.** `Db::open`, `Vault::open` and
+  `SshConfig::load` take a path. `config::data_dir()` and
+  `config::ssh_config_path()` are the defaults the TUI passes in.
+- **Stats.** Everything but `compact` moved: fitting the metrics into the
+  status line depends on the window's shape, which only the TUI has.
+- **Strings.** `Lang` and the connection-error texts are in the core, as
+  plain `&str` pairs. The labels and key hints of the terminal screens stay
+  next to the widgets that draw them, in `ui/*`.
