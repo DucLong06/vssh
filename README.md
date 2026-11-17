@@ -4,13 +4,39 @@
 
 **English** · [Tiếng Việt](README.vi.md)
 
-A terminal SSH manager: host list on the left, details or a live session on
-the right, vim keys everywhere. Hosts live in your normal `~/.ssh/config`, so
-plain `ssh` keeps working with everything vssh edits.
+An SSH manager for the way you actually work: pick a host, connect, keep
+several sessions, copy files, juggle port forwards — without leaving your
+`~/.ssh/config` behind. One Rust core, two frontends: the desktop app below
+and the terminal app further down read the same config, the same database and
+the same vault, and share the TokyoNight theme.
 
-One Rust core, two frontends: the terminal app and the desktop app below read
-the same config, the same database and the same vault, and share the TokyoNight
-theme.
+Linux and macOS. Pure Rust SSH ([russh](https://github.com/warp-tech/russh)); no `ssh` binary needed.
+
+## Desktop app
+
+The same hosts in a window: a dashboard of host cards with live stats, terminal tabs with broadcast, a dual-pane SFTP view, snippets, batch runs, port forwards and the vault. It is a frontend over the same core as the terminal app, so both read the same `~/.ssh/config`, the same database and the same vault.
+
+| Dashboard, with the nav rail | Terminal tabs |
+|---|---|
+| ![The desktop app's nav rail, host cards with sparklines and disk bars](docs/img/desktop-d9-rail.png) | ![A shell in a terminal tab of the desktop app](docs/img/desktop-d3-terminal.png) |
+
+Linux x86_64, from v0.2.0 on. A [release](https://github.com/DucLong06/vssh/releases) carries three packages; take one:
+
+| Package | For | Install |
+|---|---|---|
+| `vssh-desktop_<version>_amd64.deb` | Ubuntu 22.04 or newer, Debian 12 or newer | `sudo apt install ./vssh-desktop_<version>_amd64.deb` |
+| `vssh-desktop-<version>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<version>-1.x86_64.rpm` |
+| `vssh-desktop_<version>_amd64.AppImage` | any other distribution | `chmod +x vssh-desktop_<version>_amd64.AppImage`, then run the file |
+
+Start it from the application menu, or as `vssh-desktop`. The `.deb` and the `.rpm` depend on WebKitGTK 4.1 and GTK 3, which the package manager installs with them. Before a release is published its `.deb` is installed in a bare Ubuntu 22.04 and has to show its window: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
+
+To build the `.deb` yourself (Rust, Node.js 24 and `libwebkit2gtk-4.1-dev`): `npm ci` in `crates/vssh-desktop`, then `scripts/desktop-deb.sh 0.2.0`.
+
+Inspired by [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): a terminal app and a desktop app over one Rust core. None of its code or text is used here.
+
+## Terminal app
+
+Prefer the keyboard? The same core in your terminal: host list on the left, details or a live session on the right, vim keys everywhere.
 
 ![vssh: host list, tag filter, three hosts side by side with broadcast, leader menu, quick connect and SFTP](docs/img/demo.gif)
 
@@ -30,9 +56,7 @@ theme.
 
 All pictures are captured from the real app by [`docs/img/demo.sh`](docs/img/demo.sh) (terminal contents rendered to images), in this interface language; the hosts in them are a local demo container.
 
-Linux and macOS. Pure Rust SSH ([russh](https://github.com/warp-tech/russh)); no `ssh` binary needed.
-
-## Install
+### Install (terminal)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
@@ -40,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
 
 Installs to `~/.local/bin` (`--prefix DIR` changes that); run it again to update. It uses a release binary when one exists for your machine and otherwise builds with `cargo`. The installer speaks English or Vietnamese, chosen from your locale; force it with `sh -s -- --lang vi` or `VSSH_LANG=vi`.
 
-## Build
+### Build
 
 Needs Rust 1.89+ and a C compiler (for the bundled SQLite).
 
@@ -48,28 +72,6 @@ Needs Rust 1.89+ and a C compiler (for the bundled SQLite).
 cargo build --release
 ./target/release/vssh        # or: sh install.sh, from the checkout
 ```
-
-## Desktop app
-
-The same hosts in a window: a dashboard of host cards with live stats, terminal tabs with broadcast, a dual-pane SFTP view, snippets, batch runs, port forwards and the vault. It is a second frontend over the same core as the terminal app, so both read the same `~/.ssh/config`, the same database and the same vault.
-
-| Dashboard, with the nav rail | Terminal tabs |
-|---|---|
-| ![The desktop app's nav rail, host cards with sparklines and disk bars](docs/img/desktop-d9-rail.png) | ![A shell in a terminal tab of the desktop app](docs/img/desktop-d3-terminal.png) |
-
-Linux x86_64, from v0.2.0 on. A [release](https://github.com/DucLong06/vssh/releases) carries three packages; take one:
-
-| Package | For | Install |
-|---|---|---|
-| `vssh-desktop_<version>_amd64.deb` | Ubuntu 22.04 or newer, Debian 12 or newer | `sudo apt install ./vssh-desktop_<version>_amd64.deb` |
-| `vssh-desktop-<version>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<version>-1.x86_64.rpm` |
-| `vssh-desktop_<version>_amd64.AppImage` | any other distribution | `chmod +x vssh-desktop_<version>_amd64.AppImage`, then run the file |
-
-Start it from the application menu, or as `vssh-desktop`. The `.deb` and the `.rpm` depend on WebKitGTK 4.1 and GTK 3, which the package manager installs with them. Before a release is published its `.deb` is installed in a bare Ubuntu 22.04 and has to show its window: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
-
-To build the `.deb` yourself (Rust, Node.js 24 and `libwebkit2gtk-4.1-dev`): `npm ci` in `crates/vssh-desktop`, then `scripts/desktop-deb.sh 0.2.0`.
-
-Inspired by [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): a terminal app and a desktop app over one Rust core. None of its code or text is used here.
 
 ## Quickstart: first connection
 

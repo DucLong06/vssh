@@ -2,14 +2,39 @@
 
 **Tiếng Việt** · [English](README.md)
 
-Trình quản lý SSH chạy trong terminal: danh sách máy chủ bên trái, thông tin
-chi tiết hoặc phiên làm việc bên phải, dùng phím kiểu vim ở mọi nơi. Máy chủ
-được lưu ngay trong `~/.ssh/config` quen thuộc, nên lệnh `ssh` thông thường
-vẫn dùng được mọi thứ vssh chỉnh sửa.
+Trình quản lý SSH đúng cách bạn làm việc: chọn máy chủ, kết nối, giữ nhiều phiên,
+chép file, quản lý chuyển tiếp cổng — mà vẫn giữ nguyên `~/.ssh/config` quen
+thuộc. Một lõi Rust, hai giao diện: ứng dụng desktop bên dưới và ứng dụng
+terminal phía sau đọc chung cấu hình, chung cơ sở dữ liệu và chung kho mật
+khẩu, cùng theme TokyoNight.
 
-Một lõi Rust, hai giao diện: ứng dụng terminal và ứng dụng desktop bên dưới đọc
-chung cấu hình, chung cơ sở dữ liệu và chung kho mật khẩu, cùng theme
-TokyoNight.
+Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
+
+## Ứng dụng desktop
+
+Vẫn những máy chủ đó, trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, snippet, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu. Đây là một giao diện trên cùng một lõi với ứng dụng terminal, nên cả hai đọc chung `~/.ssh/config`, chung cơ sở dữ liệu và chung kho mật khẩu.
+
+| Bảng điều khiển với thanh điều hướng | Tab terminal |
+|---|---|
+| ![Thanh điều hướng bên trái, các thẻ máy chủ kèm sparkline và thanh ổ đĩa](docs/img/desktop-d9-rail.vi.png) | ![Một shell trong tab terminal của ứng dụng desktop](docs/img/desktop-d3-terminal.vi.png) |
+
+Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/DucLong06/vssh/releases) có ba gói; chọn một:
+
+| Gói | Dành cho | Cài đặt |
+|---|---|---|
+| `vssh-desktop_<phiên-bản>_amd64.deb` | Ubuntu 22.04 trở lên, Debian 12 trở lên | `sudo apt install ./vssh-desktop_<phiên-bản>_amd64.deb` |
+| `vssh-desktop-<phiên-bản>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<phiên-bản>-1.x86_64.rpm` |
+| `vssh-desktop_<phiên-bản>_amd64.AppImage` | các bản phân phối khác | `chmod +x vssh-desktop_<phiên-bản>_amd64.AppImage`, rồi chạy file đó |
+
+Mở từ menu ứng dụng, hoặc gõ `vssh-desktop`. Gói `.deb` và `.rpm` phụ thuộc WebKitGTK 4.1 và GTK 3; trình quản lý gói sẽ cài kèm. Trước khi một bản được phát hành, gói `.deb` của nó được cài vào một Ubuntu 22.04 trống và phải hiện được cửa sổ: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
+
+Tự dựng gói `.deb` (cần Rust, Node.js 24 và `libwebkit2gtk-4.1-dev`): chạy `npm ci` trong `crates/vssh-desktop`, rồi `scripts/desktop-deb.sh 0.2.0`.
+
+Lấy cảm hứng từ [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): một ứng dụng terminal và một ứng dụng desktop trên cùng một lõi Rust. Không dùng mã nguồn hay văn bản nào của dự án đó.
+
+## Ứng dụng terminal
+
+Thích dùng bàn phím? Cùng một lõi trong terminal của bạn: danh sách máy chủ bên trái, thông tin chi tiết hoặc phiên làm việc bên phải, phím kiểu vim ở mọi nơi. Máy chủ được lưu ngay trong `~/.ssh/config`, nên lệnh `ssh` thông thường vẫn dùng được mọi thứ vssh chỉnh sửa.
 
 ![vssh: danh sách máy chủ, lọc theo thẻ, ba máy cạnh nhau với chế độ phát, menu leader, kết nối nhanh và SFTP](docs/img/demo.vi.gif)
 
@@ -29,9 +54,7 @@ TokyoNight.
 
 Mọi hình ảnh được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh), bằng ngôn ngữ giao diện tiếng Việt; các máy chủ trong hình là một container demo chạy trên máy.
 
-Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
-
-## Cài đặt
+### Cài đặt (terminal)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh -s -- --lang vi
@@ -39,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
 
 Cài vào `~/.local/bin` (đổi bằng `--prefix THƯ_MỤC`); chạy lại để cập nhật. Trình cài đặt dùng bản dựng sẵn nếu có cho máy của bạn, nếu không sẽ biên dịch bằng `cargo`. Thông báo hiện bằng tiếng Anh hoặc tiếng Việt theo locale của máy; ép chọn bằng `--lang vi` hoặc `VSSH_LANG=vi`.
 
-## Biên dịch
+### Biên dịch
 
 Cần Rust 1.89 trở lên và một trình biên dịch C (cho SQLite đi kèm).
 
@@ -47,28 +70,6 @@ Cần Rust 1.89 trở lên và một trình biên dịch C (cho SQLite đi kèm)
 cargo build --release
 ./target/release/vssh        # hoặc: sh install.sh, ngay trong thư mục mã nguồn
 ```
-
-## Ứng dụng desktop
-
-Vẫn những máy chủ đó, trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, snippet, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu. Đây là giao diện thứ hai trên cùng một lõi với ứng dụng terminal, nên cả hai đọc chung `~/.ssh/config`, chung cơ sở dữ liệu và chung kho mật khẩu.
-
-| Bảng điều khiển với thanh điều hướng | Tab terminal |
-|---|---|
-| ![Thanh điều hướng bên trái, các thẻ máy chủ kèm sparkline và thanh ổ đĩa](docs/img/desktop-d9-rail.vi.png) | ![Một shell trong tab terminal của ứng dụng desktop](docs/img/desktop-d3-terminal.vi.png) |
-
-Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/DucLong06/vssh/releases) có ba gói; chọn một:
-
-| Gói | Dành cho | Cài đặt |
-|---|---|---|
-| `vssh-desktop_<phiên-bản>_amd64.deb` | Ubuntu 22.04 trở lên, Debian 12 trở lên | `sudo apt install ./vssh-desktop_<phiên-bản>_amd64.deb` |
-| `vssh-desktop-<phiên-bản>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<phiên-bản>-1.x86_64.rpm` |
-| `vssh-desktop_<phiên-bản>_amd64.AppImage` | các bản phân phối khác | `chmod +x vssh-desktop_<phiên-bản>_amd64.AppImage`, rồi chạy file đó |
-
-Mở từ menu ứng dụng, hoặc gõ `vssh-desktop`. Gói `.deb` và `.rpm` phụ thuộc WebKitGTK 4.1 và GTK 3; trình quản lý gói sẽ cài kèm. Trước khi một bản được phát hành, gói `.deb` của nó được cài vào một Ubuntu 22.04 trống và phải hiện được cửa sổ: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
-
-Tự dựng gói `.deb` (cần Rust, Node.js 24 và `libwebkit2gtk-4.1-dev`): chạy `npm ci` trong `crates/vssh-desktop`, rồi `scripts/desktop-deb.sh 0.2.0`.
-
-Lấy cảm hứng từ [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): một ứng dụng terminal và một ứng dụng desktop trên cùng một lõi Rust. Không dùng mã nguồn hay văn bản nào của dự án đó.
 
 ## Bắt đầu nhanh: kết nối đầu tiên
 
