@@ -47,6 +47,9 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Streamer mode (made-up addresses)",
         "Chế độ phát trực tiếp (địa chỉ giả)",
     ),
+    ("theme", "Theme", "Giao diện"),
+    ("theme_night", "Night", "Tối"),
+    ("theme_day", "Day", "Sáng"),
     // The dashboard. A host's states are the TUI's words for them.
     ("not_checked", "not checked", "chưa kiểm tra"),
     ("down", "down", "mất kết nối"),

@@ -2,6 +2,7 @@
   import type { Host } from './api'
   import { i18n, setLang, t } from './i18n.svelte'
   import { addr, setStreamer, streamer } from './streamer.svelte'
+  import { setTheme, theme } from './theme.svelte'
 
   type Props = {
     hosts: number
@@ -107,6 +108,23 @@
       <circle cx="12" cy="12" r="3" />
       {#if streamer.on}
         <path d="M4 4l16 16" />
+      {/if}
+    </svg>
+  </button>
+  <!-- A moon for Night, a sun for Day. -->
+  <button
+    type="button"
+    onclick={() => setTheme(theme.name === 'night' ? 'day' : 'night')}
+    aria-label="{t('theme')}: {theme.name === 'night' ? t('theme_night') : t('theme_day')}"
+    title={t('theme')}
+    class="{button} shrink-0"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-none stroke-current stroke-2">
+      {#if theme.name === 'night'}
+        <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+      {:else}
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
       {/if}
     </svg>
   </button>

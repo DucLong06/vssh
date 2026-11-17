@@ -1295,3 +1295,29 @@ test('streamer mode that was left on is on when the app opens, in Vietnamese too
   expect(within(status()).getByRole('button', { name: /Chế độ phát trực tiếp/ })).toHaveAttribute('aria-pressed', 'true')
   expect(english(words())).toEqual([])
 })
+
+// --- D7: the Day theme --------------------------------------------------------
+
+test('the theme toggle in the status bar: Night until Day is chosen, a terminal dark in both', async () => {
+  const user = shell()
+  const toggle = within(status()).getByRole('button', { name: 'Theme: Night' })
+  expect(document.documentElement.dataset.theme).toBe('night')
+  await user.click(toggle)
+  expect(toggle).toHaveAccessibleName('Theme: Day')
+  expect(document.documentElement.dataset.theme).toBe('day')
+  expect(localStorage.getItem('vssh.theme')).toBe('day')
+
+  ;(await card('web-01')).focus()
+  await user.keyboard('{Enter}')
+  await tab(/web-01/)
+  expect(terminals[0].options.theme).toMatchObject({ background: '#1a1b26', foreground: '#c0caf5' })
+  // Its ground is the terminal's own, not the window's; the border is the theme's.
+  expect(screen.getByRole('tabpanel', { name: 'web-01' })).toHaveClass('bg-term', 'day:border-edge')
+
+  setLang('vi')
+  await vi.waitFor(() => expect(toggle).toHaveAccessibleName('Giao diện: Sáng'))
+  await user.click(toggle)
+  expect(toggle).toHaveAccessibleName('Giao diện: Tối')
+  expect(document.documentElement.dataset.theme).toBe('night')
+  expect(english(words())).toEqual([])
+})

@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
 import { setLang } from './lib/i18n.svelte'
 import { setStreamer } from './lib/streamer.svelte'
+import { setTheme } from './lib/theme.svelte'
 
 // jsdom has no modal dialogs: open and close them the way a webview does.
 HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
@@ -22,4 +23,5 @@ globalThis.ResizeObserver ??= class {
 afterEach(() => {
   setLang('en')
   setStreamer(false)
+  setTheme('night')
 })
