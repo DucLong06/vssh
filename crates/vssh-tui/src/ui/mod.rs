@@ -29,7 +29,6 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
 
-use crate::conn_err::{self, Fail, Report};
 use crate::sftp;
 use crate::ssh::{self, forward, Login, SessionCmd, Target};
 use crate::store::db::{Db, Meta, Snippet};
@@ -40,6 +39,7 @@ use files::SftpView;
 use panes::{Layout, Shape};
 use stats::{Peek, Stats};
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
+use vssh_core::conn_err::{self, Fail, Report};
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.

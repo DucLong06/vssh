@@ -4,3 +4,4 @@
 //! (`scripts/check-core-deps.sh` holds that line).
 
 pub mod config;
+pub mod conn_err;

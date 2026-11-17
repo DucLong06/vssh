@@ -7,7 +7,7 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use vssh_core::config::Lang;
+use crate::config::Lang;
 
 /// What the connect path knew when it gave up. Lives in the error chain
 /// (as the error itself or as its context) and is found there by `classify`.
