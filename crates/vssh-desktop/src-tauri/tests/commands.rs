@@ -728,7 +728,8 @@ fn the_frontend_fixtures_are_answers_the_commands_can_give() {
                 .into()
         })
         .collect();
-    let all = "dns timeout refused unreachable auth host_key jump other";
+    // Last, the one that is no failure of a connection: a forward's port.
+    let all = "dns timeout refused unreachable auth host_key jump other port_in_use";
     assert_eq!(classes.join(" "), all);
     let home = home("fixtures");
     let (_app, window) = window(&home, Fake::silent());

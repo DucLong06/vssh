@@ -76,7 +76,9 @@
       <kbd class="text-magenta">f</kbd>
       {t('files')} ·
       <kbd class="text-magenta">x</kbd>
-      {t('run')}
+      {t('run')} ·
+      <kbd class="text-magenta">L</kbd>
+      {t('forwards')}
     </span>
   {/if}
   <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto text-magenta">

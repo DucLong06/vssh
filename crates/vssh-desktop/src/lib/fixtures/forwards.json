@@ -1,0 +1,29 @@
+[
+  {
+    "bind": "127.0.0.1",
+    "host": "localhost",
+    "hport": 80,
+    "kind": "L",
+    "port": 8080,
+    "state": "off",
+    "value": "8080 localhost:80"
+  },
+  {
+    "bind": "127.0.0.1",
+    "host": "localhost",
+    "hport": 3000,
+    "kind": "R",
+    "port": 9000,
+    "state": "off",
+    "value": "9000 localhost:3000"
+  },
+  {
+    "bind": "127.0.0.1",
+    "host": "",
+    "hport": 0,
+    "kind": "D",
+    "port": 1080,
+    "state": "off",
+    "value": "1080"
+  }
+]

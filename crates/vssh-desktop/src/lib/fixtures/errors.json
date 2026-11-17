@@ -34,5 +34,10 @@
     "fail": { "kind": "jump", "hop": "bastion", "cause": { "kind": "refused", "addr": "192.0.2.1:22" } },
     "chain": ["jump host bastion failed", "connection refused by 192.0.2.1:22", "Connection refused (os error 111)"]
   },
-  { "class": "other", "fail": null, "chain": ["the peek ended without an answer"] }
+  { "class": "other", "fail": null, "chain": ["the peek ended without an answer"] },
+  {
+    "class": "port_in_use",
+    "fail": { "kind": "port_in_use", "addr": "127.0.0.1:8080" },
+    "chain": ["127.0.0.1:8080 is already in use", "Address already in use (os error 98)"]
+  }
 ]

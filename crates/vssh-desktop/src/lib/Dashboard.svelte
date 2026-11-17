@@ -20,6 +20,8 @@
     onconnect: (alias: string) => void
     /** Opens a host's files. */
     onfiles?: (alias: string) => void
+    /** Opens a host's port forwards. */
+    onforwards?: (alias: string) => void
     /** `s`: the snippets. */
     onsnippets?: () => void
     /** `x`: a command for the marked hosts. */
@@ -37,6 +39,7 @@
     onselect,
     onconnect,
     onfiles,
+    onforwards,
     onsnippets,
     onbatch,
     onpalette,
@@ -158,6 +161,8 @@
       peek(alias)
     } else if (e.key === 'f') {
       onfiles?.(alias)
+    } else if (e.key === 'L') {
+      onforwards?.(alias)
     } else if (step) {
       // Drag and drop for the keyboard: one place along, among the cards on screen.
       e.preventDefault()
@@ -312,9 +317,10 @@
                 marked={marked.includes(host.alias)}
                 onconnect={() => onconnect(host.alias)}
                 onfiles={onfiles && (() => onfiles(host.alias))}
+                onforwards={onforwards && (() => onforwards(host.alias))}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Space v f Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v f Shift+L Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null

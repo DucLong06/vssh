@@ -4,6 +4,7 @@
   import Dashboard from './lib/Dashboard.svelte'
   import Failure from './lib/Failure.svelte'
   import Files from './lib/Files.svelte'
+  import Forwards from './lib/Forwards.svelte'
   import { i18n, t } from './lib/i18n.svelte'
   import { poll, relabel } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
@@ -43,7 +44,9 @@
   let marked = $state<string[]>([])
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
-  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | null>(null)
+  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | null>(null)
+  /** The host whose forwards are open. */
+  let forwarding = $state('')
   /** The command the batch dialog runs, and where. */
   let job = $state<{ hosts: Host[]; command: string; params: Record<string, string> }>()
   /** Why the hosts could not be read. */
@@ -265,6 +268,10 @@
       onselect={(alias) => (selected = alias)}
       onconnect={open}
       onfiles={browse}
+      onforwards={(alias) => {
+        forwarding = alias
+        modal = 'forwards'
+      }}
       onsnippets={() => (modal = 'snippets')}
       onbatch={() => {
         if (!picked.length) return
@@ -346,4 +353,6 @@
   />
 {:else if modal === 'batch' && job}
   <Batch {...job} onclose={() => (modal = null)} />
+{:else if modal === 'forwards'}
+  <Forwards host={forwarding} onclose={() => (modal = null)} />
 {/if}

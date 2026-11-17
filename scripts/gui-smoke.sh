@@ -260,11 +260,12 @@ sleep 1
 shot target/smoke/hover.png
 xdotool mousemove --window "$win" 600 20
 
-# A person asking about the host nobody connected to: the last card, three
-# tab stops per card further on (the card, Files, Connect). That is a decision: its key goes on record, as
-# with `v` in the TUI, and from then on it is polled like the others.
+# A person asking about the host nobody connected to: the last card, four
+# tab stops per card further on (the card, Forwards, Files, Connect). That is
+# a decision: its key goes on record, as with `v` in the TUI, and from then
+# on it is polled like the others.
 first_card
-xdotool key --window "$win" --repeat 21 Tab
+xdotool key --window "$win" --repeat 28 Tab
 xdotool key --window "$win" v
 sleep 3
 shot target/smoke/asked.png

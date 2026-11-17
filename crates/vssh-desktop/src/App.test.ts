@@ -6,6 +6,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
 import listing from '../src-tauri/tests/fixtures/files.json'
 import errors from './lib/fixtures/errors.json'
+import forwards from './lib/fixtures/forwards.json'
 import hosts from './lib/fixtures/hosts.json'
 import peek from './lib/fixtures/peek.json'
 import refused from './lib/fixtures/refused.json'
@@ -837,4 +838,26 @@ test('x on the dashboard: a command for the marked hosts, or the selected one; t
   setLang('vi')
   expect(await screen.findByRole('dialog', { name: 'Chạy trên 2 máy' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Chép tất cả', hidden: true })).toBeInTheDocument()
+})
+
+test('L on a card, or its Forwards button, opens the host\'s port forwards', async () => {
+  const user = shell({ forwards_list: () => forwards, forward_toggle: () => true })
+  ;(await card('web-02')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('L Forwards'))
+  await user.keyboard('L')
+  const dialog = await screen.findByRole('dialog', { name: 'Forwards web-02' })
+  expect(asked('forwards_list')).toEqual([{ host: 'web-02' }])
+  const web = await within(dialog).findByRole('switch', { name: 'L 8080 localhost:80' })
+  await user.click(web)
+  expect(asked('forward_toggle')).toEqual([{ host: 'web-02', kind: 'L', value: '8080 localhost:80' }])
+  await emit('forward-state', { host: 'web-02', kind: 'L', value: '8080 localhost:80', state: 'on', error: null })
+  await vi.waitFor(() => expect(web).toHaveTextContent('● On'))
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Forwards' }))
+  expect(await screen.findByRole('dialog', { name: 'Forwards web-01' })).toBeInTheDocument()
+  setLang('vi')
+  expect(await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })).toBeInTheDocument()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('L Chuyển tiếp'))
 })

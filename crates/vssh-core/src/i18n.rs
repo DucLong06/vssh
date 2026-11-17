@@ -149,6 +149,17 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("copy_all", "Copy all", "Chép tất cả"),
     // The TUI's word for what Ctrl-A y did.
     ("copied", "copied", "đã chép"),
+    // A host's port forwards, in the TUI's word for them.
+    ("forwards", "Forwards", "Chuyển tiếp"),
+    ("no_forwards", "No forwards yet.", "Chưa có chuyển tiếp nào."),
+    ("kind", "Kind", "Loại"),
+    ("local_port", "Local port", "Cổng cục bộ"),
+    ("remote", "Remote", "Đích"),
+    ("status", "Status", "Trạng thái"),
+    ("on", "On", "Bật"),
+    ("off", "Off", "Tắt"),
+    ("starting", "starting", "đang bật"),
+    ("try_port", "Try port {n}", "Thử cổng {n}"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

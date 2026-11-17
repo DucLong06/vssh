@@ -15,8 +15,10 @@
     onconnect?: () => void
     /** Opens the host's files. */
     onfiles?: () => void
+    /** Opens the host's port forwards. */
+    onforwards?: () => void
   } & HTMLAttributes<HTMLElement>
-  let { host, info, marked = false, onconnect, onfiles, class: extra = '', ...rest }: Props = $props()
+  let { host, info, marked = false, onconnect, onfiles, onforwards, class: extra = '', ...rest }: Props = $props()
 
   const list = $derived(info?.peek ? parts(info.peek.stats, t('mem')) : [])
   const kind = $derived(
@@ -44,12 +46,17 @@
   data-marked={marked || undefined}
   class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red aria-[current]:ring-1 aria-[current]:ring-blue data-[marked]:border-magenta {extra}"
 >
-  {#if onconnect || onfiles}
+  {#if onconnect || onfiles || onforwards}
     <!-- Over the address, and only when the card is pointed at or has the
          focus: twenty of these at once would be all one sees. -->
     <div
       class="absolute top-8 right-3 z-1 flex gap-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
     >
+      {#if onforwards}
+        <button type="button" onclick={onforwards} aria-keyshortcuts="Shift+L" class="{button} text-cyan">
+          {t('forwards')}
+        </button>
+      {/if}
       {#if onfiles}
         <button type="button" onclick={onfiles} aria-keyshortcuts="f" class="{button} text-cyan">{t('files')}</button>
       {/if}

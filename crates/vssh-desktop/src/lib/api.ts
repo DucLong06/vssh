@@ -59,6 +59,25 @@ export type Snippet = { id: number; host: string; name: string; command: string 
 /** One host's answer in a batch: what the command printed, or why it could not be run. */
 export type Answered = { id: number; host: string; output: string | null; error: ConnError | null }
 
+/**
+ * A port forward of a host: a line of its block in the ssh config. `L` and
+ * `D` listen on `port` of this machine, `R` on the host's; `host:hport` is
+ * where it leads (nothing for `D`). `value` is the line itself, the
+ * forward's name for the commands.
+ */
+export type Forward = {
+  kind: 'L' | 'R' | 'D'
+  bind: string
+  port: number
+  host: string
+  hport: number
+  value: string
+  state: 'off' | 'starting' | 'on'
+}
+
+/** What `forward-state` carries: a forward listens (`on`), or has ended by itself (`off`, with why). */
+export type ForwardState = Pick<Forward, 'kind' | 'value'> & { host: string; state: 'on' | 'off'; error: ConnError | null }
+
 export type ErrorClass =
   | 'dns'
   | 'timeout'
@@ -66,6 +85,7 @@ export type ErrorClass =
   | 'unreachable'
   | 'auth'
   | 'host_key'
+  | 'port_in_use'
   | 'jump'
   | 'other'
 
@@ -76,6 +96,7 @@ export type Fail =
   | { kind: 'unreachable'; addr: string }
   | { kind: 'auth'; user: string; host: string; keys: number; password: boolean }
   | { kind: 'host_key'; host: string; fingerprint: string; line: number; file: string }
+  | { kind: 'port_in_use'; addr: string }
   | { kind: 'jump'; hop: string; cause: Fail | null }
 
 /** What a command rejects with: a failure in no language yet. */
@@ -156,6 +177,16 @@ export const api = {
    */
   snippetRun: (hosts: string[], command: string, params: Record<string, string>) =>
     invoke<number>('snippet_run', { hosts, command, params }),
+  forwardsList: (host: string) => invoke<Forward[]>('forwards_list', { host }),
+  /** Into the host's block, not started. Rejects with `port_in_use` if the host has a forward on that port. */
+  forwardAdd: (host: string, kind: Forward['kind'], localPort: number, remote: string | null) =>
+    invoke<Forward>('forward_add', { host, kind, localPort, remote }),
+  /** Starts a forward, or stops it if it runs: true if it is now starting. `forward-state` says when it listens. */
+  forwardToggle: (host: string, kind: Forward['kind'], value: string) =>
+    invoke<boolean>('forward_toggle', { host, kind, value }),
+  /** Stops it if it runs, and takes it out of the config. */
+  forwardKill: (host: string, kind: Forward['kind'], value: string) =>
+    invoke<void>('forward_kill', { host, kind, value }),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),
 }

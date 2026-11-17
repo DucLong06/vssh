@@ -114,6 +114,7 @@ test('every class of failure has its own label', () => {
     'HOST KEY',
     'JUMP HOST',
     'ERROR',
+    'PORT IN USE',
   ])
 })
 
