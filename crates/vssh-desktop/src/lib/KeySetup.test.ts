@@ -156,7 +156,8 @@ test('a failure before the host was touched has nothing to restore, and one whos
   await says('generate', 'running', 'done')
   await says('backup', 'running', 'failed')
   end().reject(other('cannot back up sshd_config (it takes root, or sudo without a password)'))
-  expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR cannot back up sshd_config (it takes root, or sudo without a password)')
+  expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR It needs root on the host, or sudo that asks no password.')
+  expect(screen.getByRole('alert')).toHaveAttribute('title', 'cannot back up sshd_config (it takes root, or sudo without a password)')
   expect(steps().slice(0, 2)).toEqual(['done Create an Ed25519 key', 'failed Add it to authorized_keys'])
   expect(screen.queryByRole('status')).not.toBeInTheDocument()
 
@@ -168,7 +169,8 @@ test('a failure before the host was touched has nothing to restore, and one whos
   await says('disable', 'running', 'failed')
   await says('restore', 'running', 'failed')
   end().reject(other('sshd_config could NOT be restored from /etc/ssh/sshd_config.vssh.bak: check it by hand'))
-  expect(await screen.findByRole('alert')).toHaveTextContent('sshd_config could NOT be restored')
+  expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR It needs root on the host, or sudo that asks no password.')
+  expect(screen.getByRole('alert')).toHaveAttribute('title', expect.stringContaining('sshd_config could NOT be restored'))
   expect(steps()[3]).toBe('failed Turn off password login')
   expect(screen.queryByRole('status')).not.toBeInTheDocument()
 })
@@ -194,4 +196,22 @@ test('in Vietnamese: the steps in plain words, and the word that access has not 
   expect(await screen.findByRole('alert')).toHaveTextContent('✗ XÁC THỰC Khoá công khai bị từ chối cho deploy@10.0.0.5')
   expect(await screen.findByRole('status')).toHaveTextContent('Đã khôi phục sshd_config như cũ — truy cập của bạn không đổi')
   expect(button('thử lại')).toBeInTheDocument()
+})
+
+test('in Vietnamese a refused backup is said in Vietnamese; a failure the core has words for keeps them', async () => {
+  setLang('vi')
+  const { user, end } = open()
+  await user.click(button('Bắt đầu'))
+  await says('generate', 'running', 'done')
+  await says('backup', 'running', 'failed')
+  end().reject(other('cannot back up sshd_config (it takes root, or sudo without a password)'))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Cần quyền root trên máy chủ, hoặc sudo không hỏi mật khẩu.')
+  expect(screen.getByRole('alert')).not.toHaveTextContent('cannot back up')
+
+  // The host could not be reached for the backup: that is not a matter of root.
+  await user.click(button('thử lại'))
+  await says('generate', 'running', 'done')
+  await says('backup', 'running', 'failed')
+  end().reject(auth)
+  expect(await screen.findByRole('alert')).toHaveTextContent('✗ XÁC THỰC Khoá công khai bị từ chối cho deploy@10.0.0.5')
 })

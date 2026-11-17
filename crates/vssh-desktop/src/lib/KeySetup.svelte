@@ -23,11 +23,14 @@
   /** Where the private key is. */
   let key = $state('')
   let failed = $state<Shown | null>(null)
+  /** The backup or the restore of sshd_config was refused: the core says so in English only, the note in both. */
+  let refused = $state(false)
   let go = $state<HTMLButtonElement>()
 
   async function start() {
     at = before()
     restored = false
+    refused = false
     failed = null
     phase = 'running'
     try {
@@ -44,6 +47,7 @@
     go?.focus()
     const heard = listen<KeyStep>('key-setup-step', ({ payload }) => {
       if (payload.host !== host) return
+      if ((payload.step === 'backup' || payload.step === 'restore') && payload.state === 'failed') refused = true
       if (payload.step === 'restore') restored = payload.state === 'done'
       // The backup is taken: the step goes on, to the key on the host.
       else if (payload.step !== 'backup') at[payload.step] = payload.state
@@ -92,7 +96,8 @@
     {#if failed}
       <p role="alert" title={failed.chain} class="break-words">
         <strong class="text-red">✗ {failed.label}</strong>
-        <span class="text-white">{failed.message}</span>
+        <!-- A failure of the network has the core's words in both languages; the rest of the chain is in the title. -->
+        <span class="text-white">{refused && failed.class === 'other' ? t('key_setup_note') : failed.message}</span>
       </p>
     {/if}
     {#if restored}
