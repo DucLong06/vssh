@@ -41,6 +41,7 @@ pub const PEEK: &str =
 const EVERY: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Stats {
     /// 1-minute load average per core, in per cent. Over 100 means a queue.
     pub cpu: Option<u32>,
@@ -79,6 +80,7 @@ fn loads(v: &str) -> Vec<f64> {
 /// What the quick peek shows: the metrics, and the lines only [`PEEK`] asks
 /// for. Anything the host did not answer stays empty.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Peek {
     pub stats: Stats,
     /// The 1, 5 and 15 minute load averages.

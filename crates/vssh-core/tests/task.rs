@@ -7,8 +7,7 @@ use std::net::TcpListener;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::time::Duration;
 
-use vssh_core::config::Lang;
-use vssh_core::conn_err::{classify, Class};
+use vssh_core::conn_err::Class;
 use vssh_core::ssh::{Login, Target};
 use vssh_core::task::{self, Event, Sink};
 
@@ -59,7 +58,7 @@ fn a_session_that_cannot_connect_ends_with_its_error() {
             task::session(7, target(closed_port()), None, (80, 24), login, None, sink);
         match rx.recv_timeout(WAIT) {
             Ok(Event::Closed(7, Some(err))) => {
-                assert_eq!(classify(&err, Lang::En).class, Class::Refused, "{err:#}")
+                assert_eq!(err.class, Class::Refused, "{err:?}")
             }
             _ => panic!("expected the session to end with an error"),
         }

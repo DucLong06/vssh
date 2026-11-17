@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod conn_err;
+pub mod i18n;
 pub mod proto;
 pub mod sftp;
 pub mod ssh;

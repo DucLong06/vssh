@@ -27,6 +27,7 @@ pub fn data_dir() -> PathBuf {
 
 /// Language of the key hints, the leader menu and the help screen.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[serde(rename_all = "lowercase")]
 pub enum Lang {
     #[default]

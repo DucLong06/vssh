@@ -6,6 +6,7 @@ use std::path::Path;
 use rusqlite::{params, Connection, Result};
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Meta {
     pub grp: String,
     /// Space or comma separated.
@@ -18,6 +19,7 @@ pub struct Meta {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Snippet {
     /// 0 = not saved yet.
     pub id: i64,

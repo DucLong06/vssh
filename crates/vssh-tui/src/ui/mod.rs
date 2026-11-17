@@ -31,7 +31,7 @@ use crate::theme::Config;
 use files::SftpView;
 use panes::{Layout, Shape};
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
-use vssh_core::conn_err::{self, Report};
+use vssh_core::conn_err::Report;
 use vssh_core::ssh::{Login, SessionCmd, Target};
 use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
@@ -1052,7 +1052,7 @@ impl App {
                     return;
                 };
                 let lang = self.cfg.lang;
-                let report = err.map(|e| conn_err::classify(&e, lang));
+                let report = err.map(|e| e.report(lang));
                 let why = match report {
                     // It never got through: there is no session to keep on
                     // screen, only the reason to show.
@@ -1083,7 +1083,7 @@ impl App {
                     return;
                 };
                 let tab = self.close_tab(i);
-                let report = conn_err::classify(&err, self.cfg.lang);
+                let report = err.report(self.cfg.lang);
                 let then = After::Password {
                     sftp: matches!(tab.kind, Kind::Sftp(_)),
                     alias: tab.alias.clone(),
@@ -1108,7 +1108,7 @@ impl App {
                         self.stats.insert(alias.clone(), Some(peek.stats.clone()));
                     }
                 }
-                let res = res.map_err(|e| conn_err::classify(&e, self.cfg.lang));
+                let res = res.map_err(|e| e.report(self.cfg.lang));
                 self.peeks.insert(alias, Some((Instant::now(), res)));
             }
             task::Event::Forward(key, Ok(true)) => {
@@ -1119,7 +1119,7 @@ impl App {
             task::Event::Forward(key, res) => {
                 self.fwds.remove(&key);
                 let why = match res {
-                    Err(e) => conn_err::classify(&e, self.cfg.lang).message,
+                    Err(e) => e.report(self.cfg.lang).message,
                     Ok(_) => "stopped".into(),
                 };
                 self.msg = format!("forward {key}: {why}");
@@ -1130,7 +1130,7 @@ impl App {
                     return;
                 };
                 let out = out.map(|o| clean(&o));
-                let out = out.map_err(|e| conn_err::classify(&e, self.cfg.lang));
+                let out = out.map_err(|e| e.report(self.cfg.lang));
                 let row = batch.rows.iter_mut().find(|(h, _)| *h == host);
                 if let Some(row) = row.filter(|_| batch.id == id) {
                     row.1 = Some(out);
@@ -2452,7 +2452,7 @@ mod tests {
     #[test]
     fn batch_results_keep_every_host_and_every_line() {
         let refused = Report {
-            class: conn_err::Class::Refused,
+            class: vssh_core::conn_err::Class::Refused,
             message: "Connection refused by 10.0.0.3:22 — is sshd running?".into(),
             chain: String::new(),
         };

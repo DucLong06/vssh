@@ -12,6 +12,11 @@ use crate::config::Lang;
 /// What the connect path knew when it gave up. Lives in the error chain
 /// (as the error itself or as its context) and is found there by `classify`.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "kind", rename_all = "snake_case")
+)]
 pub enum Fail {
     Dns {
         host: String,
@@ -78,6 +83,11 @@ impl fmt::Display for Fail {
 impl std::error::Error for Fail {}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "snake_case")
+)]
 pub enum Class {
     Dns,
     Timeout,
@@ -191,6 +201,7 @@ impl Fail {
 
 /// A classified failure, ready to show.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Report {
     pub class: Class,
     pub message: String,
@@ -231,21 +242,60 @@ fn untagged(err: &anyhow::Error) -> Option<Class> {
     })
 }
 
-/// Turns an error chain into what to show. A `Fail` in it gives a tailored
-/// message; a library error of a known kind gives the class with the chain
-/// verbatim; anything else is `Class::Other` with the chain verbatim.
-pub fn classify(err: &anyhow::Error, lang: Lang) -> Report {
-    let chain = format!("{err:#}");
-    let below: Vec<String> = err.chain().skip(1).map(ToString::to_string).collect();
-    let (class, message) = match err.downcast_ref::<Fail>() {
-        Some(fail) => (fail.class(), fail.message(lang, &below)),
-        None => (untagged(err).unwrap_or(Class::Other), chain.clone()),
-    };
-    Report {
-        class,
-        message,
-        chain,
+/// A failure as it leaves the core: classified, but in no language yet, and
+/// plain data, so a frontend can keep it, send it to its window, and put it
+/// into words when it is shown. A `Fail` in the chain gives the class and a
+/// tailored message; a library error of a known kind gives the class with the
+/// chain verbatim; anything else is `Class::Other` with the chain verbatim.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ConnError {
+    pub class: Class,
+    /// What the connect path knew, if it tagged the error.
+    pub fail: Option<Fail>,
+    /// Every error in the chain, outermost first.
+    pub chain: Vec<String>,
+}
+
+impl From<&anyhow::Error> for ConnError {
+    fn from(err: &anyhow::Error) -> Self {
+        let fail = err.downcast_ref::<Fail>().cloned();
+        Self {
+            class: match &fail {
+                Some(fail) => fail.class(),
+                None => untagged(err).unwrap_or(Class::Other),
+            },
+            fail,
+            chain: err.chain().map(ToString::to_string).collect(),
+        }
     }
+}
+
+impl From<anyhow::Error> for ConnError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::from(&err)
+    }
+}
+
+impl ConnError {
+    /// What to show for it, in this language.
+    pub fn report(&self, lang: Lang) -> Report {
+        let chain = self.chain.join(": ");
+        let below = self.chain.get(1..).unwrap_or_default();
+        Report {
+            class: self.class,
+            message: match &self.fail {
+                Some(fail) => fail.message(lang, below),
+                None => chain.clone(),
+            },
+            chain,
+        }
+    }
+}
+
+/// Turns an error chain into what to show: [`ConnError`], put into words.
+pub fn classify(err: &anyhow::Error, lang: Lang) -> Report {
+    ConnError::from(err).report(lang)
 }
 
 #[cfg(test)]
