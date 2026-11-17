@@ -201,6 +201,65 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("exported", "Saved to {name}", "Đã lưu vào {name}"),
     // The host form: the titles are the TUI's.
     ("add_host", "Add host", "Thêm máy chủ"),
+    ("edit_host", "Edit host", "Sửa máy chủ"),
+    ("alias", "Alias", "Tên gọi"),
+    ("sign_in_with", "Sign in with", "Đăng nhập bằng"),
+    ("auth_password", "Vault password", "Mật khẩu trong kho"),
+    ("auth_key", "Key", "Khoá"),
+    ("auth_agent", "Agent", "Agent"),
+    ("password", "Password", "Mật khẩu"),
+    ("password_stored", "password stored", "đã lưu mật khẩu"),
+    (
+        "vault_needed",
+        "Unlock the vault to store a password.",
+        "Mở kho để lưu mật khẩu.",
+    ),
+    ("key_file", "Key file", "Tệp khoá"),
+    ("jump_host", "Jump host", "Máy trung gian"),
+    ("none", "none", "không"),
+    ("group", "Group", "Nhóm"),
+    ("notes", "Notes", "Ghi chú"),
+    ("add_tag", "add a tag", "thêm thẻ"),
+    (
+        "alias_invalid",
+        "The alias must be one word without wildcards.",
+        "Tên gọi phải là một từ, không có ký tự đại diện.",
+    ),
+    (
+        "host_required",
+        "The host must not be empty.",
+        "Chưa nhập máy chủ.",
+    ),
+    (
+        "port_invalid",
+        "The port must be a number from 1 to 65535.",
+        "Cổng phải là số từ 1 đến 65535.",
+    ),
+    (
+        "delete_host_note",
+        "Its open sessions are closed. Its snippets, its forwards and its stored password go with it.",
+        "Các phiên đang mở của máy sẽ đóng. Đoạn lệnh, chuyển tiếp và mật khẩu đã lưu của máy cũng bị xoá.",
+    ),
+    (
+        "import_ssh_config",
+        "Import from ssh config",
+        "Nhập từ ssh config",
+    ),
+    (
+        "import_note",
+        "Hosts you already have are left as they are.",
+        "Máy chủ đã có được giữ nguyên.",
+    ),
+    (
+        "import_none",
+        "No new hosts in that file.",
+        "Tệp đó không có máy chủ mới.",
+    ),
+    ("import_n", "Import {n}", "Nhập {n}"),
+    ("preview", "Preview", "Xem trước"),
+    ("save_this_host", "Save this host", "Lưu máy chủ này"),
+    // The key setup: its steps as they are done on the host.
+    ("key_setup", "Set up SSH key", "Cài khoá SSH"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

@@ -27,6 +27,10 @@
     /** `x`: a command for the marked hosts. */
     onbatch?: () => void
     onpalette: () => void
+    /** `a`: the form for a new host; `e` and `d` on a card: its form, and the question before it is deleted. */
+    onadd?: () => void
+    onedit?: (alias: string) => void
+    ondelete?: (alias: string) => void
     /** The cards chosen to act on together, as Space marks hosts in the TUI. */
     marked?: string[]
   }
@@ -43,6 +47,9 @@
     onsnippets,
     onbatch,
     onpalette,
+    onadd,
+    onedit,
+    ondelete,
     marked = $bindable([]),
   }: Props = $props()
 
@@ -168,6 +175,13 @@
       // Stopped here: the dialog has the focus before the key is done, and the key is not for it.
       e.preventDefault()
       onforwards?.(alias)
+    } else if (e.key === 'e') {
+      // As L: the letter is not for the form that opens.
+      e.preventDefault()
+      onedit?.(alias)
+    } else if (e.key === 'd' || e.key === 'Delete') {
+      e.preventDefault()
+      ondelete?.(alias)
     } else if (step) {
       // Drag and drop for the keyboard: one place along, among the cards on screen.
       e.preventDefault()
@@ -196,6 +210,9 @@
       // Or the command line that opens would start with an x.
       e.preventDefault()
       onbatch?.()
+    } else if (e.key === 'a') {
+      e.preventDefault()
+      onadd?.()
     } else if (peeking && e.key === 'Escape') {
       peeking = null
     } else if (peeking && e.key === 'r') {
@@ -233,6 +250,15 @@
         >
           Ctrl-K
         </button>
+        {#if onadd}
+          <button
+            type="button"
+            onclick={onadd}
+            class="cursor-pointer rounded-md border border-edge px-3 py-1 text-cyan hover:bg-selection"
+          >
+            {t('add_host')}
+          </button>
+        {/if}
       </div>
     {/if}
   {:else}
@@ -274,6 +300,11 @@
           class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
         >
           {t('run')} {marked.length}
+        </button>
+      {/if}
+      {#if onadd}
+        <button type="button" aria-keyshortcuts="a" onclick={onadd} class="{control} cursor-pointer hover:bg-selection">
+          {t('add_host')}
         </button>
       {/if}
       <!-- Radio buttons, drawn as one control: a native select opens the
@@ -326,9 +357,10 @@
                 onconnect={() => onconnect(host.alias)}
                 onfiles={onfiles && (() => onfiles(host.alias))}
                 onforwards={onforwards && (() => onforwards(host.alias))}
+                onedit={onedit && (() => onedit(host.alias))}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Space v f Shift+L Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v f Shift+L e d Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null

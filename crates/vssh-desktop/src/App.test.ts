@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
+import type { Host } from './lib/api'
 import listing from '../src-tauri/tests/fixtures/files.json'
 import errors from './lib/fixtures/errors.json'
 import forwards from './lib/fixtures/forwards.json'
@@ -918,4 +919,178 @@ test('a vault left locked asks no more; without one nothing is asked at all', as
   expect(asked('vault_state')).toHaveLength(2)
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(await vaultButton('Vault')).toBeInTheDocument()
+})
+
+/** The shell over hosts that can be added to and taken from. */
+function editable(over: Record<string, (args: Args) => unknown> = {}) {
+  let list: Host[] = hosts
+  const made = (form: { alias: string; hostname: string }): Host => ({ ...hosts[3], alias: form.alias, hostname: form.hostname })
+  return shell({
+    list_hosts: () => list,
+    hosts_form: ({ alias }) => {
+      const host = list.find((host) => host.alias === alias)!
+      const { grp, tags, notes, pinned } = host.meta
+      return { alias, hostname: host.hostname ?? '', user: host.user ?? '', port: host.port, identity_file: '', proxy_jump: '', grp, tags, notes, pinned }
+    },
+    hosts_add: ({ form }) => {
+      const host = made(form as Parameters<typeof made>[0])
+      list = [...list, host]
+      return host
+    },
+    hosts_update: ({ alias, form }) => {
+      const host = made(form as Parameters<typeof made>[0])
+      list = list.map((old) => (old.alias === alias ? host : old))
+      return host
+    },
+    hosts_delete: ({ alias }) => void (list = list.filter((host) => host.alias !== alias)),
+    ...over,
+  })
+}
+
+test('a on the dashboard, its Add host button or the palette opens the host form; the host saved is there and selected', async () => {
+  const user = editable()
+  await card('web-01')
+  await user.keyboard('a')
+  const dialog = await screen.findByRole('dialog', { name: 'Add host' })
+  // Letters typed into the form are letters: no key of the dashboard's.
+  await user.type(within(dialog).getByLabelText('Alias'), 'sandbox')
+  await user.type(within(dialog).getByLabelText('Host'), 'sandbox.example')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(asked('hosts_add')[0].form).toMatchObject({ alias: 'sandbox', hostname: 'sandbox.example' })
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // Not at the next round of the dashboard: at once.
+  expect(await card('sandbox')).toHaveAttribute('aria-current', 'true')
+  await vi.waitFor(async () => expect(await card('sandbox')).toHaveFocus())
+  expect(status()).toHaveTextContent('Hosts 5')
+
+  await user.click(screen.getByRole('button', { name: 'Add host' }))
+  expect(await screen.findByRole('dialog', { name: 'Add host' })).toBeInTheDocument()
+  await shut()
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'add host{Enter}')
+  expect(await screen.findByRole('dialog', { name: 'Add host' })).toBeInTheDocument()
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+})
+
+test('hosts taken over from another ssh config are on the dashboard at once', async () => {
+  const user = editable({ hosts_import_preview: () => [hosts[0]], hosts_import_ssh_config: () => ['web-01'] })
+  await card('web-01')
+  await user.keyboard('a')
+  await user.click(await screen.findByRole('button', { name: 'Import from ssh config' }))
+  await user.click(await screen.findByRole('button', { name: 'Import 1' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(asked('list_hosts')).toHaveLength(2)
+  expect(await card('web-01')).toHaveAttribute('aria-current', 'true')
+})
+
+test('with no hosts yet the empty dashboard has the way to the first one', async () => {
+  const user = shell({ list_hosts: () => [] })
+  await user.click(await screen.findByRole('button', { name: 'Add host' }))
+  expect(await screen.findByRole('dialog', { name: 'Add host' })).toBeInTheDocument()
+})
+
+test('e on a card, or its Edit button, opens the form on that host; renamed, it is still the selected one', async () => {
+  const user = editable()
+  ;(await card('web-02')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('e Edit'))
+  await user.keyboard('e')
+  const dialog = await screen.findByRole('dialog', { name: 'Edit host' })
+  await vi.waitFor(() => expect(within(dialog).getByLabelText('Host')).toHaveValue('10.0.0.6'))
+  expect(asked('hosts_form')).toEqual([{ alias: 'web-02' }])
+  await user.clear(within(dialog).getByLabelText('Alias'))
+  await user.type(within(dialog).getByLabelText('Alias'), 'web-two')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(asked('hosts_update')[0]).toMatchObject({ alias: 'web-02', form: { alias: 'web-two', hostname: '10.0.0.6' } })
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(await card('web-two')).toHaveAttribute('aria-current', 'true')
+  expect(screen.queryByRole('article', { name: 'web-02' })).toBeNull()
+
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Edit' }))
+  await vi.waitFor(() => expect(within(screen.getByRole('dialog', { name: 'Edit host' })).getByLabelText('Alias')).toHaveValue('web-01'))
+})
+
+test('d on a card asks first; Delete then takes the host, and with it its sessions and its files', async () => {
+  const user = editable()
+  ;(await card('web-02')).focus()
+  await user.keyboard('{Enter}')
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-01')).focus()
+  await user.keyboard('{Enter}')
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  await user.keyboard(`${leader}0`)
+  expect(screen.getAllByRole('tab')).toHaveLength(4)
+
+  ;(await card('web-01')).focus()
+  await user.keyboard('d')
+  const dialog = await screen.findByRole('dialog', { name: 'Delete web-01?' })
+  expect(dialog).toHaveTextContent('Its open sessions are closed.')
+  // Enter is not a yes: the question opens on Cancel.
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(asked('hosts_delete')).toEqual([])
+  expect(screen.getAllByRole('tab')).toHaveLength(4)
+
+  ;(await card('web-01')).focus()
+  await user.keyboard('{Delete}')
+  await user.click(within(await screen.findByRole('dialog', { name: 'Delete web-01?' })).getByRole('button', { name: 'Delete' }))
+  expect(asked('hosts_delete')).toEqual([{ alias: 'web-01' }])
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // Its session and its file view are closed; web-02's session is not.
+  await vi.waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(2))
+  expect(asked('session_close')).toEqual([{ id: 2 }])
+  expect(await tab(/web-02/)).toBeInTheDocument()
+  expect(screen.queryByRole('article', { name: 'web-01' })).toBeNull()
+  expect(status()).toHaveTextContent('Hosts 3')
+})
+
+test('the form\'s own Delete asks the same question; a refusal is said there and nothing is closed', async () => {
+  const user = editable({
+    hosts_delete: () => {
+      throw refused
+    },
+  })
+  ;(await card('web-02')).focus()
+  await user.keyboard('e')
+  await user.click(await screen.findByRole('button', { name: 'Delete' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Delete web-02?' })
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('✗ REFUSED')
+  expect(await card('web-02')).toBeInTheDocument()
+  setLang('vi')
+  expect(await screen.findByRole('dialog', { name: 'Xoá web-02?' })).toHaveTextContent('Các phiên đang mở của máy sẽ đóng.')
+})
+
+test('a quick connect in front can be kept: Save this host opens the form with what was typed for it', async () => {
+  const user = editable()
+  ;(await card('web-01')).focus()
+  await user.keyboard('{Enter}')
+  // A session on a host that is saved has nothing to save.
+  await tab(/web-01/)
+  expect(screen.queryByRole('button', { name: 'Save this host' })).toBeNull()
+
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'qc{Enter}')
+  const quick = await screen.findByRole('dialog', { name: 'Quick connect' })
+  await user.type(within(quick).getByLabelText('Host'), 'sandbox.example')
+  await user.type(within(quick).getByLabelText('User'), 'root')
+  await user.type(within(quick).getByLabelText('Port'), '2200')
+  await user.click(within(quick).getByRole('button', { name: 'Connect' }))
+  await tab(/root@sandbox.example:2200/)
+
+  await user.click(within(status()).getByRole('button', { name: 'Save this host' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add host' })
+  expect(within(dialog).getByLabelText('Alias')).toHaveValue('sandbox.example')
+  expect(within(dialog).getByLabelText('Host')).toHaveValue('sandbox.example')
+  expect(within(dialog).getByLabelText('User')).toHaveValue('root')
+  expect(within(dialog).getByLabelText('Port')).toHaveValue('2200')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(asked('hosts_add')[0].form).toMatchObject({ alias: 'sandbox.example', hostname: 'sandbox.example', user: 'root', port: 2200 })
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // It is a host now: the terminal stays in front, with nothing left to save.
+  expect(await tab(/root@sandbox.example:2200/)).toHaveAttribute('aria-selected', 'true')
+  expect(screen.queryByRole('button', { name: 'Save this host' })).toBeNull()
+  expect(status()).toHaveTextContent('Hosts 5')
 })

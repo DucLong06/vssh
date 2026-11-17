@@ -394,9 +394,11 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             vault::vault_unlock,
             vault::vault_pass_change,
             vault::vault_export,
+            hosts::hosts_form,
             hosts::hosts_add,
             hosts::hosts_update,
             hosts::hosts_delete,
+            hosts::hosts_import_preview,
             hosts::hosts_import_ssh_config,
             hosts::host_quick_save,
             key_setup::ssh_key_setup
