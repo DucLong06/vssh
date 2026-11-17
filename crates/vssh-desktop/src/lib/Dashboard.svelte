@@ -14,11 +14,13 @@
     /** Only hosts with this tag or group, as chosen in the sidebar. */
     tag?: string | null
     selected?: string | null
+    /** A terminal tab is in front of it. */
+    hidden?: boolean
     onselect?: (alias: string) => void
     onconnect: (alias: string) => void
     onpalette: () => void
   }
-  let { hosts, error = null, tag = null, selected = null, onselect, onconnect, onpalette }: Props = $props()
+  let { hosts, error = null, tag = null, selected = null, hidden = false, onselect, onconnect, onpalette }: Props = $props()
 
   /** How long the pointer rests on a card before its quick peek opens, and how long an answer is good for. */
   const REST = 600
@@ -39,7 +41,6 @@
   let resting: ReturnType<typeof setTimeout> | undefined
   let search = $state<HTMLInputElement>()
   let grid = $state<HTMLElement>()
-  let root = $state<HTMLElement>()
 
   function saved(): string[] {
     try {
@@ -93,7 +94,8 @@
 
   // A host chosen elsewhere (the palette, the sidebar) is brought into view.
   $effect(() => {
-    if (selected) card(selected)?.focus()
+    // Also when the dashboard comes back to the front.
+    if (selected && !hidden) card(selected)?.focus()
   })
 
   /** Puts a card where another one is, in what is on screen now, and keeps that as the user's order. */
@@ -151,7 +153,7 @@
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     // The TUI's keys. Not while typing, with Ctrl (Ctrl-R), or under a dialog.
     // Nor behind a terminal tab.
-    const away = document.querySelector('dialog[open]') || root?.closest('[hidden]')
+    const away = hidden || document.querySelector('dialog[open]')
     if (typing || e.ctrlKey || e.metaKey || e.altKey || away) return
     if (e.key === '/') {
       e.preventDefault()
@@ -175,7 +177,7 @@
 
 <svelte:window onkeydown={onwindowkey} />
 
-<section bind:this={root} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+<section {hidden} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
   {#if error}
     <p role="alert" class="pt-4 break-words text-red"><strong>{error.label}</strong> {error.message}</p>
   {/if}

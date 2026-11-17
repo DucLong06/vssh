@@ -231,17 +231,16 @@
       <Tabs {sessions} {active} onpick={(id) => (active = id)} onclose={close} />
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
-    <div hidden={active !== null} class="flex min-h-0 flex-1 flex-col">
-      <Dashboard
-        {hosts}
-        {tag}
-        {selected}
-        error={failed}
-        onselect={(alias) => (selected = alias)}
-        onconnect={open}
-        onpalette={() => (modal = 'palette')}
-      />
-    </div>
+    <Dashboard
+      {hosts}
+      {tag}
+      {selected}
+      hidden={active !== null}
+      error={failed}
+      onselect={(alias) => (selected = alias)}
+      onconnect={open}
+      onpalette={() => (modal = 'palette')}
+    />
     {#each sessions as session (session.id)}
       <Terminal
         bind:this={terms[session.id]}
@@ -285,7 +284,9 @@
   <Palette
     {hosts}
     onhost={(alias) => {
+      // Its card is on the dashboard: from a terminal, that comes forward.
       selected = alias
+      active = null
       modal = null
     }}
     onquick={() => (modal = 'quick')}

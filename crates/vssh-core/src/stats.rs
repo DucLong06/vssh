@@ -260,10 +260,14 @@ pub async fn poll(h: &Handle<Client>, report: impl Fn(Option<Stats>)) {
     std::future::pending().await
 }
 
-/// Asks what runs on the terminal of the shell that shares this connection:
-/// sshd is the parent of both, so its child with a terminal is that shell.
-const FOREGROUND: &str =
-    "sh -c 't=$(ps -o tty= --ppid $PPID 2>/dev/null | grep -v \"?\" | head -n1); \
+/// Asks what runs on the terminal of the shell that shares this connection.
+/// Both descend from the connection's sshd: up from here to that sshd, and
+/// its child with a terminal is the shell (a login shell that forks before
+/// it runs a command puts itself in between, so `$PPID` alone will not do).
+const FOREGROUND: &str = "sh -c 'p=$$; \
+    while [ \"$p\" -gt 1 ] && c=$(ps -o comm= -p \"$p\") && [ \"${c#sshd}\" = \"$c\" ]; do \
+    p=$(ps -o ppid= -p \"$p\" | tr -d \" \"); done; [ \"$p\" -gt 1 ] || exit 1; \
+    t=$(ps -o tty= --ppid \"$p\" 2>/dev/null | grep -v \"?\" | head -n1); \
     [ -n \"$t\" ] && ps -o stat=,comm= -t \"$t\"'";
 
 /// The command in the foreground of a terminal, from `ps -o stat=,comm=` of

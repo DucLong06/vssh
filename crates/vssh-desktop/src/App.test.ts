@@ -185,6 +185,17 @@ test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second C
   expect(picked()).toHaveTextContent('0 Hosts')
   await user.keyboard(`${leader}p`)
   expect(picked()).toHaveTextContent('2 web-02')
+  // A host chosen in the palette is a card: the dashboard comes forward for it.
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'db{Enter}')
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
+  // Chosen again from a terminal, the same host has its card focused again.
+  await user.keyboard(`${leader}2{Control>}k{/Control}`)
+  await user.type(palette(), 'db{Enter}')
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
+  await user.keyboard(`${leader}2`)
   // A tab that is not there, a key that means nothing: the leader is over.
   await user.keyboard(`${leader}7${leader}{Escape}`)
   expect(picked()).toHaveTextContent('2 web-02')

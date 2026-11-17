@@ -102,7 +102,7 @@ export const api = {
    */
   sessionTrust: (id: number, host: string, fingerprint: string, forever: boolean) =>
     invoke<void>('session_trust', { id, host, fingerprint, forever }),
-  /** The clipboard plugin's command: the webview's own clipboard is off in Tauri on Linux. */
+  /** The clipboard plugin's command: `navigator.clipboard` wants a user gesture, which an OSC 52 from a host is not. */
   copy: (text: string) => invoke<void>('plugin:clipboard-manager|write_text', { text }),
   listSnippets: () => invoke<Snippet[]>('list_snippets'),
   resolveConnError: (error: ConnError, lang: Lang) =>
