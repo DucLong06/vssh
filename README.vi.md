@@ -44,6 +44,28 @@ cargo build --release
 ./target/release/vssh        # hoặc: sh install.sh, ngay trong thư mục mã nguồn
 ```
 
+## Ứng dụng desktop
+
+Vẫn những máy chủ đó, trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, snippet, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu. Đây là giao diện thứ hai trên cùng một lõi với ứng dụng terminal, nên cả hai đọc chung `~/.ssh/config`, chung cơ sở dữ liệu và chung kho mật khẩu.
+
+| Bảng điều khiển | Tab terminal |
+|---|---|
+| ![Bảng điều khiển gồm các thẻ máy chủ với thanh CPU, bộ nhớ và ổ đĩa trực tiếp](docs/img/desktop-d2.vi.png) | ![Một shell trong tab terminal của ứng dụng desktop](docs/img/desktop-d3-terminal.vi.png) |
+
+Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/DucLong06/vssh/releases) có ba gói; chọn một:
+
+| Gói | Dành cho | Cài đặt |
+|---|---|---|
+| `vssh-desktop_<phiên-bản>_amd64.deb` | Ubuntu 22.04 trở lên, Debian 12 trở lên | `sudo apt install ./vssh-desktop_<phiên-bản>_amd64.deb` |
+| `vssh-desktop-<phiên-bản>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<phiên-bản>-1.x86_64.rpm` |
+| `vssh-desktop_<phiên-bản>_amd64.AppImage` | các bản phân phối khác | `chmod +x vssh-desktop_<phiên-bản>_amd64.AppImage`, rồi chạy file đó |
+
+Mở từ menu ứng dụng, hoặc gõ `vssh-desktop`. Gói `.deb` và `.rpm` phụ thuộc WebKitGTK 4.1 và GTK 3; trình quản lý gói sẽ cài kèm. Trước khi một bản được phát hành, gói `.deb` của nó được cài vào một Ubuntu 22.04 trống và phải hiện được cửa sổ: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
+
+Tự dựng gói `.deb` (cần Rust, Node.js 24 và `libwebkit2gtk-4.1-dev`): chạy `npm ci` trong `crates/vssh-desktop`, rồi `scripts/desktop-deb.sh 0.2.0`.
+
+Lấy cảm hứng từ [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): một ứng dụng terminal và một ứng dụng desktop trên cùng một lõi Rust. Không dùng mã nguồn hay văn bản nào của dự án đó.
+
 ## Bắt đầu nhanh: kết nối đầu tiên
 
 1. Chạy `vssh`. Mọi máy chủ trong `~/.ssh/config` sẽ hiện ra. Chưa có máy chủ nào? Nhấn `a` để thêm (xem mục kế tiếp).

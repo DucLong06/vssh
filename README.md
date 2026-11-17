@@ -45,6 +45,28 @@ cargo build --release
 ./target/release/vssh        # or: sh install.sh, from the checkout
 ```
 
+## Desktop app
+
+The same hosts in a window: a dashboard of host cards with live stats, terminal tabs with broadcast, a dual-pane SFTP view, snippets, batch runs, port forwards and the vault. It is a second frontend over the same core as the terminal app, so both read the same `~/.ssh/config`, the same database and the same vault.
+
+| Dashboard | Terminal tabs |
+|---|---|
+| ![Dashboard of host cards with live CPU, memory and disk bars](docs/img/desktop-d2.png) | ![A shell in a terminal tab of the desktop app](docs/img/desktop-d3-terminal.png) |
+
+Linux x86_64, from v0.2.0 on. A [release](https://github.com/DucLong06/vssh/releases) carries three packages; take one:
+
+| Package | For | Install |
+|---|---|---|
+| `vssh-desktop_<version>_amd64.deb` | Ubuntu 22.04 or newer, Debian 12 or newer | `sudo apt install ./vssh-desktop_<version>_amd64.deb` |
+| `vssh-desktop-<version>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<version>-1.x86_64.rpm` |
+| `vssh-desktop_<version>_amd64.AppImage` | any other distribution | `chmod +x vssh-desktop_<version>_amd64.AppImage`, then run the file |
+
+Start it from the application menu, or as `vssh-desktop`. The `.deb` and the `.rpm` depend on WebKitGTK 4.1 and GTK 3, which the package manager installs with them. Before a release is published its `.deb` is installed in a bare Ubuntu 22.04 and has to show its window: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
+
+To build the `.deb` yourself (Rust, Node.js 24 and `libwebkit2gtk-4.1-dev`): `npm ci` in `crates/vssh-desktop`, then `scripts/desktop-deb.sh 0.2.0`.
+
+Inspired by [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): a terminal app and a desktop app over one Rust core. None of its code or text is used here.
+
 ## Quickstart: first connection
 
 1. Start `vssh`. Every host in `~/.ssh/config` is listed. No hosts yet? Press `a` to add one (next section).

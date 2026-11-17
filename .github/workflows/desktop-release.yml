@@ -1,0 +1,109 @@
+name: desktop-release
+# The desktop app for Linux (AppImage, .deb, .rpm) on a v0.2.* tag. Nothing
+# is published before the .deb has been installed in a bare ubuntu:22.04 and
+# its window has shown the app: scripts/deb-smoke.sh.
+#
+# The version is the tag's: it is merged over tauri.conf.json at build time,
+# the way release.yml takes the terminal app's from the tag, so no commit has
+# to bump Cargo.toml first. The same merge names the bundle vssh-desktop
+# (the terminal app's package is already called vssh) and drops devUrl.
+on:
+  push:
+    tags: ["v0.2.*"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.config.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release config, from the tag
+        id: config
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          echo "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tag $GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
+          # Merged over tauri.conf.json (RFC 7396: null takes a key out).
+          cat > "$RUNNER_TEMP/release.conf.json" <<JSON
+          {
+            "version": "$ver",
+            "productName": "vssh-desktop",
+            "build": { "devUrl": null, "beforeDevCommand": null },
+            "bundle": {
+              "publisher": "Hoang Duc Long <hoangduclongg@gmail.com>",
+              "category": "Utility",
+              "shortDescription": "Desktop SSH connection manager",
+              "longDescription": "Host dashboard with live stats, terminal tabs with broadcast typing, SFTP dual-pane, snippets, batch runs, port forwards and an encrypted vault. The desktop frontend of vssh, on the same core as the terminal app."
+            }
+          }
+          JSON
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+      - name: Libraries tauri builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: crates/vssh-desktop/package-lock.json
+      # The tauri CLI is a dev dependency; beforeBuildCommand (npm run build) needs the rest.
+      - run: npm ci
+        working-directory: crates/vssh-desktop
+      # No tagName, no releaseId: it only builds. The release is the last job's.
+      - uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: crates/vssh-desktop
+          args: --bundles deb,rpm,appimage --config ${{ runner.temp }}/release.conf.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          if-no-files-found: error
+          # Kept under their common parent: deb/, rpm/, appimage/.
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux
+          path: dist
+      - name: Install the .deb in a bare ubuntu:22.04, ask its version, look at its window
+        run: |
+          docker run --rm -e VSSH_DEB_INSTALL=1 -v "$PWD:/w" -w /w ubuntu:22.04 \
+            sh scripts/deb-smoke.sh "dist/deb/vssh-desktop_${VERSION}_amd64.deb" "$VERSION" dist/deb-smoke.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deb-smoke-screenshot
+          path: dist/deb-smoke.png
+
+  publish:
+    needs: [build, smoke]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/deb/*.deb
+            dist/rpm/*.rpm
+            dist/appimage/*.AppImage
