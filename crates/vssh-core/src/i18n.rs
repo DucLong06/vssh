@@ -1,7 +1,8 @@
 //! The words a window shows, both languages side by side, so a string cannot
 //! be added in one of them only. The desktop app reads this table as JSON
 //! (`crates/vssh-desktop/src/lib/strings.json`, held equal to it by a test).
-//! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh.
+//! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh,
+//! chưa kiểm tra, mất kết nối.
 
 use crate::config::Lang;
 
@@ -19,12 +20,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("no_tags", "no tags", "chưa có thẻ"),
     ("pinned", "pinned", "đã ghim"),
-    ("no_sessions", "No sessions yet", "Chưa có phiên nào"),
-    (
-        "no_sessions_hint",
-        "Search your hosts, or connect to a new one.",
-        "Tìm trong các máy chủ, hoặc kết nối tới một máy mới.",
-    ),
     (
         "session_note",
         "Opened, with no terminal yet.",
@@ -51,6 +46,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("connect", "Connect", "Kết nối"),
     ("cancel", "Cancel", "Huỷ"),
     ("language", "Language", "Ngôn ngữ"),
+    // The dashboard. A host's states are the TUI's words for them.
+    ("not_checked", "not checked", "chưa kiểm tra"),
+    ("down", "down", "mất kết nối"),
+    ("asking", "asking", "đang hỏi"),
+    ("mem", "MEM", "RAM"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

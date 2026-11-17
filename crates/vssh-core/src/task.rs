@@ -4,10 +4,13 @@
 //! anything itself, so no async runtime API reaches it: the TUI wraps a std
 //! channel in its sink, a desktop shell would emit to its window.
 
+use std::collections::HashMap;
 use std::io;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use russh::client::Handle;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
@@ -15,7 +18,7 @@ use zeroize::Zeroizing;
 
 use crate::conn_err::{ConnError, Fail};
 use crate::sftp;
-use crate::ssh::{self, forward, Login, SessionCmd, Target, Via};
+use crate::ssh::{self, forward, Client, Login, SessionCmd, Target, Via};
 use crate::stats::{self, Peek, Stats};
 use crate::store::ssh_config::Forward;
 
@@ -204,6 +207,38 @@ pub fn peek(alias: String, target: Result<Target>, password: Password, sink: imp
         };
         sink.send(Event::Peek(alias, res.await.map_err(ConnError::from)));
     });
+}
+
+/// The connections a dashboard keeps, one per host. It asks every host every
+/// few seconds: a login each time would fill the host's auth log and ask a
+/// hardware key for a touch. Dropping the last clone closes them all.
+#[derive(Clone, Default)]
+pub struct Peeks(Arc<Mutex<HashMap<String, Kept>>>);
+
+/// A connection, and the target it was opened to.
+type Kept = (Target, Handle<Client>);
+
+impl Peeks {
+    /// One round of [`stats::PEEK`] over the connection kept for `alias`,
+    /// opened first if there is none, it has dropped, or the alias now names
+    /// another target. Keys and the agent only. A connection is out of the
+    /// map while it is asked, so one that fails is not kept.
+    pub async fn ask(&self, alias: &str, target: Target) -> Result<Peek, ConnError> {
+        let kept = self.0.lock().unwrap().remove(alias);
+        let h = match kept {
+            Some((t, h)) if t == target && !h.is_closed() => h,
+            _ => ssh::connect(&target, None, None).await?,
+        };
+        let asking = ssh::exec(&h, stats::PEEK);
+        let out = timeout(Duration::from_secs(10), asking)
+            .await
+            .map_err(anyhow::Error::from)??;
+        self.0
+            .lock()
+            .unwrap()
+            .insert(alias.to_string(), (target, h));
+        Ok(stats::parse_peek(&out))
+    }
 }
 
 /// Runs a port forward until it fails or is aborted. [`Event::Forward`]

@@ -1,0 +1,8 @@
+load 4.41 3.87 2.10 9/512 40112
+cpus 4
+MemTotal:        8039412 kB
+MemAvailable:     563120 kB
+/dev/sda1        81106868 73807248  7283236      91% /
+uptime 10:15:01 up 41 days, 3 min, 1 user, load average: 4.41, 3.87, 2.10
+uname Linux 5.15.0-139-generic x86_64
+host web-02

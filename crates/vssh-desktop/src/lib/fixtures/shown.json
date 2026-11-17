@@ -1,0 +1,102 @@
+{
+  "en": [
+    {
+      "chain": "cannot resolve db.internal.example.com: failed to lookup address information: Name or service not known",
+      "class": "dns",
+      "label": "DNS",
+      "message": "Cannot resolve db.internal.example.com: failed to lookup address information: Name or service not known"
+    },
+    {
+      "chain": "10.0.0.5:2222 did not answer within 10s",
+      "class": "timeout",
+      "label": "TIMEOUT",
+      "message": "Connection timed out after 10s (10.0.0.5:2222)"
+    },
+    {
+      "chain": "connection refused by 10.0.0.5:2222: Connection refused (os error 111)",
+      "class": "refused",
+      "label": "REFUSED",
+      "message": "Connection refused by 10.0.0.5:2222 — is sshd running?"
+    },
+    {
+      "chain": "cannot reach 10.0.0.5:2222: No route to host (os error 113)",
+      "class": "unreachable",
+      "label": "UNREACHABLE",
+      "message": "Cannot reach 10.0.0.5:2222: No route to host (os error 113)"
+    },
+    {
+      "chain": "authentication failed for deploy@10.0.0.5",
+      "class": "auth",
+      "label": "AUTH",
+      "message": "Public key rejected for deploy@10.0.0.5: 2 offered, none accepted"
+    },
+    {
+      "chain": "HOST KEY MISMATCH for 10.0.0.5",
+      "class": "host_key",
+      "label": "HOST KEY",
+      "message": "Host key mismatch for 10.0.0.5: the server sent SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8, but line 7 of /home/me/.ssh/known_hosts holds another key"
+    },
+    {
+      "chain": "jump host bastion failed: connection refused by 192.0.2.1:22: Connection refused (os error 111)",
+      "class": "jump",
+      "label": "JUMP HOST",
+      "message": "Jump host bastion failed: Connection refused by 192.0.2.1:22 — is sshd running?"
+    },
+    {
+      "chain": "the peek ended without an answer",
+      "class": "other",
+      "label": "ERROR",
+      "message": "the peek ended without an answer"
+    }
+  ],
+  "vi": [
+    {
+      "chain": "cannot resolve db.internal.example.com: failed to lookup address information: Name or service not known",
+      "class": "dns",
+      "label": "DNS",
+      "message": "Không phân giải được tên db.internal.example.com: failed to lookup address information: Name or service not known"
+    },
+    {
+      "chain": "10.0.0.5:2222 did not answer within 10s",
+      "class": "timeout",
+      "label": "HẾT GIỜ",
+      "message": "Hết thời gian kết nối sau 10 giây (10.0.0.5:2222)"
+    },
+    {
+      "chain": "connection refused by 10.0.0.5:2222: Connection refused (os error 111)",
+      "class": "refused",
+      "label": "BỊ TỪ CHỐI",
+      "message": "10.0.0.5:2222 từ chối kết nối — sshd có đang chạy không?"
+    },
+    {
+      "chain": "cannot reach 10.0.0.5:2222: No route to host (os error 113)",
+      "class": "unreachable",
+      "label": "KHÔNG TỚI ĐƯỢC",
+      "message": "Không tới được 10.0.0.5:2222: No route to host (os error 113)"
+    },
+    {
+      "chain": "authentication failed for deploy@10.0.0.5",
+      "class": "auth",
+      "label": "XÁC THỰC",
+      "message": "Khoá công khai bị từ chối cho deploy@10.0.0.5: đã thử 2 khoá, không khoá nào được nhận"
+    },
+    {
+      "chain": "HOST KEY MISMATCH for 10.0.0.5",
+      "class": "host_key",
+      "label": "KHOÁ MÁY CHỦ",
+      "message": "Khoá máy chủ của 10.0.0.5 không khớp: máy chủ gửi SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8, nhưng dòng 7 của /home/me/.ssh/known_hosts là khoá khác"
+    },
+    {
+      "chain": "jump host bastion failed: connection refused by 192.0.2.1:22: Connection refused (os error 111)",
+      "class": "jump",
+      "label": "MÁY TRUNG GIAN",
+      "message": "Máy trung gian bastion lỗi: 192.0.2.1:22 từ chối kết nối — sshd có đang chạy không?"
+    },
+    {
+      "chain": "the peek ended without an answer",
+      "class": "other",
+      "label": "LỖI",
+      "message": "the peek ended without an answer"
+    }
+  ]
+}
