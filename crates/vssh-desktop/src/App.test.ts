@@ -86,6 +86,7 @@ afterEach(async () => {
   localStorage.clear()
   forget()
   calls = []
+  put = []
 })
 
 test('it opens on the dashboard: a card for every host of the config, with its figures', async () => {
@@ -555,6 +556,7 @@ test('a refused quick connect says why, in the language of the window', async ()
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Kết nối' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối')
   expect(screen.getByRole('dialog', { name: 'Kết nối nhanh' })).toBeInTheDocument()
+  expect(stray()).toEqual([])
   expect(status()).toHaveTextContent('Phiên 0')
 })
 
@@ -594,10 +596,60 @@ function english(text: string): string[] {
     .map(([key]) => key)
 }
 
+/** What the fixtures say: names, addresses, what a host printed, the core's words for a failure. Data, in no language. */
+const DATA = [
+  ...hosts.flatMap((host) => [host.alias, host.hostname ?? '', host.user ?? '', host.meta.grp, host.meta.notes, ...host.meta.tags.split(/[ ,]/)]),
+  ...[peek.load, peek.os, peek.host, ...peek.uptime.split(/[\d\s,:]+/)],
+  ...shown.vi.flatMap((said) => [said.label, said.message, said.chain]),
+  ...errors.flatMap(({ fail }) => (fail && 'fingerprint' in fail ? [String(fail.fingerprint), String(fail.file)] : [])),
+  ...forwards.flatMap((row) => [row.host, row.value]),
+  ...listing.map((entry) => entry.name),
+  ...snippets.flatMap((snippet) => [snippet.name, snippet.command]),
+  // Paths, whole and as the file panes' crumbs have them.
+  ...['/home/me', '/home/deploy', 'home', 'me', 'deploy'],
+]
+/**
+ * What is the same in every language: the names of keys, units, the two
+ * languages' own codes, the shapes of what is typed. The units of an uptime
+ * are the core's (`vssh_core::stats::uptime`), as `stats.ts` has them.
+ */
+const KEPT = [
+  ...['Ctrl-K', 'Ctrl-A', 'Enter', 'Space', 'enter', 'esc', 'CPU', 'ms', 'EN', 'VI'],
+  ...['ngày', 'giờ', 'phút', 'giây'],
+  ...['user@host[:port]', '~/.ssh/config', '~/.ssh/id_ed25519', 'localhost:80', 'SOCKS', 'systemctl restart {{unit}}'],
+]
+
+/**
+ * The words of `text` that are neither the Vietnamese table's, nor data, nor
+ * the same in every language: text some component has of its own. `typed`:
+ * what the test itself put in.
+ */
+function foreign(text: string, typed: string[] = []): string[] {
+  // `{n}` and `{name}` are what the window puts into a text of the table: its pieces are what is looked for.
+  // Also in small letters: a key's hint is the table's word without its capital.
+  const table = Object.values(strings.vi).flatMap((vi) => vi.split(/\{\w+\}/)).flatMap((piece) => [piece, piece.toLowerCase()])
+  const known = [...table, ...DATA, ...typed, ...KEPT].map((piece) => piece.trim()).filter((piece) => piece.length > 1)
+  let left = text
+  // The longest first: `Máy chủ` before `Máy`.
+  for (const piece of known.sort((a, b) => b.length - a.length)) left = left.replaceAll(piece, ' ')
+  return [...new Set(left.match(/\p{L}[\p{L}\p{N}'’-]*\p{L}/gu) ?? [])]
+}
+
+/** What a test itself put on screen: a command, a file's name. */
+let put: string[] = []
+/** Everything on screen that is not Vietnamese: English of the table, and words that are in no table at all. */
+const stray = () => [...english(words()), ...foreign(words(), put)]
+
 test('the check itself: it finds English where there is some', () => {
   expect(english('Máy chủ 4 · Sort')).toEqual(['sort'])
   expect(english('CPU 23% 4s ago')).toEqual(['secs_ago'])
   expect(english('không có gì: Hostname, sorted, downtime')).toEqual([])
+})
+
+test('the check itself: it finds words that are in no table, and lets the table\'s, the data and the keys be', () => {
+  expect(foreign('Máy chủ 4 · Thẻ 2 · web-01 deploy@10.0.0.5:2222 · CPU 23% · 12 ms · Ctrl-K · 4 giây trước')).toEqual([])
+  expect(foreign('Đã lưu vào /home/me/vssh-vault.backup', ['vssh-vault.backup'])).toEqual([])
+  expect(foreign('Máy chủ 4 · ERROR could not be read · Đang nạp')).toEqual(['ERROR', 'could', 'not', 'be', 'read', 'Đang', 'nạp'])
 })
 
 test('in Vietnamese no English string is left anywhere: cards in every state, the peek, the dialogs', async () => {
@@ -615,66 +667,67 @@ test('in Vietnamese no English string is left anywhere: cards in every state, th
   expect(await card('web-01')).toHaveTextContent('RAM 4.2/16G')
   expect(await card('db-primary')).toHaveTextContent('chưa kiểm tra')
   expect(await card('bare')).toHaveTextContent('đang hỏi bare…')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
 
   // A session, and the quick peek of a host that answered and of one that is down.
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
   await screen.findByRole('tablist', { name: 'Phiên' })
   await says(1, { state: 'up' })
+  put.push('top')
   await says(1, { state: 'busy', command: 'top' })
   expect(await tab(/web-01/)).toHaveTextContent('đang chạy top')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await says(1, { state: 'closed', error: refused })
   await screen.findByRole('button', { name: 'Kết nối lại' })
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   // Broadcasting, and a tab that could not connect: a changed host key, a jump host that is down.
   await user.keyboard(`${leader}b`)
   expect(status()).toHaveTextContent('Đang phát: 1')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   for (const [error, name] of [[errors[5], 'KHOÁ MÁY CHỦ: web-01'], [errors[6], 'MÁY TRUNG GIAN: web-01']] as const) {
     await user.click(screen.getByRole('button', { name: 'Kết nối lại' }))
     await says(1, { state: 'closed', error })
     expect(await screen.findByRole('dialog', { name })).toBeInTheDocument()
-    expect(english(words())).toEqual([])
+    expect(stray()).toEqual([])
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Huỷ' }))
   }
   await user.keyboard(`${leader}0`)
   ;(await card('web-02')).focus()
   await user.keyboard(' ')
   expect(await card('web-02')).toHaveAttribute('data-marked')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.keyboard(' ')
   ;(await card('web-01')).focus()
   await user.keyboard('v')
   expect(screen.getByRole('dialog', { name: 'Xem nhanh: web-01' })).toHaveTextContent('Đã chạy')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   ;(await card('web-02')).focus()
   await user.keyboard('v')
   expect(await screen.findByRole('dialog', { name: 'Xem nhanh: web-02' })).toHaveTextContent('thử lại')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.keyboard('{Escape}')
 
   // A search that finds nothing, the palette, the quick-connect form.
   await user.keyboard('/zzz')
   expect(screen.getByText('Không có máy chủ nào khớp.')).toBeInTheDocument()
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.keyboard('{Escape}{Control>}k{/Control}')
   expect(screen.getByRole('dialog', { name: 'Bảng lệnh' })).toBeInTheDocument()
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.type(palette(), 'qc{Enter}')
   expect(screen.getByRole('dialog', { name: 'Kết nối nhanh' })).toBeInTheDocument()
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
 })
 
 test('with no hosts, in Vietnamese, the empty dashboard is Vietnamese too', async () => {
   setLang('vi')
   shell({ list_hosts: () => [], list_snippets: () => [] })
   expect(await screen.findByRole('heading', { name: 'Chưa có máy chủ nào.' })).toBeInTheDocument()
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
 })
 
 test('every string of the table is one the window uses', async () => {
-  const sources = import.meta.glob(['./**/*.svelte', '!./**/*.test.ts'], { query: '?raw', import: 'default', eager: true })
+  const sources = import.meta.glob(['./**/*.svelte', './lib/*.ts', '!./**/*.test.ts'], { query: '?raw', import: 'default', eager: true })
   const code = Object.values(sources).join('\n')
   const unused = Object.keys(strings.en).filter((key) => !code.includes(`t('${key}')`))
   expect(unused).toEqual([])
@@ -1144,22 +1197,23 @@ test('in Vietnamese no English string is left in the vault, the host form, the i
   })
   const said = async (name: string) => {
     const dialog = await screen.findByRole('dialog', { name })
-    expect(english(words())).toEqual([])
+    expect(stray()).toEqual([])
     return within(dialog)
   }
 
   // The vault: locked, wrong three times, unlocked, a backup written.
+  put.push('vssh-vault.backup')
   const vault = await said('Kho')
   for (let i = 0; i < 3; i++) await user.type(vault.getByLabelText('Mật khẩu kho'), 'x{Enter}')
   expect(await vault.findByRole('status')).toHaveTextContent('Đã sai 3 lần.')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.type(vault.getByLabelText('Mật khẩu kho'), 'master{Enter}')
   await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   await user.click(await vaultButton('Kho đã mở'))
   const manager = await said('Kho')
   await user.click(await manager.findByRole('button', { name: 'Xuất bản sao lưu' }))
   expect(await manager.findByRole('status')).toHaveTextContent('Đã lưu vào /home/me/vssh-vault.backup')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await shut()
 
   // A new host with everything wrong, then what another config has.
@@ -1170,7 +1224,7 @@ test('in Vietnamese no English string is left in the vault, the host form, the i
   await user.click(add.getByRole('radio', { name: 'Khoá' }))
   await user.click(add.getByRole('button', { name: 'Lưu' }))
   expect(add.getAllByRole('alert')).toHaveLength(3)
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.click(add.getByRole('button', { name: 'Nhập từ ssh config' }))
   expect(await screen.findByRole('button', { name: 'Nhập 1' })).toBeInTheDocument()
   await said('Nhập từ ssh config')
@@ -1181,19 +1235,19 @@ test('in Vietnamese no English string is left in the vault, the host form, the i
   await user.keyboard('e')
   const edit = await said('Sửa máy chủ')
   await vi.waitFor(() => expect(edit.getByLabelText('Mật khẩu')).toHaveAttribute('placeholder', 'đã lưu mật khẩu'))
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await user.click(edit.getByRole('button', { name: 'Cài khoá SSH' }))
   const keys = await said('Cài khoá SSH web-02')
   await user.click(keys.getByRole('button', { name: 'Bắt đầu' }))
   await emit('key-setup-step', { host: 'web-02', step: 'generate', state: 'running' })
   expect(await keys.findByRole('progressbar', { name: 'đang chạy' })).toBeInTheDocument()
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   // While it runs it stays; once it has failed it can be shut.
   screen.getByRole<HTMLDialogElement>('dialog').close()
   expect(screen.getByRole('dialog', { name: 'Cài khoá SSH web-02' })).toBeInTheDocument()
   stop(errors[4])
   expect(await keys.findByRole('alert')).toHaveTextContent('XÁC THỰC')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
   await shut()
   ;(await card('web-02')).focus()
   await user.keyboard('d')
@@ -1300,7 +1354,7 @@ test('streamer mode that was left on is on when the app opens, in Vietnamese too
   shell()
   expect(await card('web-01')).toHaveTextContent(`deploy@${fake('web-01')}:2222`)
   expect(screen.getByRole('button', { name: /Chế độ phát trực tiếp/ })).toHaveAttribute('aria-pressed', 'true')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
 })
 
 // --- D7: the Day theme --------------------------------------------------------
@@ -1326,5 +1380,105 @@ test('the theme toggle in the sidebar: Night until Day is chosen, a terminal dar
   await user.click(toggle)
   expect(toggle).toHaveAccessibleName('Giao diện: Tối')
   expect(document.documentElement.dataset.theme).toBe('night')
-  expect(english(words())).toEqual([])
+  expect(stray()).toEqual([])
+})
+
+// --- D7: the sweep, over the views the two above do not open -----------------
+
+test('in Vietnamese no word is left untranslated in the files, the snippets, a batch and the forwards, failures and all', async () => {
+  setLang('vi')
+  const user = shell({
+    // web-02 lets nobody in: its files, its forwards and its part of a batch all fail.
+    sftp_realpath: ({ host }) => {
+      if (host === 'web-02') throw refused
+      return '/home/deploy'
+    },
+    snippet_run: () => 1,
+    forwards_list: () => forwards,
+    forward_toggle: () => true,
+    forward_add: () => {
+      throw errors[8]
+    },
+  })
+
+  // The files of a host that answers, and of one that does not.
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  expect(await tab(/Tệp web-01/)).toHaveAttribute('aria-selected', 'true')
+  await vi.waitFor(() => expect(asked('sftp_list')).toHaveLength(1))
+  await screen.findAllByText(listing[0].name)
+  expect(stray()).toEqual([])
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-02')).focus()
+  await user.keyboard('f')
+  expect(await tab(/Tệp web-02/)).toHaveAttribute('aria-selected', 'true')
+  await vi.waitFor(() => expect(screen.getAllByRole('alert').at(-1)).toHaveTextContent('BỊ TỪ CHỐI'))
+  expect(stray()).toEqual([])
+  await user.keyboard(`${leader}0`)
+
+  // The snippets: the list, the form for a new one, the form that runs one.
+  ;(await card('web-02')).focus()
+  await user.keyboard(' ')
+  ;(await card('web-01')).focus()
+  await user.keyboard(' s')
+  const list = await screen.findByRole('dialog', { name: 'Đoạn lệnh' })
+  expect(stray()).toEqual([])
+  await user.click(within(list).getByRole('button', { name: 'Thêm' }))
+  expect(stray()).toEqual([])
+  await user.click(within(list).getByRole('button', { name: 'Huỷ' }))
+  await user.click(within(list).getByRole('button', { name: 'Chạy up' }))
+  expect(stray()).toEqual([])
+  await user.click(within(list).getByRole('button', { name: 'Chạy' }))
+
+  // The batch: one host answered, one said nothing, one failed.
+  const batch = await screen.findByRole('dialog', { name: 'Chạy trên 2 máy' })
+  expect(stray()).toEqual([])
+  put.push('up 3 days')
+  await emit('batch-progress', { id: 1, host: 'web-01', output: 'up 3 days\n', error: null })
+  await emit('batch-progress', { id: 1, host: 'web-02', output: null, error: refused })
+  await vi.waitFor(() => expect(within(batch).getByRole('alert')).toHaveTextContent('✗ BỊ TỪ CHỐI'))
+  expect(stray()).toEqual([])
+  await shut()
+  await user.keyboard('x')
+  const typed = await screen.findByRole('dialog', { name: 'Chạy trên 2 máy' })
+  put.push('true')
+  await user.type(within(typed).getByRole('textbox', { name: 'Lệnh' }), 'true{Enter}')
+  await emit('batch-progress', { id: 1, host: 'web-01', output: '', error: null })
+  await vi.waitFor(() => expect(typed).toHaveTextContent('(không có kết quả)'))
+  expect(stray()).toEqual([])
+  await shut()
+
+  // The forwards: the list, one that does not start, one that cannot be added.
+  ;(await card('web-01')).focus()
+  await user.keyboard('L')
+  const tunnels = await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })
+  const first = await within(tunnels).findByRole('switch', { name: 'L 8080 localhost:80' })
+  expect(stray()).toEqual([])
+  await user.click(first)
+  await emit('forward-state', { host: 'web-01', kind: 'L', value: '8080 localhost:80', state: 'off', error: errors[8] })
+  await vi.waitFor(() => expect(within(tunnels).getByRole('alert')).toHaveTextContent('CỔNG ĐANG BẬN'))
+  expect(stray()).toEqual([])
+  await user.type(within(tunnels).getByLabelText('Cổng cục bộ'), '8080')
+  await user.type(within(tunnels).getByLabelText('Đích'), 'localhost:80')
+  await user.click(within(tunnels).getByRole('button', { name: 'Thêm' }))
+  await vi.waitFor(() => expect(asked('forward_add')).toHaveLength(1))
+  expect(stray()).toEqual([])
+})
+
+test('a command the shell cannot even be asked: the failure is labelled in the window\'s language', async () => {
+  setLang('vi')
+  // No such command in this shell: Tauri's own refusal, which is no failure of the core's.
+  const user = shell({ resolve_conn_error: () => Promise.reject('not a failure the core knows') })
+  ;(await card('web-01')).focus()
+  await user.keyboard('L')
+  const alert = await within(await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })).findByRole('alert')
+  expect(alert).toHaveTextContent('✗ LỖI')
+  expect(alert).not.toHaveTextContent('ERROR')
+})
+
+test('hosts that cannot be read, in Vietnamese: the reason and nothing in English around it', async () => {
+  setLang('vi')
+  shell({ list_hosts: fails })
+  expect(await screen.findByRole('alert')).toHaveTextContent('BỊ TỪ CHỐI')
+  expect(stray()).toEqual([])
 })

@@ -47,6 +47,8 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Streamer mode (made-up addresses)",
         "Chế độ phát trực tiếp (địa chỉ giả)",
     ),
+    // What the core calls a failure it has no class for; the window's own, for one the core never saw.
+    ("error", "ERROR", "LỖI"),
     ("theme", "Theme", "Giao diện"),
     ("theme_night", "Night", "Tối"),
     ("theme_day", "Day", "Sáng"),

@@ -3,6 +3,7 @@
 // `src-tauri/tests/commands.rs` asserts these shapes on the Rust side and
 // reads `fixtures/*.json`, so the two cannot drift apart unnoticed.
 import { invoke } from '@tauri-apps/api/core'
+import { t } from './i18n.svelte'
 import { scrub } from './streamer.svelte'
 
 export type Lang = 'en' | 'vi'
@@ -261,7 +262,7 @@ export async function explain(error: unknown, lang: Lang): Promise<Shown> {
   } catch {
     // Not a ConnError: Tauri's own words about a call it could not make.
     const words = String(error)
-    shown = { class: 'other', label: 'ERROR', message: words, chain: words }
+    shown = { class: 'other', label: t('error'), message: words, chain: words }
   }
   return { ...shown, message: scrub(shown.message), chain: scrub(shown.chain) }
 }

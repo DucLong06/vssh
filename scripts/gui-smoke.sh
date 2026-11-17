@@ -44,12 +44,22 @@
 #                       which the forced command does not run. Nothing of this
 #                       machine's sshd is touched.
 #
+# Then what D7 added, in the app as it was started last, in Vietnamese:
+#
+#   the toolbar         with cards marked its controls take a second row
+#                       together, from the search's own margin
+#   the Day theme       TokyoNight Day around a terminal that stays dark
+#   streamer mode       made-up addresses on screen, the real ones in the
+#                       config and on the wire; both switches are kept by the
+#                       web view and are as they were when the app comes back
+#
 # Screenshots land in docs/img/desktop-d2*.png, desktop-d3*.png,
-# desktop-d4*.png, desktop-d5*.png and desktop-d6*.png (.vi.png: the
-# Vietnamese UI; d3-fail: a connection that fails, d3-closed: one that drops;
-# d4-sftp: the file view with transfers under way; d5-batch: what four hosts
-# answered to one command; d6-vault: the vault's manager, d6-host: the host
-# form); those of the steps in between, in target/smoke/.
+# desktop-d4*.png, desktop-d5*.png, desktop-d6*.png and desktop-d7*.png
+# (.vi.png: the Vietnamese UI; d3-fail: a connection that fails, d3-closed:
+# one that drops; d4-sftp: the file view with transfers under way; d5-batch:
+# what four hosts answered to one command; d6-vault: the vault's manager,
+# d6-host: the host form; d7-day: the Day theme, d7-streamer: streamer mode);
+# those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -989,4 +999,93 @@ sleep 3
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the vault, the host form and the key setup"
+
+# --- D7: the toolbar's second row, the Day theme, streamer mode ---------------
+# The app is in Vietnamese. The pointer where it rests on nothing: no card's
+# peek, no button's tooltip.
+aside() { xdotool mousemove --window "$win" 600 20; sleep 0.5; }
+# The two switches in the sidebar's last row: streamer mode, and the theme.
+streamer() { xdotool mousemove --window "$win" 207 654 click 1; aside; }
+theme() { xdotool mousemove --window "$win" 239 654 click 1; aside; }
+# What the web view keeps of a setting: its localStorage, a database of WebKit's.
+kept() {
+    sleep 3
+    python3 - "$home/.local/share/io.github.duclong06.vssh/localstorage/tauri_localhost_0.localstorage" "$1" <<'EOF'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1], timeout=10).execute("SELECT value FROM ItemTable WHERE key=?", (sys.argv[2],)).fetchone()
+print(row[0].decode("utf-16-le") if row else "none")
+EOF
+}
+pixels() { file=$1; shift; while [ $# -ge 2 ]; do printf '%s ' "$(pixel "$file" "$1" "$2")"; shift 2; done; }
+
+# With cards marked the Vietnamese controls have no room beside the search:
+# they are on a second row, all of them. Its first button starts where the
+# search does (the border at x 272, the window's background left of it), and
+# under it the bar is the bar's own to its end: no card shows through.
+for name in shell-01 shell-02; do mark "$name"; done
+aside
+shot target/smoke/toolbar-wrap.vi.png
+rows=$(pixels target/smoke/toolbar-wrap.vi.png 271 27 272 27 271 64 272 64 700 88)
+[ "$rows" = "1a1b26 414868 1a1b26 414868 1a1b26 " ] || fail "the toolbar's two rows do not start at one margin: $rows"
+step "with cards marked, the Vietnamese toolbar is two rows from one margin"
+for name in shell-01 shell-02; do mark "$name"; done
+
+# Day: the window's background, and the panel of the first card (its padding,
+# left of what is in it).
+theme
+first_card
+aside
+shot docs/img/desktop-d7-day.vi.png
+day=$(pixels docs/img/desktop-d7-day.vi.png 264 300 278 180)
+[ "$day" = "e1e2e7 d0d5e3 " ] || fail "in Day the background and the card are $day, not e1e2e7 d0d5e3"
+[ "$(kept vssh.theme)" = day ] || fail "the theme the web view kept is $(kept vssh.theme), not day"
+step "the Day theme: background #e1e2e7, cards #d0d5e3, and the web view kept the choice"
+# A terminal stays dark in Day, inside the theme's border.
+open_tab shell-01
+run 'echo dark in the day'
+shot target/smoke/day-terminal.vi.png
+term=$(pixels target/smoke/day-terminal.vi.png 256 400 900 500)
+[ "$term" = "a1a6c5 1a1b26 " ] || fail "in Day the terminal's border and ground are $term, not a1a6c5 1a1b26"
+step "in Day the terminal is still Night's, with the theme's border around it"
+key ctrl+w
+language
+first_card
+aside
+shot docs/img/desktop-d7-day.png
+
+# Streamer mode, in Night again. What is shown is all that changes: the
+# config is the file it was, and a tab reaches the host at its real address.
+theme
+before=$(cksum <"$config")
+streamer
+first_card
+aside
+shot docs/img/desktop-d7-streamer.png
+language
+first_card
+aside
+shot docs/img/desktop-d7-streamer.vi.png
+[ "$(kept vssh.streamer_mode)" = true ] || fail "the web view kept streamer_mode as $(kept vssh.streamer_mode), not true"
+[ "$(kept vssh.theme)" = night ] || fail "the theme the web view kept is $(kept vssh.theme), not night"
+open_tab shell-02
+run 'touch streamed'
+there 2205/streamed "in streamer mode a tab did not reach shell-02"
+shot target/smoke/streamer-terminal.vi.png
+key ctrl+w
+[ "$(cksum <"$config")" = "$before" ] || fail "streamer mode changed the ssh config"
+grep -qE '203\.0\.113\.|198\.51\.100\.' "$config" "$home/.ssh/known_hosts" && fail "a made-up address was written down"
+step "streamer mode: kept by the web view, the config untouched, a tab still on the real host"
+
+# The app again: both switches are as they were left.
+again
+typed 'smoke master'
+key Return
+sleep 3
+aside
+shot target/smoke/streamer-restart.vi.png
+[ "$(kept vssh.streamer_mode)" = true ] || fail "streamer mode did not survive the app being started again"
+step "streamer mode is still on when the app comes back"
+
+kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
+step "the app is still running after the Day theme and streamer mode"
 echo "gui smoke: ok (now look at the screenshots)"
