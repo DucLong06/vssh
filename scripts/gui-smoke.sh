@@ -44,6 +44,11 @@
 #                       which the forced command does not run. Nothing of this
 #                       machine's sshd is touched.
 #
+# Then the rail (D9), with a session open, a host selected and the vault open:
+#
+#   Sessions            its row brings the open session's terminal to the front
+#   the first row       the dashboard again, with its keys
+#
 # Then what D7 added, in the app as it was started last, in Vietnamese:
 #
 #   the toolbar         with cards marked its controls take a second row
@@ -53,12 +58,14 @@
 #                       config and on the wire; both switches are kept by the
 #                       web view and are as they were when the app comes back
 #
-# Screenshots land in docs/img/desktop-d2*.png, desktop-d3*.png,
-# desktop-d4*.png, desktop-d5*.png, desktop-d6*.png and desktop-d7*.png
+# Screenshots land in docs/img/desktop-d1*.png, desktop-d2*.png, desktop-d3*.png,
+# desktop-d4*.png, desktop-d5*.png, desktop-d6*.png, desktop-d7*.png and
+# desktop-d9-rail*.png
 # (.vi.png: the Vietnamese UI; d3-fail: a connection that fails, d3-closed:
 # one that drops; d4-sftp: the file view with transfers under way; d5-batch:
 # what four hosts answered to one command; d6-vault: the vault's manager,
-# d6-host: the host form; d7-day: the Day theme, d7-streamer: streamer mode);
+# d6-host: the host form; d7-day: the Day theme, d7-streamer: streamer mode;
+# d9-rail: the rail with every row in use);
 # those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
@@ -267,11 +274,12 @@ step "groups and tags written to the database behind the window's back"
 sleep 13
 shot docs/img/desktop-d2.png
 
-# TokyoNight Night is what is on screen: the window's background in the
-# gutter left of the cards, and the panel inside the first card.
-night="$(pixel docs/img/desktop-d2.png 264 300) $(pixel docs/img/desktop-d2.png 640 140)"
-[ "$night" = "1a1b26 1f2335" ] || { echo "FAIL: background and card are $night, not 1a1b26 1f2335"; exit 1; }
-step "the Night theme: background #1a1b26, cards #1f2335"
+# Concept A in TokyoNight Night is what is on screen: the page in the gutter
+# left of the cards, the panel inside the first card (its padding, low enough
+# to be under a down card's tint), and the header's band beside the title.
+night="$(pixel docs/img/desktop-d2.png 264 300) $(pixel docs/img/desktop-d2.png 285 500) $(pixel docs/img/desktop-d2.png 600 20)"
+[ "$night" = "16161e 1f2335 1a1b26" ] || { echo "FAIL: page, card and header are $night, not 16161e 1f2335 1a1b26"; exit 1; }
+step "the Night theme: page #16161e, cards #1f2335, the header's band #1a1b26"
 
 # One connection per host that lets us in, however many rounds were asked.
 logins=$(accepted)
@@ -283,14 +291,20 @@ step "the host nobody connected to was left alone"
 xdotool windowfocus "$win"
 # / is the search box; four Tabs on (Group by tag, Add host, the sort) is the first card.
 first_card() { xdotool key --window "$win" slash Tab Tab Tab Tab; }
-# The language button, bottom right.
-language() { xdotool mousemove --window "$win" 1073 686 click 1; }
+# The dashboard back at its top: the wheel, in the gutter between the two
+# columns of cards. A quick peek that opens under a card scrolls the page.
+top() { xdotool mousemove --window "$win" 672 420 click --repeat 40 --delay 10 4; xdotool mousemove --window "$win" 600 20; sleep 0.5; }
+# The language button, in the top bar.
+language() { xdotool mousemove --window "$win" 978 44 click 1; }
+# The pointer where it rests on nothing: no card's peek, no button's tooltip.
+aside() { xdotool mousemove --window "$win" 600 20; sleep 0.5; }
 
 # The quick peek, by its key: on the first card, which is being polled.
 first_card
 xdotool key --window "$win" v
 shot docs/img/desktop-d2-peek.png
 xdotool key --window "$win" Escape
+top
 
 language
 sleep 6
@@ -300,19 +314,21 @@ xdotool key --window "$win" v
 shot docs/img/desktop-d2-peek.vi.png
 xdotool key --window "$win" Escape
 language
+top
 
 # And by resting the pointer on a card: db-replica, which is down.
-xdotool mousemove --window "$win" 880 140
+xdotool mousemove --window "$win" 875 440
 sleep 1
 shot target/smoke/hover.png
 xdotool mousemove --window "$win" 600 20
 
 # A person asking about the host nobody connected to: the last card, five
-# tab stops per card further on (the card, Edit, Forwards, Files, Connect). That is
-# a decision: its key goes on record, as with `v` in the TUI, and from then
-# on it is polled like the others.
+# tab stops per card further on (the card, Edit, Forwards, Files, Connect),
+# and one more for each of the three that are down (Try again). That is a
+# decision: its key goes on record, as with `v` in the TUI, and from then on
+# it is polled like the others.
 first_card
-xdotool key --window "$win" --repeat 35 Tab
+xdotool key --window "$win" --repeat 38 Tab
 xdotool key --window "$win" v
 sleep 3
 shot target/smoke/asked.png
@@ -324,8 +340,9 @@ logins=$(accepted)
 step "v asked the new host, and it joined the poll on one connection of its own"
 
 # A card moved by hand: db-primary dragged onto web-01, its neighbour on the left.
-xdotool mousemove --window "$win" 880 310 mousedown 1
-for x in 860 800 700 600 500 470; do xdotool mousemove --window "$win" "$x" 312; sleep 0.1; done
+top
+xdotool mousemove --window "$win" 880 605 mousedown 1
+for x in 860 800 700 600 500 470; do xdotool mousemove --window "$win" "$x" 607; sleep 0.1; done
 xdotool mouseup 1
 shot target/smoke/dragged.png
 
@@ -334,9 +351,16 @@ first_card
 xdotool key --window "$win" alt+Right
 shot target/smoke/moved.png
 
+# The three pictures of D1, as the window is now: at rest, the palette with
+# what `db` finds, and the host it chose as the selected one.
+top
+shot docs/img/desktop-d1.png
 xdotool key --window "$win" ctrl+k
 xdotool type --window "$win" db
+shot docs/img/desktop-d1-palette.png
 xdotool key --window "$win" Return
+aside
+shot docs/img/desktop-d1-selected.png
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the palette chose a host"
@@ -428,11 +452,11 @@ language
 night=$(pixel docs/img/desktop-d3-terminal.png 900 500)
 [ "$night" = "1a1b26" ] || { echo "FAIL: the terminal's background is $night, not 1a1b26"; exit 1; }
 step "the terminal is the Night theme too"
-# Both tabs broadcast: the one in front has the full yellow border along its
-# top, the one behind a dimmer one.
-front=$(pixel docs/img/desktop-d3-terminal.png 450 6)
-behind=$(pixel docs/img/desktop-d3-terminal.png 700 6)
-[ "$front" = e0af68 ] && [ "$behind" != "$front" ] && [ "$behind" != 15161e ] ||
+# Both tabs broadcast: the pill in front has the full yellow border along its
+# top, the one behind a dimmer one, and neither the strip's own colour.
+front=$(pixel docs/img/desktop-d3-terminal.png 500 114)
+behind=$(pixel docs/img/desktop-d3-terminal.png 750 114)
+[ "$front" = e0af68 ] && [ "$behind" != "$front" ] && [ "$behind" != 1f2335 ] ||
     { echo "FAIL: broadcasting tabs' borders are $front in front and $behind behind"; exit 1; }
 step "while broadcasting, the tab in front is told apart (#$front, behind #$behind)"
 # Back into the terminal, and Ctrl-C for both sleeps.
@@ -466,11 +490,14 @@ step "Trust: the key on record is the one the host has now"
 key ctrl+w
 
 # A jump host that is down, second of two: the first is logged in to, and
-# the dialog says where it stopped.
+# the dialog says where it stopped. moved-box is trusted now and joins the
+# poll with a login of its own: a round goes by first, so that it is counted
+# before and not as far-box's.
+sleep 6
 logins=$(accepted)
 open_tab far-box
 shot docs/img/desktop-d3-fail.png
-[ "$(accepted)" -eq $((logins + 1)) ] || { echo "FAIL: far-box's first jump host was not logged in to"; exit 1; }
+[ "$(accepted)" -eq $((logins + 1)) ] || { echo "FAIL: far-box's first jump host was not logged in to ($(accepted) logins, $logins before)"; exit 1; }
 step "a jump chain that breaks at hop 2 got through hop 1"
 key Escape
 # The same in Vietnamese. The dialog is modal: the language goes first.
@@ -494,7 +521,7 @@ terminal
 shot docs/img/desktop-d3-closed.vi.png
 language
 # The banner's red border, top right of the terminal.
-red=$(pixel docs/img/desktop-d3-closed.png 960 43)
+red=$(pixel docs/img/desktop-d3-closed.png 960 167)
 [ "$red" = f7768e ] || { echo "FAIL: no red banner on the closed tab (#$red)"; exit 1; }
 step "a session that ended leaves a red banner on its tab"
 
@@ -531,8 +558,8 @@ open_files() {
     key f
     sleep 4
 }
-# The rows of the two panes: 23 px each, the middle of the first at y 120.
-row() { echo $((120 + 23 * $1)); }
+# The rows of the two panes: 23 px each, the middle of the first at y 240.
+row() { echo $((240 + 23 * $1)); }
 LOCAL=420 REMOTE=860
 click_row() { xdotool mousemove --window "$win" "$1" "$(row "$2")" click "${3:-1}"; sleep 0.5; }
 # A row dragged from one pane into the other.
@@ -614,7 +641,7 @@ done
 step "two transfers at once, each with its line ($(size "$files/backup.sql") and $(size "$files/site.tar.gz") bytes so far)"
 
 # Cancel on the first line stops that one where it is; the other goes on.
-xdotool mousemove --window "$win" 1041 609 click 1
+xdotool mousemove --window "$win" 1025 571 click 1
 sleep 2
 stopped=$(size "$files/backup.sql")
 going=$(size "$files/site.tar.gz")
@@ -960,6 +987,33 @@ grep -q 'vssh_web-01_ed25519' "$config" && fail "a key that was never proven is 
 step "the key setup made a key, stopped at a host it could not change, and named no key in the config"
 key Escape
 
+# --- D9: the rail ------------------------------------------------------------
+# The four hosts of the batches are unmarked again, and shell-02 is the
+# selected one. Its session is the last one open: the rail's Sessions row
+# brings it to the front, and what is typed then is typed in its shell.
+for name in shell-01 cache-01 legacy shell-02; do mark "$name"; done
+rail() { xdotool mousemove --window "$win" 120 "$1" click 1; sleep 1; }
+rail 262
+run 'touch rail'
+there 2205/rail "the rail's Sessions row did not bring shell-02's terminal to the front"
+step "the rail's Sessions row brought the open session to the front"
+# Its first row is the dashboard again: there x is a key, and asks for a
+# command for the selected host.
+rail 87
+key x
+xdotool type --window "$win" --delay 20 'touch rail-back'
+key Return
+sleep 5
+there 2205/rail-back "the rail's first row did not bring the dashboard back: x asked for no command"
+key Escape
+step "the rail's first row brought the dashboard back, with its keys"
+top
+shot docs/img/desktop-d9-rail.png
+language
+top
+shot docs/img/desktop-d9-rail.vi.png
+language
+
 # The app again: the vault is there and shut, and it is asked for first thing.
 again() {
     kill "$app"
@@ -1001,12 +1055,10 @@ kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the vault, the host form and the key setup"
 
 # --- D7: the toolbar's second row, the Day theme, streamer mode ---------------
-# The app is in Vietnamese. The pointer where it rests on nothing: no card's
-# peek, no button's tooltip.
-aside() { xdotool mousemove --window "$win" 600 20; sleep 0.5; }
-# The two switches in the sidebar's last row: streamer mode, and the theme.
-streamer() { xdotool mousemove --window "$win" 207 654 click 1; aside; }
-theme() { xdotool mousemove --window "$win" 239 654 click 1; aside; }
+# The app is in Vietnamese.
+# The two switches: streamer mode in the top bar, the theme in the rail's last row.
+streamer() { xdotool mousemove --window "$win" 1048 44 click 1; aside; }
+theme() { xdotool mousemove --window "$win" 120 636 click 1; aside; }
 # What the web view keeps of a setting: its localStorage, a database of WebKit's.
 kept() {
     sleep 3
@@ -1020,13 +1072,17 @@ pixels() { file=$1; shift; while [ $# -ge 2 ]; do printf '%s ' "$(pixel "$file" 
 
 # With cards marked the Vietnamese controls have no room beside the search:
 # they are on a second row, all of them. Its first button starts where the
-# search does (the border at x 272, the window's background left of it), and
-# under it the bar is the bar's own to its end: no card shows through.
+# search does: left of x 276 the band is the band's own in both rows, and at
+# x 276 both have their border. Under the second row the band is its own to
+# its end: no card shows through.
 for name in shell-01 shell-02; do mark "$name"; done
 aside
 shot target/smoke/toolbar-wrap.vi.png
-rows=$(pixels target/smoke/toolbar-wrap.vi.png 271 27 272 27 271 64 272 64 700 88)
-[ "$rows" = "1a1b26 414868 1a1b26 414868 1a1b26 " ] || fail "the toolbar's two rows do not start at one margin: $rows"
+rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 105 275 155 500 185)
+[ "$rows" = "1a1b26 1a1b26 1a1b26 " ] || fail "the toolbar's two rows do not start at one margin, or a card shows through: $rows"
+case "$(pixels target/smoke/toolbar-wrap.vi.png 276 105 276 155)" in
+*1a1b26*) fail "the toolbar's two rows do not both start at x 276" ;;
+esac
 step "with cards marked, the Vietnamese toolbar is two rows from one margin"
 for name in shell-01 shell-02; do mark "$name"; done
 
@@ -1034,9 +1090,9 @@ for name in shell-01 shell-02; do mark "$name"; done
 # left of what is in it).
 theme
 first_card
-aside
+top
 shot docs/img/desktop-d7-day.vi.png
-day=$(pixels docs/img/desktop-d7-day.vi.png 264 300 278 180)
+day=$(pixels docs/img/desktop-d7-day.vi.png 264 300 285 500)
 [ "$day" = "e1e2e7 d0d5e3 " ] || fail "in Day the background and the card are $day, not e1e2e7 d0d5e3"
 [ "$(kept vssh.theme)" = day ] || fail "the theme the web view kept is $(kept vssh.theme), not day"
 step "the Day theme: background #e1e2e7, cards #d0d5e3, and the web view kept the choice"
@@ -1044,13 +1100,13 @@ step "the Day theme: background #e1e2e7, cards #d0d5e3, and the web view kept th
 open_tab shell-01
 run 'echo dark in the day'
 shot target/smoke/day-terminal.vi.png
-term=$(pixels target/smoke/day-terminal.vi.png 256 400 900 500)
+term=$(pixels target/smoke/day-terminal.vi.png 276 400 900 500)
 [ "$term" = "a1a6c5 1a1b26 " ] || fail "in Day the terminal's border and ground are $term, not a1a6c5 1a1b26"
 step "in Day the terminal is still Night's, with the theme's border around it"
 key ctrl+w
 language
 first_card
-aside
+top
 shot docs/img/desktop-d7-day.png
 
 # Streamer mode, in Night again. What is shown is all that changes: the
@@ -1059,11 +1115,11 @@ theme
 before=$(cksum <"$config")
 streamer
 first_card
-aside
+top
 shot docs/img/desktop-d7-streamer.png
 language
 first_card
-aside
+top
 shot docs/img/desktop-d7-streamer.vi.png
 [ "$(kept vssh.streamer_mode)" = true ] || fail "the web view kept streamer_mode as $(kept vssh.streamer_mode), not true"
 [ "$(kept vssh.theme)" = night ] || fail "the theme the web view kept is $(kept vssh.theme), not night"
