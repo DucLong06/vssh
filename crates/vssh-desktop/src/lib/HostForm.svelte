@@ -148,10 +148,10 @@
   ])
 
   const field =
-    'mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim disabled:opacity-60 aria-invalid:border-red'
-  const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 whitespace-nowrap hover:bg-selection'
+    'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim disabled:opacity-60 aria-invalid:border-red'
+  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
   const choice =
-    'cursor-pointer rounded px-2 py-1 text-white hover:text-fg has-checked:bg-selection has-checked:text-blue has-focus-visible:outline-2 has-focus-visible:outline-blue'
+    'cursor-pointer rounded-md px-2.5 py-1 text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue'
   const plain = { autocomplete: 'off', autocapitalize: 'off', spellcheck: false } as const
 </script>
 
@@ -167,8 +167,8 @@
   {#if importing}
     <HostImport {onimported} oncancel={() => (importing = false)} />
   {:else}
-    <form bind:this={root} novalidate onsubmit={save} class="grid gap-3 p-4 text-white">
-      <p class="text-cyan">{title}</p>
+    <form bind:this={root} novalidate onsubmit={save} class="grid gap-4 p-6 text-[13px] text-white">
+      <p class="text-base font-semibold text-ink">{title}</p>
       <div class="grid grid-cols-[1fr_1.5fr_1fr_6rem] gap-2">
         <div>
           <label>
@@ -194,7 +194,7 @@
               {...plain}
               aria-invalid={wrong.hostname ? 'true' : undefined}
               aria-describedby="host-form-hostname"
-              class={field}
+              class="{field} font-mono text-[13px]"
             />
           </label>
           {@render problem('host-form-hostname', wrong.hostname)}
@@ -214,7 +214,7 @@
               {...plain}
               aria-invalid={wrong.port ? 'true' : undefined}
               aria-describedby="host-form-port"
-              class={field}
+              class="{field} font-mono text-[13px]"
             />
           </label>
           {@render problem('host-form-port', wrong.port)}
@@ -229,7 +229,7 @@
           <div
             role="radiogroup"
             aria-labelledby="host-form-method"
-            class="mt-1 flex rounded-md border border-edge bg-panel p-0.5"
+            class="mt-1 flex rounded-lg border border-edge bg-page p-1"
           >
             {#each methods as [value, label] (value)}
               <label class={choice}>
@@ -258,7 +258,7 @@
         {:else if method === 'key'}
           <label>
             {t('key_file')}
-            <input bind:value={form.identity_file} placeholder="~/.ssh/id_ed25519" {...plain} class={field} />
+            <input bind:value={form.identity_file} placeholder="~/.ssh/id_ed25519" {...plain} class="{field} font-mono text-[13px]" />
           </label>
         {/if}
       </div>
@@ -285,7 +285,7 @@
       <div class="grid grid-cols-[1fr_12rem_auto] items-end gap-3">
         <div>
           <span>{t('tags')}</span>
-          <div class="mt-1 flex flex-wrap items-center gap-1 rounded-md border border-edge bg-bg px-2 py-1">
+          <div class="mt-1 flex flex-wrap items-center gap-1 rounded-lg border border-edge bg-bg px-2 py-1">
             <ul aria-label={t('tags')} class="contents">
               {#each tags as name (name)}
                 <li
@@ -348,7 +348,7 @@
           </button>
         {/if}
         <button type="button" onclick={onclose} class="{button} ml-auto">{t('cancel')}</button>
-        <button type="submit" class="{button} border-blue bg-selection text-blue">{t('save')}</button>
+        <button type="submit" class="{button} border-blue bg-blue! font-semibold text-page hover:brightness-110">{t('save')}</button>
       </div>
     </form>
   {/if}

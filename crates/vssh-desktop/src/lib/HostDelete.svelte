@@ -24,11 +24,11 @@
     }
   }
 
-  const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 hover:bg-selection'
+  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
 </script>
 
 <Modal label={ask} {onclose}>
-  <form onsubmit={remove} class="grid gap-3 p-4">
+  <form onsubmit={remove} class="grid gap-4 p-6">
     <p>{ask}</p>
     <p class="text-white">{t('delete_host_note')}</p>
     {#if failed}

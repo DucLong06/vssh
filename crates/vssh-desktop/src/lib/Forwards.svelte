@@ -105,7 +105,7 @@
     portField?.focus()
   }
 
-  const field = 'mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim disabled:opacity-60'
+  const field = 'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim disabled:opacity-60'
   const kinds = ['L', 'R', 'D'] as const
   const mark = { on: '●', starting: '◌', off: '○' }
   const word = $derived({ on: t('on'), starting: t('starting'), off: t('off') })
@@ -113,14 +113,14 @@
 </script>
 
 <Modal label="{t('forwards')} {host}" {onclose}>
-  <div bind:this={root} class="grid gap-3 p-4">
+  <div bind:this={root} class="grid gap-4 p-6">
     <p>
-      <span class="text-cyan">{t('forwards')}</span>
+      <span class="text-base font-semibold text-ink">{t('forwards')}</span>
       <strong>{host}</strong>
     </p>
     {#if rows.length}
       <table class="w-full border-collapse text-left">
-        <thead class="whitespace-nowrap text-white">
+        <thead class="text-xs whitespace-nowrap text-dim">
           <tr>
             <th scope="col" class="w-14 py-1 font-normal">{t('kind')}</th>
             <th scope="col" class="w-28 py-1 font-normal">{t('local_port')}</th>
@@ -131,10 +131,10 @@
         </thead>
         <tbody>
           {#each rows as row (row.kind + row.value)}
-            <tr data-state={row.state} class="border-t border-edge/50">
+            <tr data-state={row.state} class="border-t border-edge">
               <td class="py-1"><strong class="text-magenta">{row.kind}</strong></td>
-              <td class="py-1">{row.port}</td>
-              <td class="truncate py-1 {row.kind === 'D' ? 'text-white' : ''}">{leads(row) || '—'}</td>
+              <td class="py-1.5 font-mono text-[13px]">{row.port}</td>
+              <td class="truncate py-1.5 font-mono text-[13px] {row.kind === 'D' ? 'text-white' : ''}">{leads(row) || '—'}</td>
               <td class="py-1">
                 <!-- What it is, and the way to change it. -->
                 <button
@@ -143,7 +143,7 @@
                   aria-checked={row.state !== 'off'}
                   aria-label="{row.kind} {name(row)}"
                   onclick={() => toggle(row)}
-                  class="cursor-pointer rounded-md border border-edge px-2 whitespace-nowrap hover:bg-selection {tone[row.state]}"
+                  class="cursor-pointer rounded-full border border-edge px-3 text-[13px] font-medium whitespace-nowrap hover:bg-selection {tone[row.state]}"
                 >
                   {mark[row.state]}
                   {word[row.state]}
@@ -176,10 +176,10 @@
     >
       <div class="grid grid-cols-[auto_7rem_1fr_auto] items-end gap-2 text-white">
         <!-- Radio buttons, drawn as one control: as the dashboard's sort. -->
-        <div role="radiogroup" aria-label={t('kind')} class="flex rounded-md border border-edge bg-panel p-0.5">
+        <div role="radiogroup" aria-label={t('kind')} class="flex rounded-lg border border-edge bg-page p-1 font-mono">
           {#each kinds as letter (letter)}
             <label
-              class="cursor-pointer rounded px-2 py-1 text-white hover:text-fg has-checked:bg-selection has-checked:text-blue has-focus-visible:outline-2 has-focus-visible:outline-blue"
+              class="cursor-pointer rounded-md px-2.5 py-1 text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue"
             >
               <input type="radio" bind:group={kind} value={letter} class="sr-only" />
               {letter}
@@ -188,7 +188,7 @@
         </div>
         <label>
           {t('local_port')}
-          <input bind:this={portField} bind:value={port} type="number" min="1" max="65535" required placeholder="8080" class={field} />
+          <input bind:this={portField} bind:value={port} type="number" min="1" max="65535" required placeholder="8080" class="{field} font-mono text-[13px]" />
         </label>
         <label>
           {t('remote')}
@@ -200,12 +200,12 @@
             autocapitalize="off"
             spellcheck="false"
             placeholder={kind === 'D' ? 'SOCKS' : 'localhost:80'}
-            class={field}
+            class="{field} font-mono text-[13px]"
           />
         </label>
         <button
           type="submit"
-          class="cursor-pointer rounded-md border border-blue bg-selection px-3 py-1.5 text-blue hover:bg-selection"
+          class="cursor-pointer rounded-[10px] border border-blue bg-blue! px-3.5 py-1.5 font-semibold text-page hover:brightness-110"
         >
           {t('add')}
         </button>
@@ -220,7 +220,7 @@
             <button
               type="button"
               onclick={() => retry(free)}
-              class="cursor-pointer rounded-md border border-edge px-2 whitespace-nowrap text-blue hover:bg-selection"
+              class="cursor-pointer rounded-lg border border-edge px-2 whitespace-nowrap text-blue hover:bg-selection"
             >
               {t('try_port').replace('{n}', String(free))}
             </button>

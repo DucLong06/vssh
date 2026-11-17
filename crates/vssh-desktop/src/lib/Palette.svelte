@@ -3,6 +3,7 @@
   import { fuzzy } from './fuzzy'
   import { address, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
+  import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import { addr } from './streamer.svelte'
 
@@ -65,6 +66,9 @@
 </script>
 
 <Modal label={t('palette')} {onclose}>
+  <!-- The concept's search: a glass, the field, and the key that closes it. -->
+  <label class="flex items-center gap-3 px-5 text-dim">
+  <Icon name="search" />
   <input
     bind:value={query}
     oninput={() => (at = 0)}
@@ -78,13 +82,15 @@
     autocomplete="off"
     autocapitalize="off"
     spellcheck="false"
-    class="w-full bg-transparent px-4 py-3 text-fg outline-none placeholder:text-dim"
+    class="w-full bg-transparent py-4 text-base text-fg outline-none placeholder:text-dim"
   />
+  <kbd>esc</kbd>
+  </label>
   <ul
     id="palette-options"
     role="listbox"
     aria-label={t('palette')}
-    class="max-h-[50vh] overflow-y-auto border-t border-edge py-1 empty:hidden"
+    class="max-h-[50vh] overflow-y-auto border-t border-edge p-2 empty:hidden"
   >
     {#each items as item, i (item.key)}
       <!-- The keyboard chooses from the input above: aria-activedescendant. -->
@@ -96,17 +102,17 @@
         aria-selected={i === at}
         onclick={item.run}
         onpointermove={() => (at = i)}
-        class="flex cursor-pointer items-baseline gap-3 px-4 py-1.5 aria-selected:bg-selection"
+        class="flex cursor-pointer items-baseline gap-3 rounded-[10px] px-3 py-2 aria-selected:bg-selection aria-selected:inset-ring aria-selected:inset-ring-edge"
       >
-        <span class={item.action ? 'text-magenta' : 'text-fg'}>{item.label}</span>
-        <span class="truncate text-white">{item.detail}</span>
+        <span class="font-medium {item.action ? 'text-magenta' : 'text-ink'}">{item.label}</span>
+        <span class="truncate font-mono text-xs text-dim">{item.detail}</span>
       </li>
     {/each}
   </ul>
   {#if items.length === 0}
-    <p role="status" class="border-t border-edge px-4 py-3 text-white">{t('no_match')}</p>
+    <p role="status" class="border-t border-edge px-5 py-4 text-white">{t('no_match')}</p>
   {/if}
-  <footer class="flex gap-4 border-t border-edge px-4 py-2 text-white">
+  <footer class="flex gap-4 border-t border-edge px-5 py-3 text-[13px] text-white">
     <span><kbd class="text-magenta">↑↓ enter</kbd> {t('select')}</span>
     <span><kbd class="text-magenta">esc</kbd> {t('close')}</span>
   </footer>

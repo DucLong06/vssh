@@ -112,16 +112,16 @@
     keys[e.key]()
   }
 
-  const field = 'w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim'
+  const field = 'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim'
 </script>
 
 <Modal label={title} wide {onclose}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="grid gap-3 p-4" {onkeydown}>
+  <div class="grid gap-4 p-6" {onkeydown}>
     <p class="flex items-baseline gap-2">
-      <span class="text-cyan">{title}</span>
+      <span class="text-base font-semibold text-ink">{title}</span>
       {#if batch !== null}
-        <span class="ml-auto text-white">{done}/{hosts.length}</span>
+        <span class="ml-auto rounded-full bg-bg px-2.5 text-[13px] text-white">{done}/{hosts.length}</span>
       {/if}
     </p>
     <form
@@ -137,7 +137,7 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        class={field}
+        class="{field} font-mono text-[13px]"
       />
     </form>
     {#if refusal}
@@ -170,7 +170,7 @@
       class="flex max-h-[45vh] flex-col gap-2 overflow-y-auto rounded-xl outline-none"
     >
       {#each rows as { host, answer } (host.alias)}
-        <li data-host={host.alias} class="shrink-0 rounded-xl border border-edge bg-panel px-3 py-2">
+        <li data-host={host.alias} class="shrink-0 rounded-xl border border-edge bg-bg px-3 py-2">
           <p class="flex items-center gap-2">
             <!-- The colour its group has on the dashboard. -->
             <strong style:color={groupOf(host) ? chip(groupOf(host)) : undefined}>{host.alias}</strong>
@@ -191,13 +191,13 @@
             {/if}
           </p>
           {#if answer && answer.output !== null}
-            <pre class="mt-1 break-words whitespace-pre-wrap text-fg">{answer.output.trimEnd() || t('no_output')}</pre>
+            <pre class="mt-2 rounded-lg bg-page px-3 py-2 font-mono text-[13px] break-words whitespace-pre-wrap text-fg">{answer.output.trimEnd() || t('no_output')}</pre>
           {/if}
         </li>
       {/each}
     </ul>
   </div>
-  <footer class="flex items-center gap-4 border-t border-edge px-4 py-2 text-white">
+  <footer class="flex items-center gap-4 border-t border-edge px-6 py-3 text-[13px] text-white">
     <span><kbd class="text-magenta">j k</kbd> {t('scroll')}</span>
     <span><kbd class="text-magenta">/</kbd> {t('filter').toLowerCase()}</span>
     <span><kbd class="text-magenta">esc</kbd> {t('close')}</span>
@@ -207,7 +207,7 @@
       aria-keyshortcuts="y"
       disabled={!done}
       onclick={copy}
-      class="cursor-pointer rounded-md border border-edge px-2 text-blue hover:bg-selection disabled:cursor-default disabled:opacity-60"
+      class="cursor-pointer rounded-lg border border-edge px-3 py-0.5 font-medium text-fg hover:bg-selection disabled:cursor-default disabled:opacity-60"
     >
       {t('copy_all')}
     </button>
