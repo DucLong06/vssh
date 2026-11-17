@@ -31,7 +31,6 @@ use zeroize::Zeroizing;
 
 use crate::sftp;
 use crate::ssh::{self, forward, Login, SessionCmd, Target};
-use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::theme::Config;
 use crate::vault::Vault;
 use files::SftpView;
@@ -40,6 +39,7 @@ use stats::{Peek, Stats};
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
 use vssh_core::conn_err::{self, Fail, Report};
 use vssh_core::store::db::{Db, Meta, Snippet};
+use vssh_core::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.

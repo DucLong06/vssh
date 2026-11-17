@@ -4,7 +4,6 @@
 pub mod proto;
 pub mod sftp;
 pub mod ssh;
-pub mod store;
 pub mod theme;
 pub mod ui;
 pub mod vault;

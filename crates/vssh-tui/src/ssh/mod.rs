@@ -21,8 +21,8 @@ use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
 use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::store::ssh_config::SshConfig;
 use vssh_core::conn_err::Fail;
+use vssh_core::store::ssh_config::SshConfig;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
