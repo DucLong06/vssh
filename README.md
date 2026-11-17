@@ -8,6 +8,10 @@ A terminal SSH manager: host list on the left, details or a live session on
 the right, vim keys everywhere. Hosts live in your normal `~/.ssh/config`, so
 plain `ssh` keeps working with everything vssh edits.
 
+One Rust core, two frontends: the terminal app and the desktop app below read
+the same config, the same database and the same vault, and share the TokyoNight
+theme.
+
 ![vssh: host list, tag filter, three hosts side by side with broadcast, leader menu, quick connect and SFTP](docs/img/demo.gif)
 
 - SSH sessions in tabs, with a built-in terminal emulator
@@ -49,9 +53,9 @@ cargo build --release
 
 The same hosts in a window: a dashboard of host cards with live stats, terminal tabs with broadcast, a dual-pane SFTP view, snippets, batch runs, port forwards and the vault. It is a second frontend over the same core as the terminal app, so both read the same `~/.ssh/config`, the same database and the same vault.
 
-| Dashboard | Terminal tabs |
+| Dashboard, with the nav rail | Terminal tabs |
 |---|---|
-| ![Dashboard of host cards with live CPU, memory and disk bars](docs/img/desktop-d2.png) | ![A shell in a terminal tab of the desktop app](docs/img/desktop-d3-terminal.png) |
+| ![The desktop app's nav rail, host cards with sparklines and disk bars](docs/img/desktop-d9-rail.png) | ![A shell in a terminal tab of the desktop app](docs/img/desktop-d3-terminal.png) |
 
 Linux x86_64, from v0.2.0 on. A [release](https://github.com/DucLong06/vssh/releases) carries three packages; take one:
 
