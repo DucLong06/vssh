@@ -33,18 +33,54 @@ pub struct Target {
     pub keys: Vec<PathBuf>,
     /// `RemoteCommand` of the ssh config: run instead of the login shell.
     pub remote_command: Option<String>,
+    /// How to get to it.
+    pub via: Via,
+}
+
+/// The road to a target.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Via {
+    /// A TCP connection.
+    #[default]
+    Direct,
+    /// `ProxyJump`: through these hosts, in order. Hops of hops are already
+    /// flattened into the list; only the first can itself be `Command`.
+    Jump(Vec<Target>),
+    /// `ProxyCommand`: the standard input and output of this local command.
+    Command(String),
 }
 
 impl Target {
     /// Resolves an alias the way `ssh alias` would.
     pub fn from_config(c: &SshConfig, alias: &str) -> Result<Self> {
-        for key in ["ProxyJump", "ProxyCommand"] {
-            if c.get(alias, key)
-                .is_some_and(|v| !v.eq_ignore_ascii_case("none"))
-            {
-                bail!("{key} is not supported yet");
-            }
+        Self::resolve(c, alias, 0)
+    }
+
+    /// `depth` counts jump hosts resolved on the way here, to stop a loop.
+    fn resolve(c: &SshConfig, alias: &str, depth: usize) -> Result<Self> {
+        if depth > 8 {
+            bail!("ProxyJump loops or is more than 8 hosts deep (at {alias})");
         }
+        let set = |key| {
+            let value = c.get(alias, key);
+            value.filter(|v| !v.eq_ignore_ascii_case("none"))
+        };
+        let via = match (set("ProxyJump"), set("ProxyCommand")) {
+            (Some(jump), _) => {
+                let mut hops = vec![];
+                for hop in jump.split(',') {
+                    let mut hop = Self::hop(c, hop.trim(), depth + 1)?;
+                    // A hop reached through hops of its own: those come first.
+                    if let Via::Jump(before) = std::mem::take(&mut hop.via) {
+                        hops.extend(before);
+                    }
+                    hops.push(hop);
+                }
+                Via::Jump(hops)
+            }
+            (None, Some(command)) => Via::Command(command.to_string()),
+            (None, None) => Via::Direct,
+        };
         let host = c.get(alias, "HostName").unwrap_or(alias);
         crate::proto::ensure_ssh(host)?;
         let home = crate::config::home();
@@ -73,7 +109,36 @@ impl Target {
                 .get(alias, "RemoteCommand")
                 .filter(|cmd| !cmd.eq_ignore_ascii_case("none"))
                 .map(str::to_string),
+            via,
         })
+    }
+
+    /// One entry of a `ProxyJump` list, `[user@]host[:port]`. The host goes
+    /// through the ssh config like any other name, so a hop can be an alias
+    /// with its own key, user and jump hosts; `user@` and `:port` override.
+    // shortcut: no bracketed IPv6 literals and no ssh:// URIs as hops; give
+    // such a hop a Host block and name its alias.
+    fn hop(c: &SshConfig, spec: &str, depth: usize) -> Result<Self> {
+        let (user, rest) = match spec.rsplit_once('@') {
+            Some((user, rest)) => (Some(user), rest),
+            None => (None, spec),
+        };
+        let (name, port) = match rest.rsplit_once(':') {
+            Some((name, port)) => (name, Some(port)),
+            None => (rest, None),
+        };
+        if name.is_empty() {
+            bail!("ProxyJump has an empty host in {spec:?}");
+        }
+        let mut hop = Self::resolve(c, name, depth)?;
+        if let Some(user) = user {
+            hop.user = user.to_string();
+        }
+        if let Some(port) = port {
+            let port = port.parse();
+            hop.port = port.with_context(|| format!("ProxyJump port in {spec:?}"))?;
+        }
+        Ok(hop)
     }
 
     /// Adds this target to the ssh config as a host and returns the alias it
@@ -124,6 +189,7 @@ impl Target {
             user,
             keys: default_keys(),
             remote_command: None,
+            via: Via::Direct,
         })
     }
 }
@@ -144,6 +210,143 @@ pub struct Client {
     port: u16,
     /// Where connections arriving over a remote (`-R`) forward are sent.
     remote_fwd: Option<(String, u16)>,
+    /// What this connection runs through: jump host connections, a proxy
+    /// command. Held here so they live exactly as long as it does.
+    _road: Road,
+}
+
+/// Anything a transport can be: a socket, a channel of another connection.
+trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
+
+/// What must stay alive under a connection.
+type Road = Vec<Box<dyn Send>>;
+
+/// A running `ProxyCommand`, killed and reaped when its connection ends.
+struct Proxy(std::process::Child);
+
+impl Drop for Proxy {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// `ProxyCommand` with its tokens filled in: `%h` host, `%p` port, `%r`
+/// user, `%%` a percent sign. The values go into a shell command, so a host
+/// or user name that could be more than a name is refused (OpenSSH does the
+/// same since 9.6).
+fn proxy_command(command: &str, t: &Target) -> Result<String> {
+    let plain = |s: &str| {
+        let ok = |c: char| c.is_ascii_alphanumeric() || "._-:[]@%".contains(c);
+        !s.is_empty() && !s.starts_with('-') && s.chars().all(ok)
+    };
+    if !plain(&t.host) || !plain(&t.user) {
+        bail!(
+            "ProxyCommand refused: {}@{} is not a plain user and host name",
+            t.user,
+            t.host
+        );
+    }
+    let mut out = String::new();
+    let mut chars = command.chars();
+    while let Some(c) = chars.next() {
+        match (c, chars.clone().next()) {
+            ('%', Some('h' | 'n')) => out.push_str(&t.host),
+            ('%', Some('p')) => out.push_str(&t.port.to_string()),
+            ('%', Some('r')) => out.push_str(&t.user),
+            ('%', Some('%')) => out.push('%'),
+            _ => {
+                out.push(c);
+                continue;
+            }
+        }
+        chars.next();
+    }
+    Ok(out)
+}
+
+/// The first leg of a road: TCP, or the pipes of a `ProxyCommand`.
+async fn first_leg(t: &Target) -> Result<(Box<dyn Stream>, Road)> {
+    let Via::Command(command) = &t.via else {
+        let sock = dial(&t.host, t.port).await?;
+        let _ = sock.set_nodelay(true);
+        return Ok((Box::new(sock), vec![]));
+    };
+    let command = proxy_command(command, t)?;
+    // One end of a socket pair is the command's stdin and stdout, the other
+    // is the transport. `exec`, so that killing the shell kills the command.
+    let (ours, theirs) = std::os::unix::net::UnixStream::pair()?;
+    let theirs = std::os::fd::OwnedFd::from(theirs);
+    let child = std::process::Command::new("sh")
+        .args(["-c", &format!("exec {command}")])
+        .stdin(theirs.try_clone()?)
+        .stdout(theirs)
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .with_context(|| format!("cannot run ProxyCommand {command}"))?;
+    let proxy = Proxy(child);
+    ours.set_nonblocking(true)?;
+    let ours = tokio::net::UnixStream::from_std(ours)?;
+    Ok((Box::new(ours), vec![Box::new(proxy)]))
+}
+
+/// Opens the transport to a target, through its jump hosts if it has any.
+/// A hop that fails is named in the error (`Fail::Jump`), with its position.
+async fn road(t: &Target) -> Result<(Box<dyn Stream>, Road)> {
+    let Via::Jump(hops) = &t.via else {
+        return first_leg(t).await;
+    };
+    let mut road: Road = vec![];
+    let mut last: Option<(Handle<Client>, &Target)> = None;
+    for (i, hop) in hops.iter().enumerate() {
+        let through = async {
+            let stream = match &last {
+                Some((h, from)) => tunnel(h, from, hop).await?,
+                None => {
+                    let (stream, under) = first_leg(hop).await?;
+                    road.extend(under);
+                    stream
+                }
+            };
+            // shortcut: jump hosts log in with the agent or key files only;
+            // carry vault passwords per hop if a bastion ever needs one.
+            let mut h = handshake(hop, stream, None, vec![]).await?;
+            login(&mut h, hop, None).await?;
+            anyhow::Ok(h)
+        };
+        let h = through.await.map_err(|e| {
+            let cause = e.downcast_ref::<Fail>().cloned().map(Box::new);
+            let hop = format!(
+                "{}:{} (hop {} of {})",
+                hop.host,
+                hop.port,
+                i + 1,
+                hops.len()
+            );
+            e.context(Fail::Jump { hop, cause })
+        })?;
+        if let Some((before, _)) = last.replace((h, hop)) {
+            road.push(Box::new(before));
+        }
+    }
+    let Some((h, from)) = last else {
+        bail!("ProxyJump names no host");
+    };
+    let stream = tunnel(&h, from, t).await?;
+    road.push(Box::new(h));
+    Ok((stream, road))
+}
+
+/// A channel from a connected jump host to the next host on the road.
+async fn tunnel(h: &Handle<Client>, from: &Target, to: &Target) -> Result<Box<dyn Stream>> {
+    let addr = format!("{}:{}", to.host, to.port);
+    let opening = h.channel_open_direct_tcpip(to.host.clone(), to.port.into(), "127.0.0.1", 0);
+    let channel = opening
+        .await
+        .with_context(|| format!("jump host {}:{} could not connect", from.host, from.port))
+        .map_err(|e| e.context(Fail::Unreachable { addr }))?;
+    Ok(Box::new(channel.into_stream()))
 }
 
 impl client::Handler for Client {
@@ -267,14 +470,12 @@ async fn dial(host: &str, port: u16) -> Result<TcpStream> {
 }
 
 /// The SSH handshake over an open stream, host key check included.
-async fn handshake<S>(
+async fn handshake(
     t: &Target,
-    stream: S,
+    stream: Box<dyn Stream>,
     remote_fwd: Option<(String, u16)>,
-) -> Result<Handle<Client>>
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
+    road: Road,
+) -> Result<Handle<Client>> {
     let mut config = client::Config {
         keepalive_interval: Some(Duration::from_secs(30)),
         ..Default::default()
@@ -286,6 +487,7 @@ where
         host: t.host.clone(),
         port: t.port,
         remote_fwd,
+        _road: road,
     };
     let shaking = client::connect_stream(Arc::new(config), stream, handler);
     let slow = |_| Fail::Timeout {
@@ -353,16 +555,16 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
     .into())
 }
 
-/// Connects and authenticates. A failure carries a `Fail` saying which step
-/// it was: name lookup, TCP, host key, or login.
+/// Connects and authenticates, through the target's jump hosts or proxy
+/// command if it has them. A failure carries a `Fail` saying which step it
+/// was: name lookup, TCP, a jump host, host key, or login.
 pub async fn connect(
     t: &Target,
     password: Option<&str>,
     remote_fwd: Option<(String, u16)>,
 ) -> Result<Handle<Client>> {
-    let sock = dial(&t.host, t.port).await?;
-    let _ = sock.set_nodelay(true);
-    let mut h = handshake(t, sock, remote_fwd).await?;
+    let (stream, road) = road(t).await?;
+    let mut h = handshake(t, stream, remote_fwd, road).await?;
     login(&mut h, t, password).await?;
     Ok(h)
 }
@@ -658,7 +860,102 @@ mod tests {
         assert_eq!(t.keys.len(), 3);
 
         let err = |alias| Target::from_config(&c, alias).unwrap_err().to_string();
-        assert_eq!(err("jump"), "ProxyJump is not supported yet");
         assert_eq!(err("tty"), "Serial is not implemented yet");
+        // `ProxyJump none` is no jump; a hop that is no alias still gets the `Host *` defaults.
+        assert_eq!(t.via, Via::Direct);
+        let Via::Jump(hops) = Target::from_config(&c, "jump").unwrap().via else {
+            panic!("jump has a jump host");
+        };
+        let hop = (hops[0].host.as_str(), hops[0].user.as_str(), hops[0].port);
+        assert_eq!((hops.len(), hop), (1, ("bastion", "admin", 22)));
+    }
+
+    #[test]
+    fn proxyjump_round_trips_and_resolves_to_a_chain() {
+        let text = "Host bastion\n    HostName 203.0.113.1\n    User jump\n    IdentityFile /keys/bastion\n\n\
+                    Host inner\n    HostName 10.0.0.5\n    ProxyJump bastion\n\n\
+                    Host deep\n    HostName 10.0.1.9\n    ProxyJump inner\n\n\
+                    Host multi\n    ProxyJump admin@gw.example:2222, bastion\n\n\
+                    Host off\n    ProxyJump none\n    ProxyCommand none\n\n\
+                    Host piped\n    ProxyCommand nc -X 5 -x proxy:1080 %h %p\n\n\
+                    Host both\n    ProxyJump bastion\n    ProxyCommand nc %h %p\n\n\
+                    Host a\n    ProxyJump b\n\nHost b\n    ProxyJump a\n\n\
+                    Host badport\n    ProxyJump bastion:ssh\n";
+        let c = SshConfig::parse(text);
+        // Parsing and writing back changes nothing: the option survives vssh's edits.
+        assert_eq!(c.to_string(), text);
+        assert_eq!(c.get("inner", "ProxyJump"), Some("bastion"));
+
+        let chain = |alias| match Target::from_config(&c, alias).unwrap().via {
+            Via::Jump(hops) => hops,
+            other => panic!("{alias}: {other:?}"),
+        };
+        let names = |alias| -> Vec<String> {
+            let hops = chain(alias);
+            hops.iter()
+                .map(|h| format!("{}@{}:{}", h.user, h.host, h.port))
+                .collect()
+        };
+        // A hop is resolved like any host: its HostName, user and key.
+        assert_eq!(names("inner"), ["jump@203.0.113.1:22"]);
+        assert_eq!(chain("inner")[0].keys, [PathBuf::from("/keys/bastion")]);
+        // A hop with a hop of its own: the outermost comes first, and the list is flat.
+        let user = current_user();
+        assert_eq!(
+            names("deep"),
+            [
+                "jump@203.0.113.1:22".to_string(),
+                format!("{user}@10.0.0.5:22")
+            ]
+        );
+        assert!(chain("deep").iter().all(|hop| hop.via == Via::Direct));
+        // A list, with user and port given in place.
+        assert_eq!(
+            names("multi"),
+            ["admin@gw.example:2222", "jump@203.0.113.1:22"]
+        );
+
+        let via = |alias| Target::from_config(&c, alias).unwrap().via;
+        assert_eq!(via("off"), Via::Direct);
+        assert_eq!(
+            via("piped"),
+            Via::Command("nc -X 5 -x proxy:1080 %h %p".into())
+        );
+        assert!(matches!(via("both"), Via::Jump(_)));
+        assert_eq!(Target::parse("root@10.0.0.5").unwrap().via, Via::Direct);
+
+        let err = |alias| Target::from_config(&c, alias).unwrap_err().to_string();
+        assert!(err("a").starts_with("ProxyJump loops"), "{}", err("a"));
+        assert_eq!(err("badport"), "ProxyJump port in \"bastion:ssh\"");
+    }
+
+    #[test]
+    fn proxy_command_tokens_and_names_that_are_not_names() {
+        let mut t = Target::parse("deploy@web.example:2222").unwrap();
+        let expand = |command: &str, t: &Target| proxy_command(command, t);
+        assert_eq!(
+            expand("nc -x proxy:1080 %h %p", &t).unwrap(),
+            "nc -x proxy:1080 web.example 2222"
+        );
+        assert_eq!(
+            expand("corkscrew p 8080 %h %p # %r at 100%% %x %", &t).unwrap(),
+            "corkscrew p 8080 web.example 2222 # deploy at 100% %x %"
+        );
+        // A name that would be shell syntax, or an option, never reaches the shell.
+        for host in [
+            "web;reboot",
+            "$(id)",
+            "a b",
+            "`id`",
+            "-oProxyCommand=x",
+            "a|b",
+            "",
+        ] {
+            t.host = host.to_string();
+            assert!(expand("nc %h %p", &t).is_err(), "{host}");
+        }
+        t.host = "web.example".into();
+        t.user = "x;id".into();
+        assert!(expand("nc %h %p", &t).is_err());
     }
 }

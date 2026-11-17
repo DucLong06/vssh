@@ -104,6 +104,26 @@ vssh has no clipboard library. It asks the terminal it runs in to do the copy, w
 - **SFTP:** `y` copies the full path of the selected file.
 - **Terminal support:** most current terminals accept OSC 52 (some ask first or need it enabled). Inside tmux, vssh also hands the text to tmux itself (`tmux load-buffer -w`), since tmux ignores OSC 52 from programs unless `set-clipboard on`. `osc52 = false` stops the escape for a terminal that prints it instead of obeying it; the tmux buffer is still set.
 
+## Jump hosts
+
+`ProxyJump` and `ProxyCommand` in `~/.ssh/config` are honoured for everything vssh opens: sessions, SFTP, forwards, quick peek, batch commands. vssh has no form for them; write them in the file as you would for `ssh`.
+
+```
+Host bastion
+    HostName 203.0.113.1
+    User jump
+
+Host db-internal
+    HostName 10.0.0.5
+    ProxyJump bastion
+```
+
+- **`ProxyJump`** takes one host or a comma-separated chain, each `[user@]host[:port]`. A hop is resolved through the config like any host, so it can be an alias with its own `HostName`, `User`, `IdentityFile` and its own `ProxyJump`. Every hop's host key is checked against `known_hosts` just like the target's.
+- **Hops log in with your agent or key files only.** A vault password is used for the target, never for a hop.
+- **`ProxyCommand`** runs the command locally with `%h`, `%p`, `%r` and `%%` filled in and talks SSH over its input and output. It is stopped when the connection ends. A host or user name containing anything but letters, digits and `. _ - : @ [ ]` is refused rather than handed to the shell. If a host has both, `ProxyJump` is used. `none` turns either off.
+- **When a hop fails** the error names it and its place in the chain.
+- **Not supported:** bracketed IPv6 addresses and `ssh://` URIs as hops (give the hop a `Host` block), and resting the cursor on a host that needs a jump or a proxy command does not ask it for stats; open a session or press `v`.
+
 ## Quick peek
 
 `v` on the host list opens a small window with what the host says about itself: name, system (`uname -srm`), uptime, the three load averages, CPU, memory and root disk. No shell is opened: it is one command over a short connection, with the same host key check and login as a session (agent, keys, then the vault password).
@@ -123,6 +143,7 @@ vssh says why, not only that it failed. A popup shows the reason and the full er
 | `UNREACHABLE` Cannot reach 203.0.113.7:22: … | no route; the system's own words follow |
 | `AUTH` Wrong password / Public key rejected / No way to log in | which method the server refused; you are then asked for a password |
 | `HOST KEY` Host key mismatch … | the fingerprint the server sent, and the line of `known_hosts` it conflicts with |
+| `JUMP HOST` Jump host bastion:22 (hop 1 of 2) failed: … | which hop of a `ProxyJump` chain failed, and why, in the wording of the rows above |
 | `ERROR` … | anything else, shown word for word |
 
 Snippets run on several hosts and port forwards report failures with the same wording.
@@ -262,7 +283,7 @@ Entries you leave out keep their defaults, so a config written for an older vers
 
 ## Not supported
 
-`ProxyJump` / `ProxyCommand`, `Include`, passphrase-protected key files (use the agent), keyboard-interactive / 2FA, copying directories over SFTP, Telnet, serial, Zmodem, X11 forwarding, mouse. The reasons are in [docs/PLAN.md](docs/PLAN.md#not-planned).
+`Include`, passphrase-protected key files (use the agent), keyboard-interactive / 2FA, copying directories over SFTP, Telnet, serial, Zmodem, X11 forwarding, mouse. The reasons are in [docs/PLAN.md](docs/PLAN.md#not-planned).
 
 ## Development
 

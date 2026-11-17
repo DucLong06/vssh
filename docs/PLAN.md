@@ -191,3 +191,27 @@ free row there would cost every pane a line of terminal.
   all (`web` counts a host tagged `webapp`).
 - **Esc clears and closes**, as the brief says; `w` and `q` close and keep
   the filter, so there is a way out that changes nothing.
+
+## Jump hosts (brief 9, M5)
+
+- **Resolution.** `Target` has a `via`: `Direct`, `Jump(Vec<Target>)` or
+  `Command(String)`. `Target::from_config` resolves each `ProxyJump` entry
+  through the config, hop by hop, and flattens hops of hops into one ordered
+  list. A depth limit of 8 turns a loop into an error instead of a hang.
+- **Daisy chain.** `ssh::road` connects to the first hop over TCP, then for
+  each next host opens a `direct-tcpip` channel on the hop before it and runs
+  the SSH handshake over that channel (`russh::client::connect_stream`). It
+  was not invasive: `connect` already was dial, handshake and login after M6,
+  and only the stream under the handshake changed.
+- **Keeping the road alive.** The connections to the hops (and a running
+  proxy command) are stored in the final connection's handler. They live
+  exactly as long as it does and nothing else has to know about them, so
+  `connect` still returns a plain handle to every caller.
+- **`ProxyCommand` without the tokio process feature**: a Unix socket pair,
+  one end as the child's stdin and stdout, the other as the transport. The
+  command runs through `sh -c 'exec …'` and is killed and reaped on drop.
+  Host and user names are checked before they are put into the command line.
+- **Errors.** A hop that fails is wrapped in `Fail::Jump` with its position;
+  a target the last hop cannot reach is `Fail::Unreachable`.
+- **Limits.** Hops authenticate with keys only. No bracketed IPv6 or
+  `ssh://` hops. The host-list probe skips hosts that are not direct.

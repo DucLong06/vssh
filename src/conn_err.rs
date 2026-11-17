@@ -118,10 +118,11 @@ impl Fail {
         }
     }
 
-    /// The message for people. `below` is the rest of the chain under this
-    /// failure: the operating system's or the library's own words.
-    fn message(&self, lang: Lang, below: &str) -> String {
+    /// The message for people. `under` is the chain below this failure: the
+    /// operating system's or the library's own words.
+    fn message(&self, lang: Lang, under: &[String]) -> String {
         let t = |en: String, vi: String| if lang == Lang::Vi { vi } else { en };
+        let below = under.join(": ");
         match self {
             Self::Dns { host } => t(
                 format!("Cannot resolve {host}: {below}"),
@@ -175,8 +176,9 @@ impl Fail {
             ),
             Self::Jump { hop, cause } => {
                 let why = match cause {
-                    Some(cause) => cause.message(lang, below),
-                    None => below.to_string(),
+                    // The cause is the next entry of the chain: its own words lie under it.
+                    Some(cause) => cause.message(lang, under.get(1..).unwrap_or_default()),
+                    None => below,
                 };
                 t(
                     format!("Jump host {hop} failed: {why}"),
@@ -236,7 +238,7 @@ pub fn classify(err: &anyhow::Error, lang: Lang) -> Report {
     let chain = format!("{err:#}");
     let below: Vec<String> = err.chain().skip(1).map(ToString::to_string).collect();
     let (class, message) = match err.downcast_ref::<Fail>() {
-        Some(fail) => (fail.class(), fail.message(lang, &below.join(": "))),
+        Some(fail) => (fail.class(), fail.message(lang, &below)),
         None => (untagged(err).unwrap_or(Class::Other), chain.clone()),
     };
     Report {
@@ -366,6 +368,20 @@ mod tests {
             "jump host bastion (hop 1 of 2) failed: connection refused by 10.0.0.1:22: Connection refused"
         );
 
+        // The cause's own line of the chain is not repeated inside its message.
+        let unreachable = Fail::Unreachable {
+            addr: "10.0.0.9:22".into(),
+        };
+        let err = anyhow!("Failed to open channel (ConnectFailed)").context(unreachable.clone());
+        let err = err.context(Fail::Jump {
+            hop: hop.clone(),
+            cause: Some(Box::new(unreachable)),
+        });
+        assert_eq!(
+            en(&err).1,
+            "Jump host bastion (hop 1 of 2) failed: Cannot reach 10.0.0.9:22: Failed to open channel (ConnectFailed)"
+        );
+
         // A hop that failed for a reason nobody tagged still says which hop, and the reason as is.
         let err = anyhow!("channel refused").context(Fail::Jump { hop, cause: None });
         assert_eq!(
@@ -396,8 +412,8 @@ mod tests {
 
     #[test]
     fn an_unknown_error_is_shown_verbatim() {
-        let err = anyhow!("ProxyJump is not supported yet").context("cannot open web-01");
-        let raw = "cannot open web-01: ProxyJump is not supported yet";
+        let err = anyhow!("Serial is not implemented yet").context("cannot open web-01");
+        let raw = "cannot open web-01: Serial is not implemented yet";
         assert_eq!(en(&err), (Class::Other, raw.into()));
         // Not every io or russh error is a connection class.
         let err = os(

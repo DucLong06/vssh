@@ -103,6 +103,26 @@ vssh không dùng thư viện clipboard nào. Nó nhờ chính terminal đang ch
 - **SFTP:** `y` chép đường dẫn đầy đủ của file đang chọn.
 - **Terminal hỗ trợ:** hầu hết terminal hiện nay nhận OSC 52 (có cái hỏi trước hoặc cần bật). Trong tmux, vssh còn đưa văn bản cho chính tmux (`tmux load-buffer -w`), vì tmux bỏ qua OSC 52 của chương trình trừ khi `set-clipboard on`. `osc52 = false` tắt chuỗi thoát cho terminal in nó ra thay vì thực hiện; bộ đệm tmux vẫn được đặt.
 
+## Máy trung gian (jump host)
+
+`ProxyJump` và `ProxyCommand` trong `~/.ssh/config` được áp dụng cho mọi thứ vssh mở: phiên, SFTP, chuyển tiếp cổng, xem nhanh, chạy lệnh hàng loạt. vssh không có biểu mẫu cho hai mục này; hãy viết chúng vào file như khi dùng `ssh`.
+
+```
+Host bastion
+    HostName 203.0.113.1
+    User jump
+
+Host db-internal
+    HostName 10.0.0.5
+    ProxyJump bastion
+```
+
+- **`ProxyJump`** nhận một máy hoặc một chuỗi cách nhau bằng dấu phẩy, mỗi mục dạng `[user@]host[:port]`. Mỗi chặng được tra qua file cấu hình như mọi máy khác, nên có thể là một alias có `HostName`, `User`, `IdentityFile` riêng và cả `ProxyJump` riêng. Khoá máy chủ của từng chặng được kiểm tra với `known_hosts` y như máy đích.
+- **Các chặng chỉ đăng nhập bằng agent hoặc file khoá.** Mật khẩu trong kho chỉ dùng cho máy đích, không bao giờ dùng cho chặng trung gian.
+- **`ProxyCommand`** chạy lệnh ngay trên máy bạn, thay `%h`, `%p`, `%r` và `%%`, rồi nói chuyện SSH qua đầu vào và đầu ra của lệnh. Lệnh bị dừng khi kết nối kết thúc. Tên máy hay tên người dùng chứa ký tự nào ngoài chữ, số và `. _ - : @ [ ]` sẽ bị từ chối chứ không được đưa cho shell. Nếu một máy có cả hai, `ProxyJump` được dùng. `none` tắt mục tương ứng.
+- **Khi một chặng lỗi**, thông báo nêu rõ chặng đó và vị trí của nó trong chuỗi.
+- **Chưa hỗ trợ:** địa chỉ IPv6 trong ngoặc vuông và URI `ssh://` làm chặng (hãy tạo một khối `Host` cho chặng đó); và khi dừng con trỏ trên một máy cần máy trung gian hay lệnh proxy, vssh không hỏi số liệu của máy đó: hãy mở phiên hoặc nhấn `v`.
+
 ## Xem nhanh
 
 Nhấn `v` ở danh sách máy chủ để mở một cửa sổ nhỏ cho biết máy đó tự nói gì về mình: tên máy, hệ thống (`uname -srm`), thời gian đã chạy, ba chỉ số tải trung bình, CPU, bộ nhớ và đĩa gốc. Không mở shell nào: chỉ là một lệnh qua một kết nối ngắn, với cùng cách kiểm tra khoá máy chủ và đăng nhập như một phiên (agent, khoá, rồi mật khẩu trong kho).
@@ -122,6 +142,7 @@ vssh cho biết vì sao, không chỉ báo là thất bại. Một hộp thoại
 | `KHÔNG TỚI ĐƯỢC` Không tới được 203.0.113.7:22: … | không có đường đi; theo sau là nguyên văn lỗi của hệ thống |
 | `XÁC THỰC` Sai mật khẩu / Khoá công khai bị từ chối / Không có cách đăng nhập | máy chủ từ chối cách nào; sau đó bạn được hỏi mật khẩu |
 | `KHOÁ MÁY CHỦ` Khoá máy chủ … không khớp | dấu vân tay máy chủ gửi, và dòng trong `known_hosts` mà nó xung đột |
+| `MÁY TRUNG GIAN` Máy trung gian bastion:22 (hop 1 of 2) lỗi: … | chặng nào của chuỗi `ProxyJump` bị lỗi, và vì sao, theo cách diễn đạt của các dòng trên |
 | `LỖI` … | mọi lỗi khác, hiện nguyên văn |
 
 Snippet chạy trên nhiều máy và chuyển tiếp cổng báo lỗi bằng cùng cách diễn đạt.
@@ -261,7 +282,7 @@ Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hì
 
 ## Không hỗ trợ
 
-`ProxyJump` / `ProxyCommand`, `Include`, file khoá có mật khẩu bảo vệ (hãy dùng agent), keyboard-interactive / 2FA, chép thư mục qua SFTP, Telnet, serial, Zmodem, chuyển tiếp X11, chuột. Lý do nằm trong [docs/PLAN.md](docs/PLAN.md#not-planned).
+`Include`, file khoá có mật khẩu bảo vệ (hãy dùng agent), keyboard-interactive / 2FA, chép thư mục qua SFTP, Telnet, serial, Zmodem, chuyển tiếp X11, chuột. Lý do nằm trong [docs/PLAN.md](docs/PLAN.md#not-planned).
 
 ## Phát triển
 

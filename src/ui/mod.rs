@@ -963,6 +963,11 @@ impl App {
         let Ok(target) = Target::from_config(&self.sshc, &alias) else {
             return;
         };
+        // Nor through a jump host or a proxy command: that would log in to
+        // other machines, or run a local program, for a cursor movement.
+        if target.via != ssh::Via::Direct {
+            return;
+        }
         let tx = self.tx.clone();
         self.probe.1 = Some(tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(700)).await;

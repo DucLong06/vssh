@@ -660,8 +660,7 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     ]);
     for key in ["ProxyJump", "ProxyCommand"] {
         if !get(key).is_empty() {
-            let note = Span::styled("  not supported", Style::new().fg(th.error));
-            lines.push(row(key, vec![Span::raw(get(key)), note]));
+            lines.push(row(key, text(get(key))));
         }
     }
 
