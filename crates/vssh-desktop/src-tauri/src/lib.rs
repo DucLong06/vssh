@@ -7,6 +7,7 @@
 //! `tests/commands.rs` is where the two are held together.
 
 mod files;
+mod forwards;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -26,7 +27,7 @@ use vssh_core::sftp::{self, Entry};
 use vssh_core::ssh::{self, Target};
 use vssh_core::stats::Peek;
 use vssh_core::store::db::{Db, Snippet};
-use vssh_core::store::ssh_config::SshConfig;
+use vssh_core::store::ssh_config::{Forward, SshConfig};
 use vssh_core::store::{self, Host};
 use vssh_core::task::{self, Event};
 use zeroize::Zeroizing;
@@ -43,6 +44,9 @@ pub type Password = Option<Zeroizing<String>>;
 /// Hears how far a transfer is: bytes done, bytes in all.
 pub type Progress = Box<dyn Fn(u64, u64) + Send + Sync>;
 
+/// Called once a forward listens.
+pub type Ready = Box<dyn FnOnce() + Send>;
+
 /// The network, as far as the commands use it. The app's is [`Core`]; the
 /// contract tests put one in its place that answers from memory. Dropping
 /// an answer that has not come yet stops the work behind it.
@@ -58,6 +62,10 @@ pub trait Transport: Send + Sync + 'static {
         cmd: sftp::Cmd,
         progress: Progress,
     ) -> Answer<Vec<Entry>>;
+
+    /// One port forward, for as long as it holds: the answer is why it ended.
+    fn forward(&self, target: Target, password: Password, fwd: Forward, ready: Ready)
+        -> Answer<()>;
 }
 
 /// The real network: `vssh_core::task`, on Tauri's own tokio runtime.
@@ -89,6 +97,19 @@ impl Transport for Core {
             Ok(sftp::once(&h, cmd, progress).await?)
         })
     }
+
+    fn forward(
+        &self,
+        target: Target,
+        password: Password,
+        fwd: Forward,
+        ready: Ready,
+    ) -> Answer<()> {
+        Box::pin(async move {
+            let password = password.as_ref().map(|p| p.as_str());
+            Ok(ssh::forward::run(&target, password, fwd, ready).await?)
+        })
+    }
 }
 
 /// What the commands work on: where the user's hosts are, and the network.
@@ -99,6 +120,10 @@ pub struct Backend {
     sessions: AtomicU64,
     /// Transfers under way, by the id the window gave them: how to stop each.
     transfers: Mutex<HashMap<String, oneshot::Sender<()>>>,
+    /// Forwards that were started and have not ended, by host and line.
+    forwards: Mutex<HashMap<String, forwards::Running>>,
+    /// Numbers what runs in the background.
+    jobs: AtomicU64,
 }
 
 impl Backend {
@@ -109,6 +134,8 @@ impl Backend {
             net: Box::new(net),
             sessions: AtomicU64::new(0),
             transfers: Mutex::default(),
+            forwards: Mutex::default(),
+            jobs: AtomicU64::new(0),
         }
     }
 
@@ -134,13 +161,23 @@ impl Backend {
         Ok(store::hosts(&sshc, &db.metas()?))
     }
 
-    /// A host of the config, resolved the way `ssh alias` would. Only those:
-    /// the window cannot make the app connect to a name it made up.
-    fn target(&self, alias: &str) -> Result<Target> {
+    /// The config, for work on one of its hosts. Only those: the window
+    /// cannot make the app act on a name it made up.
+    fn config_of(&self, alias: &str) -> Result<SshConfig> {
         let sshc = self.ssh_config()?;
         let known = sshc.hosts().iter().any(|host| host == alias);
         ensure!(known, "no host named {alias:?}");
-        Target::from_config(&sshc, alias)
+        Ok(sshc)
+    }
+
+    fn save(&self, sshc: &SshConfig) -> Result<()> {
+        sshc.save(&self.ssh_config)
+            .with_context(|| format!("cannot write {}", self.ssh_config.display()))
+    }
+
+    /// A host of the config, resolved the way `ssh alias` would.
+    fn target(&self, alias: &str) -> Result<Target> {
+        Target::from_config(&self.config_of(alias)?, alias)
     }
 
     /// How to log in to a host of the config: where it is, and its password
@@ -212,7 +249,11 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             files::sftp_rename,
             files::sftp_upload,
             files::sftp_download,
-            files::sftp_cancel
+            files::sftp_cancel,
+            forwards::forwards_list,
+            forwards::forward_add,
+            forwards::forward_toggle,
+            forwards::forward_kill
         ])
 }
 

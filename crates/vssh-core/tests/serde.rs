@@ -163,6 +163,13 @@ fn every_error_class_has_its_name_and_its_fields_in_json() {
             }),
         ),
         (
+            Fail::PortInUse {
+                addr: "127.0.0.1:8080".into(),
+            },
+            "port_in_use",
+            json!({ "kind": "port_in_use", "addr": "127.0.0.1:8080" }),
+        ),
+        (
             Fail::Jump {
                 hop: "bastion (hop 1 of 2)".into(),
                 cause: Some(Box::new(refused)),

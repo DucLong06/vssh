@@ -321,6 +321,7 @@ pub const FORWARD_KEYS: [(char, &str); 3] = [
 ];
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Forward {
     /// `L`, `R` or `D`.
     pub kind: char,

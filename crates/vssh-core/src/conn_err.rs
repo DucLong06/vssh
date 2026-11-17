@@ -48,6 +48,10 @@ pub enum Fail {
         line: usize,
         file: PathBuf,
     },
+    /// A forward could not listen: something else already does, at `addr`.
+    PortInUse {
+        addr: String,
+    },
     /// A hop of a `ProxyJump` chain failed; `cause` is why, if it is known.
     Jump {
         hop: String,
@@ -75,6 +79,7 @@ impl fmt::Display for Fail {
                  on line {line} of {}. Refusing to connect; fix that file if the key really changed",
                 file.display()
             ),
+            Self::PortInUse { addr } => write!(f, "{addr} is already in use"),
             Self::Jump { hop, .. } => write!(f, "jump host {hop} failed"),
         }
     }
@@ -95,6 +100,7 @@ pub enum Class {
     Unreachable,
     Auth,
     HostKey,
+    PortInUse,
     Jump,
     /// Not one of the above: shown verbatim.
     Other,
@@ -109,6 +115,7 @@ impl Class {
             Self::Unreachable => lang.pick("UNREACHABLE", "KHÔNG TỚI ĐƯỢC"),
             Self::Auth => lang.pick("AUTH", "XÁC THỰC"),
             Self::HostKey => lang.pick("HOST KEY", "KHOÁ MÁY CHỦ"),
+            Self::PortInUse => lang.pick("PORT IN USE", "CỔNG ĐANG BẬN"),
             Self::Jump => lang.pick("JUMP HOST", "MÁY TRUNG GIAN"),
             Self::Other => lang.pick("ERROR", "LỖI"),
         }
@@ -124,6 +131,7 @@ impl Fail {
             Self::Unreachable { .. } => Class::Unreachable,
             Self::Auth { .. } => Class::Auth,
             Self::HostKey { .. } => Class::HostKey,
+            Self::PortInUse { .. } => Class::PortInUse,
             Self::Jump { .. } => Class::Jump,
         }
     }
@@ -183,6 +191,10 @@ impl Fail {
                     "Khoá máy chủ của {host} không khớp: máy chủ gửi {fingerprint}, nhưng dòng {line} của {} là khoá khác",
                     file.display()
                 ),
+            ),
+            Self::PortInUse { addr } => t(
+                format!("Port {addr} is already in use — stop what listens there, or pick another port"),
+                format!("Cổng {addr} đang có chương trình khác dùng — dừng nó, hoặc chọn cổng khác"),
             ),
             Self::Jump { hop, cause } => {
                 let why = match cause {
@@ -354,6 +366,22 @@ mod tests {
         .context(Fail::Unreachable { addr });
         let unreachable = "Cannot reach 203.0.113.7:22: Network is unreachable (os error 101)";
         assert_eq!(en(&err), (Class::Unreachable, unreachable.into()));
+    }
+
+    #[test]
+    fn a_taken_port_is_its_own_class() {
+        let taken = os(ErrorKind::AddrInUse, "Address already in use (os error 98)");
+        let err = taken.context(Fail::PortInUse {
+            addr: "127.0.0.1:8080".into(),
+        });
+        let message =
+            "Port 127.0.0.1:8080 is already in use — stop what listens there, or pick another port";
+        assert_eq!(en(&err), (Class::PortInUse, message.into()));
+        assert_eq!(
+            classify(&err, Lang::En).chain,
+            "127.0.0.1:8080 is already in use: Address already in use (os error 98)"
+        );
+        assert_eq!(Class::PortInUse.label(Lang::Vi), "CỔNG ĐANG BẬN");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Port forwarding: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`).
 
+use std::io::ErrorKind;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,12 +12,25 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 use super::{connect, Client, Target};
+use crate::conn_err::Fail;
 use crate::store::ssh_config::Forward;
 
 async fn closed(h: &Handle<Client>) {
     while !h.is_closed() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
+}
+
+/// Opens the local end of a forward. A port something else listens on is
+/// `Fail::PortInUse`: the one failure here a person can do something about.
+async fn listen(bind: &str, port: u16) -> Result<TcpListener> {
+    let addr = format!("{bind}:{port}");
+    TcpListener::bind((bind, port))
+        .await
+        .map_err(|e| match e.kind() {
+            ErrorKind::AddrInUse => anyhow::Error::new(e).context(Fail::PortInUse { addr }),
+            _ => anyhow::Error::new(e).context(format!("cannot listen on {addr}")),
+        })
 }
 
 /// Runs one forward until the connection drops; dropping the future stops it
@@ -39,9 +53,7 @@ pub async fn run(
         bail!("connection closed");
     }
     let h = Arc::new(connect(t, password, None).await?);
-    let listener = TcpListener::bind((f.bind.as_str(), f.port))
-        .await
-        .with_context(|| format!("cannot listen on {}:{}", f.bind, f.port))?;
+    let listener = listen(&f.bind, f.port).await?;
     ready();
     // Owns the per-connection tasks, so they die with this future.
     let mut conns = JoinSet::new();
@@ -136,6 +148,26 @@ mod tests {
         let mut reply = Vec::new();
         client.read_to_end(&mut reply).await.unwrap();
         (res, reply)
+    }
+
+    #[tokio::test]
+    async fn a_port_that_is_taken_is_reported_as_such() {
+        let holder = listen("127.0.0.1", 0).await.unwrap();
+        let port = holder.local_addr().unwrap().port();
+        let err = listen("127.0.0.1", port).await.unwrap_err();
+        assert_eq!(
+            err.downcast_ref::<Fail>(),
+            Some(&Fail::PortInUse {
+                addr: format!("127.0.0.1:{port}")
+            })
+        );
+        // Any other reason keeps its own words and gets no class.
+        let err = listen("not an address", port).await.unwrap_err();
+        assert_eq!(err.downcast_ref::<Fail>(), None);
+        assert_eq!(
+            err.to_string(),
+            format!("cannot listen on not an address:{port}")
+        );
     }
 
     #[tokio::test]

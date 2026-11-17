@@ -20,11 +20,14 @@ use vssh_core::sftp::{Cmd, Entry};
 use vssh_core::ssh::Target;
 use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
+use vssh_core::store::ssh_config::Forward;
 use vssh_core::store::Host;
-use vssh_desktop::{builder, Answer, Backend, Password, Progress, Transport};
+use vssh_desktop::{builder, Answer, Backend, Password, Progress, Ready, Transport};
 
 #[path = "commands/files.rs"]
 mod files;
+#[path = "commands/forwards.rs"]
+mod forwards;
 
 const SSH_CONFIG: &str = "\
 Host web-01
@@ -49,8 +52,11 @@ struct Fake {
     steps: Vec<(u64, u64)>,
     /// While set, a transfer reports its steps and then never ends.
     stall: Arc<AtomicBool>,
-    /// A stalled transfer was dropped: it stopped where it was.
+    /// A stalled transfer or a running forward was dropped: it stopped
+    /// where it was.
     dropped: Arc<AtomicBool>,
+    /// Why a forward ends before it listens; `None` = it listens for good.
+    forward: Arc<Mutex<Option<ConnError>>>,
 }
 
 /// Says so when it is dropped.
@@ -75,6 +81,7 @@ impl Fake {
             steps: vec![],
             stall: Arc::default(),
             dropped: Arc::default(),
+            forward: Arc::default(),
         }
     }
 
@@ -114,6 +121,20 @@ impl Transport for Fake {
                 std::future::pending::<()>().await;
             }
             fake.files
+        })
+    }
+
+    fn forward(&self, target: Target, _: Password, fwd: Forward, ready: Ready) -> Answer<()> {
+        let line = format!("{} forward {} {}", at(&target), fwd.kind, fwd.value());
+        self.asked.lock().unwrap().push(line);
+        let fake = self.clone();
+        Box::pin(async move {
+            if let Some(why) = fake.forward.lock().unwrap().clone() {
+                return Err(why);
+            }
+            ready();
+            let _stopped = Flag(fake.dropped);
+            std::future::pending().await
         })
     }
 }
@@ -174,6 +195,18 @@ fn listen(app: &tauri::App<MockRuntime>, event: &str) -> mpsc::Receiver<Value> {
 /// The next event, which must come.
 fn next(events: &mpsc::Receiver<Value>) -> Value {
     events.recv_timeout(Duration::from_secs(5)).unwrap()
+}
+
+/// Waits for what the runtime does in its own time, such as dropping work
+/// that was stopped.
+fn until(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("never happened: {what}");
 }
 
 /// The shape of an error that is not a connection failure.
@@ -436,7 +469,11 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
     let answer = block_on(vssh_desktop::Core.peek("closed".into(), target.clone(), None));
     assert_eq!(fail(answer.unwrap_err()), refused);
     let list = Cmd::List(".".into());
-    let answer = block_on(vssh_desktop::Core.sftp(target, None, list, Box::new(|_, _| {})));
+    let quiet = Box::new(|_, _| {});
+    let answer = block_on(vssh_desktop::Core.sftp(target.clone(), None, list, quiet));
+    assert_eq!(fail(answer.unwrap_err()), refused);
+    let fwd = Forward::parse('D', "1080").unwrap();
+    let answer = block_on(vssh_desktop::Core.forward(target, None, fwd, Box::new(|| {})));
     assert_eq!(fail(answer.unwrap_err()), refused);
 }
 
