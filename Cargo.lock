@@ -3140,6 +3140,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "vssh-core"
+version = "0.1.2"
+
+[[package]]
 name = "vt100"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
