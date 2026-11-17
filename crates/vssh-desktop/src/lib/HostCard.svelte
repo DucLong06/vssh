@@ -32,7 +32,7 @@
   {...rest}
   aria-label={host.alias}
   data-state={kind}
-  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red data-[state=down]:border-red/50 {extra}"
+  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red {extra}"
 >
   {#if onconnect}
     <!-- Over the address, and only when the card is pointed at or has the
@@ -46,9 +46,11 @@
     </button>
   {/if}
   <header class="flex items-center gap-1.5">
+    <!-- Whether the host answers, and nothing else: one that is overloaded
+         says so in its figures and its border. -->
     <span
       aria-hidden="true"
-      class={kind === 'down' || kind === 'crit' ? 'text-red' : kind === 'ok' || reached ? 'text-green' : 'text-dim'}
+      class={kind === 'down' ? 'text-red' : info?.peek || reached ? 'text-green' : 'text-dim'}
     >
       {kind === 'asking' || (kind === 'unchecked' && !reached) ? '○' : '●'}
     </span>

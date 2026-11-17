@@ -20,6 +20,7 @@ const stats = (cpu: number | null, mem: [number, number] | null, disk: number | 
   peek: { ...peek, stats: { cpu, mem, disk } },
 })
 const meter = (name: string) => screen.getByRole('meter', { name })
+const dot = (el: HTMLElement) => el.querySelector('header [aria-hidden]')
 
 test('a healthy host: name, address, tags, latency and three bars', () => {
   const el = card({ ms: 12, peek })
@@ -54,6 +55,8 @@ test('CPU at 100%: a full red bar and a sick card; past 100 the bar stays in its
   expect(meter('CPU').firstElementChild).toHaveStyle({ width: '100%' })
   expect(meter('MEM')).toHaveAttribute('data-level', 'crit')
   expect(el).toHaveAttribute('data-state', 'crit')
+  // Overloaded is not down: it answers, so its dot is as green as a healthy host's.
+  expect(dot(el)).toHaveClass('text-green')
 
   render(HostCard, { host: bare, info: stats(250, null, null) })
   const queue = screen.getByRole('article', { name: 'bare' })
@@ -86,6 +89,7 @@ test.each(errors.map((error, i) => [error.class, error, shown.en[i]] as const))(
   (_, error, words) => {
     const el = card({ ms: null, error: error as ConnError, shown: words as Shown })
     expect(el).toHaveAttribute('data-state', 'down')
+    expect(dot(el)).toHaveClass('text-red')
     const why = within(el).getByText(words.message)
     expect(why.parentElement).toHaveTextContent(`✗ ${words.label} ${words.message}`)
     expect(why.parentElement).toHaveAttribute('title', words.chain)
