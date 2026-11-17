@@ -344,7 +344,8 @@ test('the right button opens a menu: a new folder, and for an entry a copy, anot
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('menu')).toBeNull()
   await rightClick(user, await row('web-01', 'auth.log'))
-  expect(items()).toEqual(['Copy', 'New folder', 'Rename', 'Delete'])
+  // Copy has a key, and the menu says which.
+  expect(items()).toEqual(['Copy C', 'New folder', 'Rename', 'Delete'])
   // Under the pointer's empty space: only what needs no entry.
   await rightClick(user, screen.getByRole('region', { name: 'local' }))
   expect(items()).toEqual(['New folder'])
@@ -487,7 +488,7 @@ test('the view in Vietnamese: Tải lên, Tải xuống, Sao chép, Huỷ', asyn
   await user.keyboard('jjc')
   expect(within(screen.getByRole('list', { name: 'Truyền tệp' })).getByRole('button', { name: 'Huỷ notes.txt' })).toHaveTextContent('Huỷ')
   await rightClick(user, await row('máy mình', 'notes.txt'))
-  expect(items()).toEqual(['Sao chép', 'Tạo thư mục', 'Đổi tên', 'Xoá'])
+  expect(items()).toEqual(['Sao chép C', 'Tạo thư mục', 'Đổi tên', 'Xoá'])
   await user.click(within(menu()).getByRole('menuitem', { name: 'Xoá' }))
   expect(dialog()).toHaveTextContent('Xoá notes.txt?')
 })

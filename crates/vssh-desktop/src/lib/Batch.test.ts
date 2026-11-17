@@ -181,6 +181,25 @@ test('once a command runs the answers have the keys: j and k scroll them, / filt
   expect(line()).toHaveValue('uptime')
 })
 
+test('the foot has buttons, not a row of keys: Filter for the pointer, with the keys in its tooltip; Ctrl+F is / from the command line too', async () => {
+  const { user } = shell()
+  const foot = screen.getByRole('contentinfo')
+  expect(foot.querySelector('kbd')).toBeNull()
+  expect(within(foot).getAllByRole('button').map((button) => button.title)).toEqual(['Filter (/, Ctrl+F)', 'Copy all (Y)'])
+  expect(screen.queryByRole('searchbox')).toBeNull()
+  await user.click(within(foot).getByRole('button', { name: 'Filter' }))
+  const filter = await screen.findByRole('searchbox', { name: 'Filter' })
+  await vi.waitFor(() => expect(filter).toHaveFocus())
+  // No slash in the field, as a terminal's prompt has: the word alone.
+  expect(filter).toHaveAttribute('placeholder', 'Filter')
+  expect(within(foot).getByRole('button', { name: 'Filter' })).toHaveAttribute('aria-pressed', 'true')
+  // In the command line an f is a letter, and Ctrl+F is the filter.
+  await user.click(line())
+  await user.keyboard('f{Control>}f{/Control}')
+  expect(line()).toHaveValue('f')
+  await vi.waitFor(() => expect(filter).toHaveFocus())
+})
+
 test('a host\'s name has the colour of its tag, as its group has on the dashboard', () => {
   shell()
   const name = (host: string) => within(row(host)).getByText(host)

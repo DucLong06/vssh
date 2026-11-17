@@ -11,6 +11,7 @@
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
   import { eta, human, join } from './paths'
+  import { KEY, tip } from './keymap'
 
   type Props = {
     /** The host of the ssh config whose files are on the right. */
@@ -336,7 +337,7 @@
         <button
           type="button"
           aria-label={t('upload')}
-          title={t('upload')}
+          title={tip(t('upload'), KEY.copy)}
           onclick={() => copy(chosen('local', views.local?.current()))}
           class={arrow}
         >
@@ -345,7 +346,7 @@
         <button
           type="button"
           aria-label={t('download')}
-          title={t('download')}
+          title={tip(t('download'), KEY.copy)}
           onclick={() => copy(chosen('remote', views.remote?.current()))}
           class={arrow}
         >
@@ -456,6 +457,7 @@
       <li role="none">
         <button type="button" role="menuitem" onclick={() => pick((side, entry) => copy([side, [entry.name]]))} class={item}>
           {t('copy')}
+          <kbd aria-hidden="true" class="float-right">{KEY.copy[0]}</kbd>
         </button>
       </li>
     {/if}

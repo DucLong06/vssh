@@ -23,6 +23,7 @@
   import { down, live, poll, relabel, up } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
+  import Shortcuts from './lib/Shortcuts.svelte'
   import Sidebar, { type Nav } from './lib/Sidebar.svelte'
   import Batch from './lib/Batch.svelte'
   import Snippets from './lib/Snippets.svelte'
@@ -62,7 +63,7 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys'
+  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
   let modal = $state<Dialog | null>(null)
   /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
@@ -138,6 +139,8 @@
   /** The tabs in order: the dashboard, the sessions, the file views. */
   const tabs = $derived<(number | null)[]>([null, ...[...sessions, ...files].map((tab) => tab.id)])
   const front = $derived(sessions.find((session) => session.id === active))
+  /** The view in front, as the rail names it. */
+  const current = $derived(active === null ? 'dashboard' : front ? 'sessions' : 'files')
   /** What a session is called on screen: a host's alias, or what a quick connect was typed as, which is an address. */
   const named = (title: string) => (hosts.some((host) => host.alias === title) ? title : target(title))
   const listed = $derived(streamer.on ? sessions.map((session) => ({ ...session, title: named(session.title) })) : sessions)
@@ -198,6 +201,8 @@
       // Every tab at once, as the TUI's broadcast; off again if all are on.
       const on = sessions.some((session) => !session.broadcast)
       for (const session of sessions) session.broadcast = on
+    } else if (e.key === '?') {
+      modal = 'shortcuts'
     }
   }
 
@@ -206,6 +211,7 @@
     // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
     if (modal !== null || failure !== null) return
     const ctrl = e.ctrlKey || e.metaKey
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     const mine = () => {
       e.preventDefault()
       e.stopPropagation()
@@ -225,6 +231,19 @@
     } else if (ctrl && e.key === 'w' && active !== null) {
       mine()
       close(active)
+    } else if (e.ctrlKey && e.key === 'Tab') {
+      // No shell is sent this one: it is the window's in a terminal too.
+      mine()
+      step(e.shiftKey ? -1 : 1)
+    } else if (front) {
+      // The rest are a shell's own keys (Ctrl-F pages in less, F1 is htop's
+      // help): from a terminal the cheatsheet is Ctrl-A ?, a new tab the palette.
+    } else if (ctrl && e.key === 't') {
+      mine()
+      modal = 'quick'
+    } else if (e.key === 'F1' || (ctrl && e.key === '/') || (e.key === '?' && !typing)) {
+      mine()
+      modal = 'shortcuts'
     }
   }
 
@@ -349,14 +368,14 @@
     onsession={(id) => (active = id)}
     {vault}
     onvault={() => (modal = 'vault')}
-    current={active === null ? 'dashboard' : front ? 'sessions' : 'files'}
+    {current}
     snippets={snippets.length}
     onnav={go}
   />
 
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
   <main class="flex min-h-0 min-w-0 flex-col bg-page">
-    <Topbar {...head} onpalette={() => (modal = 'palette')} />
+    <Topbar {...head} onpalette={() => (modal = 'palette')} onshortcuts={() => (modal = 'shortcuts')} />
     <!-- A terminal or a file view is one frame with the tabs for its head; the dashboard is the page itself. -->
     <div
       data-framed={active !== null || undefined}
@@ -421,9 +440,7 @@
     hosts={hosts.length}
     snippets={snippets.length}
     sessions={sessions.length}
-    selected={hosts.find((host) => host.alias === selected)}
-    terminal={front !== undefined}
-    files={active !== null && !front}
+    selected={active === null ? hosts.find((host) => host.alias === selected) : undefined}
     broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
     onsnippets={() => (modal = 'snippets')}
@@ -458,8 +475,11 @@
     onsnippets={() => (modal = 'snippets')}
     onadd={() => edit()}
     onvault={() => (modal = 'vault')}
+    onshortcuts={() => (modal = 'shortcuts')}
     onclose={() => (modal = null)}
   />
+{:else if modal === 'shortcuts'}
+  <Shortcuts view={current} onclose={() => (modal = null)} />
 {:else if modal === 'host'}
   <!-- Keyed: the form of another host is another form. -->
   {#key editing}

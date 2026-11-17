@@ -129,3 +129,22 @@ test('the vault and a new host are actions too, where the window has them', asyn
   setLang('vi')
   expect(await screen.findByRole('option', { name: /Thêm máy chủ/ })).toBeInTheDocument()
 })
+
+test('an action shows its own key as a key cap, and the cheatsheet is an action; the foot names the keys as a keyboard has them', async () => {
+  const { user, input, onshortcuts } = open({ onadd: vi.fn(), onshortcuts: vi.fn() })
+  const caps = (name: RegExp) => [...screen.getByRole('option', { name }).querySelectorAll('kbd')].map((key) => key.textContent)
+  expect(caps(/Quick connect/)).toEqual(['Ctrl+T'])
+  expect(caps(/Snippets/)).toEqual(['S'])
+  expect(caps(/Add host/)).toEqual(['A'])
+  expect(caps(/Keyboard shortcuts/)).toEqual(['?', 'F1', 'Ctrl+/'])
+  // A host has no key of its own.
+  expect(caps(/db-primary/)).toEqual([])
+  expect(screen.getByRole('contentinfo')).toHaveTextContent('↑ ↓ Enter select Esc close')
+  await user.type(input, 'keyb{Enter}')
+  expect(onshortcuts).toHaveBeenCalledOnce()
+  setLang('vi')
+  await user.clear(input)
+  await user.type(input, 'phim tat')
+  expect(chosen()).toHaveTextContent('Phím tắt')
+  setLang('en')
+})

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { i18n, setLang, t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import { KEY, tip } from './keymap'
   import { setStreamer, streamer } from './streamer.svelte'
 
   // The head of every view: what is in front, the way to the palette, and
@@ -12,8 +13,10 @@
     /** The title is an address or a host's name: letter by letter. */
     mono?: boolean
     onpalette: () => void
+    /** The cheatsheet: every key the window has. */
+    onshortcuts?: () => void
   }
-  let { title, sub = '', mono = false, onpalette }: Props = $props()
+  let { title, sub = '', mono = false, onpalette, onshortcuts }: Props = $props()
 
   const half = 'rounded-md px-2.5 py-0.5 text-xs font-semibold'
 </script>
@@ -35,8 +38,21 @@
   >
     <Icon name="search" />
     <span class="min-w-0 flex-1 truncate">{t('search')}</span>
-    <kbd>Ctrl-K</kbd>
+    <kbd>{KEY.palette[0]}</kbd>
   </button>
+  {#if onshortcuts}
+    <!-- Where a person finds out that there are keys at all. -->
+    <button
+      type="button"
+      onclick={onshortcuts}
+      aria-label={t('shortcuts')}
+      aria-keyshortcuts="? F1 Control+/"
+      title={tip(t('shortcuts'), KEY.shortcuts)}
+      class="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full border border-edge text-white hover:bg-selection hover:text-fg"
+    >
+      <Icon name="keys" />
+    </button>
+  {/if}
   <!-- One button, drawn as the pair it chooses between. -->
   <button
     type="button"

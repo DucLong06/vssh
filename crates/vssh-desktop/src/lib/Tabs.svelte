@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
   import SessionDot from './SessionDot.svelte'
+  import { capital, KEY, tip } from './keymap'
 
   export type Tab = {
     id: number
@@ -29,6 +30,10 @@
   const tab = 'flex h-full cursor-pointer items-center gap-2 rounded-[9px] pl-3.5'
   const cross = 'mx-1 cursor-pointer rounded-md px-1.5 text-dim hover:bg-selection hover:text-fg'
   const digit = 'font-mono text-xs text-magenta'
+  /** A tab's number is its key after the leader. */
+  const chord = (title: string, n: number) => (n < 10 ? tip(title, [`${KEY.leader[0]} ${n}`]) : title)
+  /** Ctrl-W closes the tab in front, and no other. */
+  const shut = (id: number) => (id === active ? tip(capital(t('close')), KEY.closeTab) : undefined)
 </script>
 
 <div
@@ -37,7 +42,7 @@
   class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-edge bg-panel px-2.5 py-2"
 >
   <span class={pill}>
-    <button type="button" role="tab" aria-selected={active === null} onclick={() => onpick(null)} class="{tab} pr-3.5">
+    <button type="button" role="tab" aria-selected={active === null} title={chord(t('hosts'), 0)} onclick={() => onpick(null)} class="{tab} pr-3.5">
       <span class={digit}>0</span>
       {t('hosts')}
     </button>
@@ -48,6 +53,7 @@
         type="button"
         role="tab"
         aria-selected={session.id === active}
+        title={chord(session.title, at + 1)}
         onclick={() => onpick(session.id)}
         class="{tab} pr-1"
       >
@@ -62,6 +68,7 @@
       <button
         type="button"
         aria-label="{t('close')} {session.title}"
+        title={shut(session.id)}
         onclick={() => onclose(session.id)}
         class={cross}
       >
@@ -75,6 +82,7 @@
         type="button"
         role="tab"
         aria-selected={view.id === active}
+        title={chord(`${t('files')} ${view.host}`, sessions.length + at + 1)}
         onclick={() => onpick(view.id)}
         class="{tab} pr-1"
       >
@@ -82,7 +90,7 @@
         <span class="text-cyan">{t('files')}</span>
         {view.host}
       </button>
-      <button type="button" aria-label="{t('close')} {t('files')} {view.host}" onclick={() => onclose(view.id)} class={cross}>
+      <button type="button" aria-label="{t('close')} {t('files')} {view.host}" title={shut(view.id)} onclick={() => onclose(view.id)} class={cross}>
         ×
       </button>
     </span>

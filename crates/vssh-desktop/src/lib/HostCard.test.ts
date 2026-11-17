@@ -194,3 +194,22 @@ test('the address is in the monospace face, the name is not', () => {
   expect(within(el).getByText('deploy@10.0.0.5:2222')).toHaveClass('font-mono')
   expect(within(el).getByRole('heading', { name: 'web-01' })).not.toHaveClass('font-mono')
 })
+
+test('a button says its key in its tooltip; a host nobody asked has a button for its quick peek, not a letter in a sentence', async () => {
+  const onpeek = vi.fn()
+  render(HostCard, { host: web01, info: { ms: 0, peek: null }, onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), onpeek })
+  const el = screen.getByRole('article', { name: 'web-01' })
+  expect(el.querySelector('kbd')).toBeNull()
+  expect(within(el).getAllByRole('button').map((button) => button.title)).toEqual([
+    'Edit (E)',
+    'Forwards (L)',
+    'Files (F)',
+    'Quick peek (V)',
+    'Connect (Enter)',
+  ])
+  await userEvent.click(within(el).getByRole('button', { name: 'Quick peek' }))
+  expect(onpeek).toHaveBeenCalledOnce()
+  setLang('vi')
+  expect(await within(el).findByRole('button', { name: 'Xem nhanh' })).toHaveAttribute('title', 'Xem nhanh (V)')
+  setLang('en')
+})

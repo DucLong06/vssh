@@ -17,7 +17,7 @@ test('the head of a view: its name as the heading, a line about it, and the way 
   expect(screen.getByRole('heading', { level: 1, name: 'Status' })).toHaveClass('text-2xl', 'font-semibold')
   expect(screen.getByRole('banner')).toHaveTextContent('4 Hosts · 3 reachable · 1 down')
   const search = screen.getByRole('button', { name: 'Command palette' })
-  expect(search).toHaveTextContent('Search hosts and actions Ctrl-K')
+  expect(search).toHaveTextContent('Search hosts and actions Ctrl+K')
   await user.click(search)
   expect(onpalette).toHaveBeenCalledOnce()
 })
@@ -48,4 +48,16 @@ test('streamer mode is switched here, and says whether it is on', async () => {
 test('a host or an address for a title is in the monospace face', () => {
   render(Topbar, { title: 'deploy@10.0.0.9', mono: true, onpalette: vi.fn() })
   expect(screen.getByRole('heading', { name: 'deploy@10.0.0.9' })).toHaveClass('font-mono')
+})
+
+test('the keyboard in the top bar is the way to the cheatsheet; its tooltip names the keys for it', async () => {
+  const user = userEvent.setup()
+  const onshortcuts = vi.fn()
+  render(Topbar, { title: 'Status', onpalette: vi.fn(), onshortcuts })
+  const keyboard = screen.getByRole('button', { name: 'Keyboard shortcuts' })
+  expect(keyboard).toHaveAttribute('title', 'Keyboard shortcuts (?, F1, Ctrl+/)')
+  await user.click(keyboard)
+  expect(onshortcuts).toHaveBeenCalledOnce()
+  setLang('vi')
+  expect(await screen.findByRole('button', { name: 'Phím tắt' })).toHaveAttribute('title', 'Phím tắt (?, F1, Ctrl+/)')
 })

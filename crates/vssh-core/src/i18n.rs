@@ -76,7 +76,7 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("refresh", "refresh", "làm mới"),
     ("try_again", "try again", "thử lại"),
     ("secs_ago", "{n}s ago", "{n} giây trước"),
-    // The terminal tabs. The leader's keys are the TUI's.
+    // The terminal tabs.
     ("connecting", "connecting", "đang kết nối"),
     ("connected", "connected", "đã kết nối"),
     ("disconnected", "disconnected", "mất kết nối"),
@@ -96,11 +96,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("accept_once", "Accept once", "Chấp nhận một lần"),
     ("trust", "Trust", "Tin cậy"),
-    (
-        "leader_menu",
-        "0-9 tab · Tab next · y copy output · b broadcast · x close",
-        "0-9 tab · Tab kế tiếp · y chép kết quả · b phát · x đóng",
-    ),
     // The file view. The panes are named as the TUI names them.
     ("files", "Files", "Tệp"),
     ("local", "local", "máy mình"),
@@ -131,12 +126,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("transfers", "Transfers", "Truyền tệp"),
     ("waiting", "waiting", "đang chờ"),
-    // The end of the file view's hint; its keys are words of the rows above.
-    (
-        "right_click_more",
-        "right-click more",
-        "chuột phải thao tác khác",
-    ),
     // `{done}` and `{total}` are sizes, `{name}` whose side the part is on.
     (
         "cancelled_left",
@@ -332,6 +321,69 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Từ giờ {name} đăng nhập bằng khoá.",
     ),
     ("start", "Start", "Bắt đầu"),
+    // The keys: the cheatsheet's own words, and what a key does where no
+    // button says it. The names of keys are the same in both languages.
+    ("shortcuts", "Keyboard shortcuts", "Phím tắt"),
+    ("search_shortcuts", "Search shortcuts", "Tìm phím tắt"),
+    (
+        "no_shortcut",
+        "No shortcut matches.",
+        "Không có phím tắt nào khớp.",
+    ),
+    ("keys_anywhere", "Anywhere", "Mọi nơi"),
+    (
+        "keys_session",
+        "In a session, after Ctrl+A",
+        "Trong phiên, sau Ctrl+A",
+    ),
+    ("keys_results", "Command results", "Kết quả lệnh"),
+    // In the status bar while Ctrl+A waits for its key.
+    (
+        "leader_waiting",
+        "waiting for the second key — ? lists them",
+        "đang chờ phím thứ hai — bấm ? để xem danh sách",
+    ),
+    (
+        "new_tab",
+        "New tab: quick connect",
+        "Tab mới: kết nối nhanh",
+    ),
+    ("close_tab", "Close tab", "Đóng tab"),
+    ("next_tab", "Next tab", "Tab kế tiếp"),
+    ("prev_tab", "Previous tab", "Tab trước"),
+    ("go_to_tab", "Go to tab", "Tới tab số"),
+    ("back_to_hosts", "Back to the hosts", "Về bảng máy chủ"),
+    (
+        "copy_output",
+        "Copy the last command's output",
+        "Chép kết quả lệnh vừa chạy",
+    ),
+    (
+        "broadcast_tab",
+        "Broadcast on this tab, on or off",
+        "Bật hoặc tắt phát ở tab này",
+    ),
+    (
+        "broadcast_all",
+        "Broadcast on every tab, on or off",
+        "Bật hoặc tắt phát ở mọi tab",
+    ),
+    (
+        "send_to_shell",
+        "Send Ctrl+A to the shell (Ctrl+W and Ctrl+K too)",
+        "Gửi Ctrl+A cho shell (cả Ctrl+W và Ctrl+K)",
+    ),
+    (
+        "run_command",
+        "Run a command on the selected hosts",
+        "Chạy lệnh trên các máy đã chọn",
+    ),
+    ("reorder", "Move the host among the others", "Đổi chỗ máy chủ"),
+    ("move", "Move up and down", "Lên, xuống"),
+    ("first_last", "First, last", "Đầu, cuối"),
+    ("open_folder", "Open folder", "Mở thư mục"),
+    ("parent_folder", "Parent folder", "Thư mục cha"),
+    ("right_click", "Right-click", "Chuột phải"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

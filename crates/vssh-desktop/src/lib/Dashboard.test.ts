@@ -377,3 +377,20 @@ test('Try again on a card that is down asks its host, as a person asking', async
   await vi.waitFor(() => expect(screen.getByRole('article', { name: 'web-02' })).toHaveAttribute('data-state', 'ok'))
   clearMocks()
 })
+
+test('a host nobody asked: its card\'s Quick peek button asks it, as v does; the toolbar\'s buttons name their keys', async () => {
+  const asked: unknown[] = []
+  mockIPC((cmd, args) => {
+    asked.push([cmd, args])
+    return null
+  })
+  live.bare = { peek: null }
+  const user = userEvent.setup()
+  render(Dashboard, props({ onadd: vi.fn(), onbatch: vi.fn() }))
+  await user.click(within(screen.getByRole('article', { name: 'bare' })).getByRole('button', { name: 'Quick peek' }))
+  expect(screen.getByRole('dialog', { name: 'Quick peek: bare' })).toBeInTheDocument()
+  expect(asked).toEqual([['get_host_stats', { alias: 'bare', passive: false }]])
+  expect(screen.getByRole('button', { name: 'Add host' })).toHaveAttribute('title', 'Add host (A)')
+  expect(screen.getByRole('searchbox')).toHaveAttribute('title', 'Search hosts, #tag (/, Ctrl+F)')
+  clearMocks()
+})
