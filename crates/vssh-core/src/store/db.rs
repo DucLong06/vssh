@@ -145,13 +145,14 @@ impl Db {
         rows.collect()
     }
 
-    pub fn save_snippet(&self, s: &Snippet) -> Result<()> {
+    /// Saves a snippet and returns its id: a new one if it had none.
+    pub fn save_snippet(&self, s: &Snippet) -> Result<i64> {
         let id = (s.id != 0).then_some(s.id);
         self.0.execute(
             "INSERT OR REPLACE INTO snippets(id, host, name, command) VALUES (?1, ?2, ?3, ?4)",
             params![id, s.host, s.name, s.command],
         )?;
-        Ok(())
+        Ok(self.0.last_insert_rowid())
     }
 
     pub fn delete_snippet(&self, id: i64) -> Result<()> {
@@ -199,10 +200,11 @@ mod tests {
             name: "up".into(),
             command: "uptime".into(),
         };
-        db.save_snippet(&s).unwrap();
+        // Saving says which row it was: a new one, or the one it replaced.
+        assert_eq!(db.save_snippet(&s).unwrap(), 1);
         s = db.snippets().unwrap().remove(0);
         s.command = "uptime -p".into();
-        db.save_snippet(&s).unwrap();
+        assert_eq!(db.save_snippet(&s).unwrap(), 1);
         assert_eq!(db.snippets().unwrap(), [s.clone()]);
 
         db.delete("c").unwrap();

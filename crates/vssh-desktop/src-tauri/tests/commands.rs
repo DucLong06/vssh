@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
@@ -28,6 +28,11 @@ use vssh_desktop::{builder, Answer, Backend, Password, Progress, Ready, Transpor
 mod files;
 #[path = "commands/forwards.rs"]
 mod forwards;
+#[path = "commands/snippets.rs"]
+mod snippets;
+
+/// What a command run on a host answers.
+type Exec = dyn Fn(&Target, &str) -> Result<String, ConnError> + Send + Sync;
 
 const SSH_CONFIG: &str = "\
 Host web-01
@@ -57,6 +62,12 @@ struct Fake {
     dropped: Arc<AtomicBool>,
     /// Why a forward ends before it listens; `None` = it listens for good.
     forward: Arc<Mutex<Option<ConnError>>>,
+    /// What a command answers on a host, after `pace`.
+    exec: Arc<Exec>,
+    pace: Duration,
+    /// How many commands run right now, and the most there ever were.
+    busy: Arc<AtomicUsize>,
+    peak: Arc<AtomicUsize>,
 }
 
 /// Says so when it is dropped.
@@ -82,6 +93,10 @@ impl Fake {
             stall: Arc::default(),
             dropped: Arc::default(),
             forward: Arc::default(),
+            exec: Arc::new(|_, _| Ok(String::new())),
+            pace: Duration::ZERO,
+            busy: Arc::default(),
+            peak: Arc::default(),
         }
     }
 
@@ -137,6 +152,20 @@ impl Transport for Fake {
             std::future::pending().await
         })
     }
+
+    fn exec(&self, target: Target, _: Password, command: String) -> Answer<String> {
+        let fake = self.clone();
+        Box::pin(async move {
+            // Asked only once the command really starts.
+            let line = format!("{} exec {command}", at(&target));
+            fake.asked.lock().unwrap().push(line);
+            let busy = fake.busy.fetch_add(1, Ordering::SeqCst) + 1;
+            fake.peak.fetch_max(busy, Ordering::SeqCst);
+            tokio::time::sleep(fake.pace).await;
+            fake.busy.fetch_sub(1, Ordering::SeqCst);
+            (fake.exec)(&target, &command)
+        })
+    }
 }
 
 /// A failure the connect path tagged, as a command answers with it.
@@ -159,7 +188,10 @@ fn db(home: &Path) -> Db {
 
 /// The app over that home, and its window. The app must outlive the window.
 fn window(home: &Path, net: Fake) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
-    let backend = Backend::new(home.join("config"), home.join("data"), net);
+    open(Backend::new(home.join("config"), home.join("data"), net))
+}
+
+fn open(backend: Backend) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
     let app = builder(backend).build(mock_context(noop_assets())).unwrap();
     let window = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
@@ -473,7 +505,9 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
     let answer = block_on(vssh_desktop::Core.sftp(target.clone(), None, list, quiet));
     assert_eq!(fail(answer.unwrap_err()), refused);
     let fwd = Forward::parse('D', "1080").unwrap();
-    let answer = block_on(vssh_desktop::Core.forward(target, None, fwd, Box::new(|| {})));
+    let answer = block_on(vssh_desktop::Core.forward(target.clone(), None, fwd, Box::new(|| {})));
+    assert_eq!(fail(answer.unwrap_err()), refused);
+    let answer = block_on(vssh_desktop::Core.exec(target, None, "true".into()));
     assert_eq!(fail(answer.unwrap_err()), refused);
 }
 

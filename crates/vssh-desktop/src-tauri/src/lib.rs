@@ -8,6 +8,7 @@
 
 mod files;
 mod forwards;
+mod snippets;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -21,7 +22,7 @@ use anyhow::{anyhow, ensure, Context, Result};
 use serde::Serialize;
 use tauri::State;
 use tokio::sync::oneshot;
-use vssh_core::config::{data_dir, ssh_config_path, Lang};
+use vssh_core::config::{data_dir, ssh_config_path, Config, Lang};
 use vssh_core::conn_err::{ConnError, Report};
 use vssh_core::sftp::{self, Entry};
 use vssh_core::ssh::{self, Target};
@@ -66,6 +67,10 @@ pub trait Transport: Send + Sync + 'static {
     /// One port forward, for as long as it holds: the answer is why it ended.
     fn forward(&self, target: Target, password: Password, fwd: Forward, ready: Ready)
         -> Answer<()>;
+
+    /// One command on a host: what it printed, and its exit status if that
+    /// is not zero.
+    fn exec(&self, target: Target, password: Password, command: String) -> Answer<String>;
 }
 
 /// The real network: `vssh_core::task`, on Tauri's own tokio runtime.
@@ -110,6 +115,13 @@ impl Transport for Core {
             Ok(ssh::forward::run(&target, password, fwd, ready).await?)
         })
     }
+
+    fn exec(&self, target: Target, password: Password, command: String) -> Answer<String> {
+        Box::pin(async move {
+            let h = ssh::connect(&target, password.as_ref().map(|p| p.as_str()), None).await?;
+            Ok(ssh::exec(&h, &command).await?)
+        })
+    }
 }
 
 /// What the commands work on: where the user's hosts are, and the network.
@@ -124,6 +136,7 @@ pub struct Backend {
     forwards: Mutex<HashMap<String, forwards::Running>>,
     /// Numbers what runs in the background.
     jobs: AtomicU64,
+    batch_max_parallel: usize,
 }
 
 impl Backend {
@@ -136,7 +149,15 @@ impl Backend {
             transfers: Mutex::default(),
             forwards: Mutex::default(),
             jobs: AtomicU64::new(0),
+            batch_max_parallel: Config::<()>::default().batch_max_parallel,
         }
+    }
+
+    /// How many hosts of a batch are worked on at once (`batch_max_parallel`
+    /// of the config file).
+    pub fn batch_max_parallel(mut self, hosts: usize) -> Self {
+        self.batch_max_parallel = hosts;
+        self
     }
 
     /// Read on every call, so an edit made in the TUI or an editor shows up.
@@ -209,9 +230,10 @@ fn quick_connect(host: String, backend: State<'_, Backend>) -> Reply<u64> {
     Ok(backend.sessions.fetch_add(1, Ordering::Relaxed) + 1)
 }
 
+// `snippets_list` under the name the window first knew it by.
 #[tauri::command(async)]
 fn list_snippets(backend: State<'_, Backend>) -> Reply<Vec<Snippet>> {
-    Ok(backend.db().and_then(|db| Ok(db.snippets()?))?)
+    snippets::snippets_list(backend)
 }
 
 /// A failure in the words of one language, with its class's label.
@@ -253,13 +275,21 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             forwards::forwards_list,
             forwards::forward_add,
             forwards::forward_toggle,
-            forwards::forward_kill
+            forwards::forward_kill,
+            snippets::snippets_list,
+            snippets::snippets_create,
+            snippets::snippets_update,
+            snippets::snippets_delete,
+            snippets::snippet_run
         ])
 }
 
 /// Opens the window over the user's own hosts and runs until it is closed.
 pub fn run() {
-    let backend = Backend::new(ssh_config_path(), data_dir(), Core);
+    // A config file that cannot be read is the TUI's to complain about.
+    let config: Config = Config::load().unwrap_or_default();
+    let backend = Backend::new(ssh_config_path(), data_dir(), Core)
+        .batch_max_parallel(config.batch_max_parallel);
     builder::<tauri::Wry>(backend)
         .run(tauri::generate_context!())
         .expect("vssh could not start its window");
