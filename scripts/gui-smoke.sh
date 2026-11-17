@@ -35,7 +35,8 @@
 # Then the vault, the host form and the key setup (D6):
 #
 #   the vault           made by a passphrase, a sealed backup exported; at the
-#                       end the app is started again and asks for it
+#                       end the app is started again and asks for it, once
+#                       in each language
 #   smoke-new           a host added through the form, renamed, deleted
 #   bastion-x, inner-x  hosts of another ssh config, one of them imported
 #   web-01              given a password in the vault, then the key setup: it
@@ -950,14 +951,17 @@ step "the key setup made a key, stopped at a host it could not change, and named
 key Escape
 
 # The app again: the vault is there and shut, and it is asked for first thing.
-kill "$app"
-wait "$app" 2>/dev/null || true
-env -u SSH_AUTH_SOCK HOME="$home" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/release/vssh-desktop &
-app=$!
-win=$(timeout 60 xdotool search --sync --onlyvisible --name '^vssh$' | head -n 1)
-[ -n "$win" ] || fail "no window named vssh after the app was started again"
-xdotool windowfocus "$win"
-sleep 5
+again() {
+    kill "$app"
+    wait "$app" 2>/dev/null || true
+    env -u SSH_AUTH_SOCK HOME="$home" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/release/vssh-desktop &
+    app=$!
+    win=$(timeout 60 xdotool search --sync --onlyvisible --name '^vssh$' | head -n 1)
+    [ -n "$win" ] || fail "no window named vssh after the app was started again"
+    xdotool windowfocus "$win"
+    sleep 5
+}
+again
 shot target/smoke/vault-locked.png
 for guess in one two three; do
     typed "$guess"
@@ -969,6 +973,19 @@ typed 'smoke master'
 key Return
 sleep 3
 shot target/smoke/vault-unlocked.png
+
+# The same refusal in Vietnamese. The question is modal and comes first, so
+# the language is chosen before the app goes: the web view keeps it.
+language
+sleep 2
+again
+typed 'one'
+key Return
+sleep 1
+shot target/smoke/vault-wrong.vi.png
+typed 'smoke master'
+key Return
+sleep 3
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the vault, the host form and the key setup"
