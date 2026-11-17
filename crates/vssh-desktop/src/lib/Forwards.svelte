@@ -1,6 +1,6 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event'
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { api, explain, type ConnError, type Forward, type ForwardState, type Shown } from './api'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
@@ -20,6 +20,7 @@
   let port = $state<number | null>(null)
   let remote = $state('')
   let portField = $state<HTMLInputElement>()
+  let root = $state<HTMLElement>()
 
   const leads = (row: Forward) => (row.kind === 'D' ? '' : `${row.host}:${row.hport}`)
 
@@ -59,7 +60,10 @@
     })
 
   onMount(() => {
+    // The dialog opened before it had rows, with the focus in the form: the first switch gets it, so Enter switches a forward on.
     void load()
+      .then(tick)
+      .then(() => root?.querySelector<HTMLElement>('[role=switch]')?.focus())
     const heard = listen<ForwardState>('forward-state', ({ payload }) => {
       if (payload.host !== host) return
       const row = rows.find((row) => row.kind === payload.kind && row.value === payload.value)
@@ -106,7 +110,7 @@
 </script>
 
 <Modal label="{t('forwards')} {host}" {onclose}>
-  <div class="grid gap-3 p-4">
+  <div bind:this={root} class="grid gap-3 p-4">
     <p>
       <span class="text-cyan">{t('forwards')}</span>
       <strong>{host}</strong>

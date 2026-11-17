@@ -109,6 +109,15 @@ test('the switch starts a forward, and the window hears when it listens; again, 
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
+test('the first switch has the focus once the forwards are in: Enter switches it on, not the empty form', async () => {
+  const { user } = shell()
+  const web = await flip('L 8080 localhost:80')
+  await vi.waitFor(() => expect(web).toHaveFocus())
+  await user.keyboard('{Enter}')
+  expect(asked('forward_toggle')).toEqual([{ host: 'web-01', kind: 'L', value: '8080 localhost:80' }])
+  expect(asked('forward_add')).toEqual([])
+})
+
 test('a forward that ends by itself is off again, and the kind of failure is said', async () => {
   const { user } = shell()
   const web = await flip('L 8080 localhost:80')
