@@ -1,5 +1,8 @@
 [workspace]
-members = ["crates/vssh-core", "crates/vssh-tui"]
+members = ["crates/vssh-core", "crates/vssh-tui", "crates/vssh-desktop/src-tauri"]
+# The desktop app needs the system's webview libraries; a plain `cargo build`
+# (CI, install.sh) builds the terminal app only. `--workspace` builds both.
+default-members = ["crates/vssh-core", "crates/vssh-tui"]
 resolver = "2"
 
 [workspace.package]

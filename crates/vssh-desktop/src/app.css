@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* TokyoNight Night, the terminal app's palette (docs/img/shots.py): the 16
+   ANSI colours by name, plus the two bands the TUI theme adds. Nothing else
+   is a colour here, so a class cannot leave the palette. */
+@theme {
+  --color-*: initial;
+  --color-bg: #1a1b26;
+  --color-fg: #c0caf5;
+  --color-black: #15161e;
+  --color-red: #f7768e;
+  --color-green: #9ece6a;
+  --color-yellow: #e0af68;
+  --color-blue: #7aa2f7;
+  --color-magenta: #bb9af7;
+  --color-cyan: #7dcfff;
+  --color-white: #a9b1d6;
+  /* Bright black: borders only, 1.9:1 on the background. */
+  --color-edge: #414868;
+  /* TokyoNight dark5, 4.1:1: placeholders and decoration. Text that must be
+     read is `white` (8.1:1) or `fg`. */
+  --color-dim: #737aa2;
+  --color-selection: #292e42;
+  --color-bar: #2d3142;
+  --font-mono: "Maple Mono NF", "Maple Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
