@@ -121,10 +121,17 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("transfers", "Transfers", "Truyền tệp"),
     ("waiting", "waiting", "đang chờ"),
+    // The end of the file view's hint; its keys are words of the rows above.
     (
-        "files_keys",
-        "Space select · c copy · / filter · . hidden files · right-click more",
-        "Space chọn · c sao chép · / lọc · . tệp ẩn · chuột phải: thêm",
+        "right_click_more",
+        "right-click more",
+        "chuột phải thao tác khác",
+    ),
+    // `{done}` and `{total}` are sizes, `{name}` whose side the part is on.
+    (
+        "cancelled_left",
+        "cancelled · {done} of {total} left on {name}",
+        "đã huỷ · còn {done} / {total} trên {name}",
     ),
 ];
 

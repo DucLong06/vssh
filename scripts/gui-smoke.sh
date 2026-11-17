@@ -550,6 +550,8 @@ step "a row dragged across was copied: one up, one down"
 click_row "$LOCAL" 3
 key space G space c
 sleep 5
+# The pointer off the rows: no hover band next to the selected one.
+click_row "$LOCAL" 7
 shot docs/img/desktop-d4-sftp.png
 # The language button takes the keyboard; a click on the row that is
 # selected gives it back to the pane, so both shots are of the same state.

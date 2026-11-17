@@ -681,7 +681,9 @@ test('f on a card, or its Files button, opens the host\'s files in a tab of thei
   expect(asked('sftp_list')).toEqual([{ host: 'web-01', path: '/home/deploy' }])
   // The keys are the file view's, and the status bar says which.
   expect(screen.getByRole('grid', { name: 'local' })).toHaveFocus()
-  expect(status()).toHaveTextContent('Space select · c copy · / filter')
+  expect(status()).toHaveTextContent('Space select · c Copy · / Filter · . Hidden files · right-click more')
+  // The keys stand out, as on the dashboard: two of them are punctuation.
+  expect([...status().querySelectorAll('kbd')].map((key) => key.textContent)).toEqual(['Space', 'c', '/', '.'])
   expect(status()).not.toHaveTextContent('Ctrl-A')
   // It is no session: nothing was logged in to for a shell.
   expect(asked('session_open')).toHaveLength(0)
@@ -721,7 +723,7 @@ test('a file view next to a terminal: its tab comes after the sessions, in Vietn
   expect(await tab(/2 Files web-01/)).toHaveAttribute('aria-selected', 'true')
   setLang('vi')
   expect(await tab(/2 Tệp web-01/)).toBeInTheDocument()
-  expect(status()).toHaveTextContent('Space chọn · c sao chép · / lọc')
+  expect(status()).toHaveTextContent('Space chọn · c Sao chép · / Lọc · . Tệp ẩn · chuột phải thao tác khác')
   await user.keyboard(`${leader}0`)
   expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toBeInTheDocument()
   ;(await card('web-01')).focus()

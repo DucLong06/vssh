@@ -274,6 +274,30 @@ test('Cancel stops a transfer where it is, and its line goes without a complaint
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
+test('Cancel on a transfer that is part way keeps its line: what is left on the other side is not a whole file', async () => {
+  const { waiting, start } = held()
+  const user = await ready(shell({ sftp_upload: start }))
+  await user.keyboard('jjc')
+  await vi.waitFor(() => expect(asked('sftp_upload')).toHaveLength(1))
+  const id = asked('sftp_upload')[0].id as string
+  await emit(`sftp-progress:${id}`, { done: 512, total: 2048 })
+  const cancel = await screen.findByRole('button', { name: 'Cancel notes.txt' })
+  // Red is for what failed: a transfer that is going well has none.
+  expect(cancel).not.toHaveClass('text-red')
+  await user.click(cancel)
+  expect(asked('sftp_cancel')).toEqual([{ id }])
+  waiting[id].fail({ class: 'other', fail: null, chain: ['transfer cancelled'] })
+  const [line] = transfers()
+  await vi.waitFor(() => expect(line).toHaveTextContent('cancelled · 512 B of 2.0 K left on web-01'))
+  expect(within(line).queryByRole('progressbar')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  setLang('vi')
+  await vi.waitFor(() => expect(line).toHaveTextContent('đã huỷ · còn 512 B / 2.0 K trên web-01'))
+  setLang('en')
+  await user.click(await screen.findByRole('button', { name: 'close notes.txt' }))
+  noTransfers()
+})
+
 test('a transfer that fails keeps its line, with the kind of failure, until it is closed', async () => {
   const { waiting, start } = held()
   const user = await ready(shell({ sftp_upload: start }))

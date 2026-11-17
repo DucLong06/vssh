@@ -68,10 +68,18 @@
     if (selected) grid?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   })
 
+  /** The head of the path is out of sight. */
+  let clipped = $state(false)
+
   // Of a path too long for its pane, the end is what is shown: where one is.
   $effect(() => {
     // Again when the label changes with the language: it takes room from the path.
-    if (path && label && trail) trail.scrollLeft = trail.scrollWidth
+    if (!path || !label || !trail) return
+    const over = trail.scrollWidth - trail.clientWidth
+    clipped = over > 0
+    // From the first name that fits whole: a cut inside one reads as a directory that is not there.
+    const whole = [...trail.querySelectorAll('button')].find((crumb) => crumb.offsetLeft >= over)
+    trail.scrollLeft = clipped ? (whole?.offsetLeft ?? over) : 0
   })
 
   /** The last column: there from a pane of 20rem on. */
@@ -155,11 +163,13 @@
 >
   <header class="flex items-center gap-2 border-b border-edge px-3 py-1.5">
     <strong class="shrink-0 text-cyan">{label}</strong>
-    <!-- It scrolls, to its end; a bar across the crumbs would say nothing more. -->
+    {#if clipped}<span aria-hidden="true" class="shrink-0 text-dim">…</span>{/if}
+    <!-- It scrolls, to its end; a bar across the crumbs would say nothing more.
+         relative: a crumb's offsetLeft is then its place in the trail. -->
     <nav
       bind:this={trail}
       aria-label={t('path')}
-      class="flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      class="relative flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {#each crumbs(path) as crumb, i (crumb.path)}
         {#if i > 1}<span aria-hidden="true" class="text-dim">/</span>{/if}

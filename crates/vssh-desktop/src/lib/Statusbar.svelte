@@ -47,7 +47,17 @@
       {t('leader_menu')}
     </span>
   {:else if files}
-    <span role="status" class="truncate">{t('files_keys')}</span>
+    <span role="status" class="truncate">
+      <kbd class="text-magenta">Space</kbd>
+      {t('select')} ·
+      <kbd class="text-magenta">c</kbd>
+      {t('copy')} ·
+      <kbd class="text-magenta">/</kbd>
+      {t('filter')} ·
+      <kbd class="text-magenta">.</kbd>
+      {t('hidden_files')} ·
+      {t('right_click_more')}
+    </span>
   {:else if selected}
     <span class="truncate"><span class="text-cyan">{selected.alias}</span> {address(selected)}</span>
     <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
