@@ -20,7 +20,8 @@
 #   far-box             its second jump host refuses
 #
 # Screenshots land in docs/img/desktop-d2*.png and desktop-d3*.png (.vi.png:
-# the Vietnamese UI); those of the steps in between, in target/smoke/.
+# the Vietnamese UI; d3-fail: a connection that fails, d3-closed: one that
+# drops); those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -341,15 +342,26 @@ run 'uname -sr'
 run 'sleep 60'
 sleep 5
 shot docs/img/desktop-d3-terminal.png
+# The language button takes the keyboard; a click gives it back to the
+# terminal, so both shots are of the same state.
+terminal() { xdotool mousemove --window "$win" 700 400 click 1; }
 language
+terminal
 shot docs/img/desktop-d3-terminal.vi.png
 language
 # The Night theme again, in the terminal itself.
 night=$(pixel docs/img/desktop-d3-terminal.png 900 500)
 [ "$night" = "1a1b26" ] || { echo "FAIL: the terminal's background is $night, not 1a1b26"; exit 1; }
 step "the terminal is the Night theme too"
+# Both tabs broadcast: the one in front has the full yellow border along its
+# top, the one behind a dimmer one.
+front=$(pixel docs/img/desktop-d3-terminal.png 450 6)
+behind=$(pixel docs/img/desktop-d3-terminal.png 700 6)
+[ "$front" = e0af68 ] && [ "$behind" != "$front" ] && [ "$behind" != 15161e ] ||
+    { echo "FAIL: broadcasting tabs' borders are $front in front and $behind behind"; exit 1; }
+step "while broadcasting, the tab in front is told apart (#$front, behind #$behind)"
 # Back into the terminal, and Ctrl-C for both sleeps.
-xdotool mousemove --window "$win" 700 400 click 1
+terminal
 key ctrl+c
 key ctrl+a B
 key ctrl+a B
@@ -382,10 +394,34 @@ key ctrl+w
 # the dialog says where it stopped.
 logins=$(accepted)
 open_tab far-box
-shot target/smoke/jump.png
+shot docs/img/desktop-d3-fail.png
 [ "$(accepted)" -eq $((logins + 1)) ] || { echo "FAIL: far-box's first jump host was not logged in to"; exit 1; }
 step "a jump chain that breaks at hop 2 got through hop 1"
 key Escape
+# The same in Vietnamese. The dialog is modal: the language goes first.
+key ctrl+w
+language
+open_tab far-box
+shot docs/img/desktop-d3-fail.vi.png
+key Escape
+key ctrl+w
+language
+
+# A session that ends under its tab: shell-01's shell kills what it runs
+# under. The tab keeps its screen and says so in a banner.
+key ctrl+a B
+key ctrl+a 1
+run 'kill -9 $PPID'
+sleep 2
+shot docs/img/desktop-d3-closed.png
+language
+terminal
+shot docs/img/desktop-d3-closed.vi.png
+language
+# The banner's red border, top right of the terminal.
+red=$(pixel docs/img/desktop-d3-closed.png 960 43)
+[ "$red" = f7768e ] || { echo "FAIL: no red banner on the closed tab (#$red)"; exit 1; }
+step "a session that ended leaves a red banner on its tab"
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the terminal tabs"
