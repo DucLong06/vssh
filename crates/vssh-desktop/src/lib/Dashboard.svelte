@@ -162,6 +162,8 @@
     } else if (e.key === 'f') {
       onfiles?.(alias)
     } else if (e.key === 'L') {
+      // Stopped here: the dialog has the focus before the key is done, and the key is not for it.
+      e.preventDefault()
       onforwards?.(alias)
     } else if (step) {
       // Drag and drop for the keyboard: one place along, among the cards on screen.
@@ -185,8 +187,11 @@
       e.preventDefault()
       search?.focus()
     } else if (e.key === 's') {
+      e.preventDefault()
       onsnippets?.()
     } else if (e.key === 'x') {
+      // Or the command line that opens would start with an x.
+      e.preventDefault()
       onbatch?.()
     } else if (peeking && e.key === 'Escape') {
       peeking = null

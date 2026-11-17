@@ -24,10 +24,19 @@
 #   files-01            an SFTP server over a directory of its own, fed at
 #                       2 MiB a second so that a transfer can be looked at
 #
-# Screenshots land in docs/img/desktop-d2*.png, desktop-d3*.png and
-# desktop-d4*.png (.vi.png: the Vietnamese UI; d3-fail: a connection that
-# fails, d3-closed: one that drops; d4-sftp: the file view with transfers
-# under way); those of the steps in between, in target/smoke/.
+# Then snippets, a batch and forwards, on fixtures made behind the window's
+# back the way the TUI makes them:
+#
+#   mark                a snippet with a parameter, in the database
+#   tunnel-01           web-01's sshd under another name, with two forwards in
+#                       the config: one to files-01's port, one that wants a
+#                       port sshd itself has
+#
+# Screenshots land in docs/img/desktop-d2*.png, desktop-d3*.png,
+# desktop-d4*.png and desktop-d5*.png (.vi.png: the Vietnamese UI; d3-fail: a
+# connection that fails, d3-closed: one that drops; d4-sftp: the file view
+# with transfers under way; d5-batch: what four hosts answered to one
+# command); those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -39,7 +48,7 @@ SIZE=1100x700
 SSHD=/usr/sbin/sshd
 
 if [ -z "${VSSH_SMOKE_DISPLAY:-}" ]; then
-    for tool in xvfb-run xdotool ffmpeg npm ssh-keygen python3 "$SSHD" /usr/lib/openssh/sftp-server; do
+    for tool in xvfb-run xdotool ffmpeg npm ssh-keygen ssh-keyscan python3 "$SSHD" /usr/lib/openssh/sftp-server; do
         command -v "$tool" >/dev/null || { echo "FAIL: $tool is not installed"; exit 1; }
     done
     # `tauri build` puts the frontend inside the binary; a plain `cargo
@@ -67,7 +76,8 @@ cp "$home/.ssh/id_ed25519.pub" "$home/.ssh/authorized_keys"
 cp scripts/smoke-hosts/*.txt "$home/sshd/"
 # The fourth word of SSH_CONNECTION is the port the client came in on.
 # shell-01 and shell-02 (2204, 2205) are real: a shell on the PTY, each in a
-# directory of its own, and a real `ps` for the question what runs in it.
+# directory of its own, a real `ps` for the question what runs in it, and a
+# real run of what a batch sends them (the smoke's batches start with `touch`).
 # Asked for their metrics they print web-01's; the rest only ever print.
 ssh-keygen -q -t ed25519 -N '' -f "$home/sshd/old_key"
 for port in 2204 2205; do
@@ -97,6 +107,7 @@ case "\$4:\${SSH_ORIGINAL_COMMAND:-}" in
 2206:*sftp-server*) echo >>"$home/sshd/sftp-asked"; cd "$home/sshd/files" && exec python3 "$home/sshd/slow" ;;
 220[45]:) cd "$home/sshd/\$4" && exec env -i PATH=/usr/bin:/bin TERM="\$TERM" PS1="shell:\$4> " bash --norc --noprofile ;;
 220[45]:*ps\ -o*) exec sh -c "\$SSH_ORIGINAL_COMMAND" ;;
+220[45]:touch\ *) cd "$home/sshd/\$4" && exec sh -c "\$SSH_ORIGINAL_COMMAND" ;;
 esac
 cat "$home/sshd/\$4.txt"
 EOF
@@ -591,4 +602,146 @@ key ctrl+w
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the file views"
+
+# --- D5: snippets, a batch, forwards -----------------------------------------
+# The fixtures, while the window is open. The two shells get a group each:
+# a host's name in a batch has its group's colour.
+python3 - "$home/.local/share/vssh/vssh.db" <<'EOF'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1], timeout=10)
+command = "touch snippet-{{name}} && echo {{name}} ran in $PWD"
+db.execute("INSERT INTO snippets(host, name, command) VALUES ('', 'mark', ?)", (command,))
+for alias, grp, tags in [("shell-01", "dev", "app eu"), ("shell-02", "test", "app us")]:
+    db.execute("UPDATE hosts SET grp=?, tags=? WHERE alias=?", (grp, tags, alias))
+db.commit()
+EOF
+cat >>"$home/.ssh/config" <<EOF
+Host tunnel-01
+    HostName 127.0.0.1
+    Port 2201
+    LocalForward 18022 127.0.0.1:2206
+    LocalForward 2206 127.0.0.1:2201
+EOF
+sleep 6
+
+# The palette finds a host's card; Space marks it. Two that answer, one that
+# refuses, one that lets nobody in.
+mark() {
+    key ctrl+k
+    xdotool type --window "$win" "$1"
+    key Return
+    key space
+}
+for name in shell-01 shell-02 cache-01 legacy; do mark "$name"; done
+# The pointer where it rests on nothing.
+xdotool mousemove --window "$win" 600 20
+
+# s: the snippets, with the one the database got meanwhile. Add has the
+# focus, Run is the next stop; its form asks for the one parameter, and Enter
+# there runs it on the four marked hosts.
+key s
+sleep 1
+shot target/smoke/snippets.png
+key Tab Return
+xdotool type --window "$win" smoke
+shot target/smoke/snippet-run.png
+key Return
+sleep 6
+shot target/smoke/snippet-ran.png
+there 2204/snippet-smoke "the snippet did not run on shell-01 with its parameter filled in"
+there 2205/snippet-smoke "the snippet did not run on shell-02 with its parameter filled in"
+step "a snippet from the database ran on the marked hosts, {{name}} filled in from its form"
+key Escape
+
+# x: one command typed for the same four. They are still marked.
+batch() {
+    key x
+    xdotool type --window "$win" --delay 20 'touch x-ran; pwd; uptime'
+    key Return
+    sleep 6
+}
+batch
+there 2204/x-ran "the command typed after x did not run on shell-01"
+there 2205/x-ran "the command typed after x did not run on shell-02"
+shot docs/img/desktop-d5-batch.png
+step "x ran one typed command on the marked hosts"
+# y: what every host answered is on the clipboard, each under its name.
+key y
+sleep 1
+if command -v xclip >/dev/null; then
+    copied=$(xclip -o -selection clipboard)
+    case "$copied" in
+    *"# cache-01"*"# shell-01"*"$home/sshd/2204"*"# shell-02"*"$home/sshd/2205"*) ;;
+    *) fail "y copied '$copied'" ;;
+    esac
+    step "y put every host's answer on the clipboard, the failed ones too"
+fi
+key slash
+xdotool type --window "$win" shell-02
+shot target/smoke/batch-filter.png
+key Escape
+# The same in Vietnamese. The dialog is modal: the language goes first.
+language
+batch
+shot docs/img/desktop-d5-batch.vi.png
+key Escape
+language
+
+# L on a card: its forwards. The first switch has the focus.
+forwards() {
+    key ctrl+k
+    xdotool type --window "$win" "$1"
+    key Return
+    key L
+    sleep 2
+}
+# The host key that answers on a port of this machine.
+through() { ssh-keyscan -T 5 -t ed25519 -p "$1" 127.0.0.1 2>/dev/null | cut -d' ' -f2,3; }
+forwards tunnel-01
+shot target/smoke/forwards.png
+[ -z "$(through 18022)" ] || fail "port 18022 answers before its forward is switched on"
+key Return
+sleep 4
+[ "$(through 18022)" = "$key" ] || fail "nothing answers through the forward on 18022"
+shot target/smoke/forwards-on.png
+step "a forward of the config, switched on, leads through its host to the port it names"
+
+# The second wants 2206, which sshd has: the system says so, and the form
+# offers the next port. That is the last stop: x, kind, port, where to, Add.
+key Tab Tab Return
+sleep 3
+shot target/smoke/forwards-taken.png
+key Tab Tab Tab Tab Tab Tab Return
+# The port has the focus, with 2207 in it: Enter adds the forward.
+key Return
+sleep 2
+grep -q 'LocalForward 2207 127.0.0.1:2201' "$home/.ssh/config" || fail "the forward on the port offered was not added to the config"
+# Back from the port: the kind, the new row's x, its switch.
+key shift+Tab shift+Tab shift+Tab Return
+sleep 4
+[ "$(through 2207)" = "$key" ] || fail "nothing answers through the forward added on 2207"
+shot target/smoke/forwards-added.png
+step "a port that is taken said so; the port offered was added and leads where the other would"
+
+# Delete on the first: back over the second row. It is stopped and gone.
+key shift+Tab shift+Tab shift+Tab Return
+sleep 2
+grep -q 'LocalForward 18022' "$home/.ssh/config" && fail "Delete left the forward in the config"
+[ -z "$(through 18022)" ] || fail "port 18022 still answers after its forward was deleted"
+step "Delete stopped a running forward and took it out of the config"
+key Escape
+
+# The same two dialogs in Vietnamese, to look at.
+language
+forwards tunnel-01
+shot target/smoke/forwards.vi.png
+key Escape
+key s
+sleep 1
+shot target/smoke/snippets.vi.png
+key Escape
+language
+
+kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
+step "the app is still running after the snippets, the batches and the forwards"
 echo "gui smoke: ok (now look at the screenshots)"

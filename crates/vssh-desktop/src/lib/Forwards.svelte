@@ -19,6 +19,7 @@
   let kind = $state<Forward['kind']>('L')
   let port = $state<number | null>(null)
   let remote = $state('')
+  let portField = $state<HTMLInputElement>()
 
   const leads = (row: Forward) => (row.kind === 'D' ? '' : `${row.host}:${row.hport}`)
 
@@ -93,6 +94,8 @@
     }
     port = next
     failed = null
+    // There to be changed, or Enter adds it.
+    portField?.focus()
   }
 
   const field = 'mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim disabled:opacity-60'
@@ -178,7 +181,7 @@
         </div>
         <label>
           {t('local_port')}
-          <input bind:value={port} type="number" min="1" max="65535" required placeholder="8080" class={field} />
+          <input bind:this={portField} bind:value={port} type="number" min="1" max="65535" required placeholder="8080" class={field} />
         </label>
         <label>
           {t('remote')}

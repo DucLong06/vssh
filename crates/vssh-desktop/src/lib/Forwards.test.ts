@@ -156,6 +156,8 @@ test('a port that is taken: the form says so, and offers the next one that is fr
   expect(rows()).toHaveLength(3)
   await user.click(screen.getByRole('button', { name: 'Try port 8081' }))
   expect(screen.getByRole('spinbutton', { name: 'Local port' })).toHaveValue(8081)
+  // The port is there to be changed, or Enter adds it.
+  expect(screen.getByRole('spinbutton', { name: 'Local port' })).toHaveFocus()
   // What was typed for the rest stays.
   expect(screen.getByRole('textbox', { name: 'Remote' })).toHaveValue('db:5432')
   expect(screen.queryByRole('alert')).toBeNull()

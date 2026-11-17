@@ -167,10 +167,10 @@
       tabindex="0"
       aria-label={t('hosts')}
       aria-keyshortcuts="j k / y"
-      class="grid max-h-[45vh] gap-2 overflow-y-auto rounded-xl"
+      class="flex max-h-[45vh] flex-col gap-2 overflow-y-auto rounded-xl outline-none"
     >
       {#each rows as { host, answer } (host.alias)}
-        <li data-host={host.alias} class="rounded-xl border border-edge bg-panel px-3 py-2">
+        <li data-host={host.alias} class="shrink-0 rounded-xl border border-edge bg-panel px-3 py-2">
           <p class="flex items-center gap-2">
             <!-- The colour its group has on the dashboard. -->
             <strong style:color={groupOf(host) ? chip(groupOf(host)) : undefined}>{host.alias}</strong>
@@ -191,7 +191,7 @@
             {/if}
           </p>
           {#if answer && answer.output !== null}
-            <pre class="mt-1 overflow-x-auto whitespace-pre-wrap text-fg">{answer.output.trimEnd() || t('no_output')}</pre>
+            <pre class="mt-1 break-words whitespace-pre-wrap text-fg">{answer.output.trimEnd() || t('no_output')}</pre>
           {/if}
         </li>
       {/each}

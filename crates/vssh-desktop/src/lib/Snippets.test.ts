@@ -69,8 +69,29 @@ test('the list: every snippet with its name, the host it is for, and its command
   ])
 })
 
-test('no snippets: the list says so, and Add is there', () => {
+test('opened, it reads the snippets again: one made in the TUI meanwhile is there', async () => {
+  // What the window had when it started: nothing.
   shell({ snippets: [] })
+  await vi.waitFor(() => expect(rows()).toHaveLength(3))
+  expect(asked('list_snippets')).toHaveLength(1)
+})
+
+test('the keys follow what the dialog shows: the first field of a form, Cancel under a question', async () => {
+  const { user } = shell()
+  await user.click(button('Run restart'))
+  await vi.waitFor(() => expect(field('unit')).toHaveFocus())
+  // Enter in the last field runs it: no reaching for the pointer.
+  await user.keyboard('nginx{Tab}50{Enter}')
+  await user.click(button('Cancel'))
+  await user.click(button('Delete up'))
+  await vi.waitFor(() => expect(button('Cancel')).toHaveFocus())
+  await user.click(button('Cancel'))
+  await user.click(button('Edit up'))
+  await vi.waitFor(() => expect(field('Name')).toHaveFocus())
+})
+
+test('no snippets: the list says so, and Add is there', () => {
+  shell({ snippets: [] }, { list_snippets: () => [] })
   expect(screen.getByText('No snippets yet.')).toBeInTheDocument()
   expect(button('Add')).toBeInTheDocument()
 })

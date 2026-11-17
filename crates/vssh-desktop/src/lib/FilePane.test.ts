@@ -52,22 +52,23 @@ test('the path is a row of crumbs: a click on one goes there', async () => {
 })
 
 test('a path too long for its pane starts at the first name that fits whole, behind an ellipsis', () => {
-  // jsdom lays nothing out: a trail of 450 in a pane of 200, its crumbs 100 apart.
-  vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockReturnValue(450)
+  // jsdom lays nothing out: crumbs of 450 in all, 100 apart, in a pane with room for 200.
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(450)
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(200)
   vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
     return [...this.parentElement!.querySelectorAll('button')].indexOf(this as HTMLButtonElement) * 100
   })
   pane({ path: '/var/log/nginx/sites' })
-  const path = screen.getByRole('navigation', { name: 'Path' })
-  // 250 are hidden: `log` at 200 would be cut, `nginx` at 300 is whole.
-  expect(path.scrollLeft).toBe(300)
+  const crumbs = within(screen.getByRole('navigation', { name: 'Path' })).getByRole('button', { name: 'sites' }).parentElement!
+  // 250 have no room, and the ellipsis wants some: `log` at 200 would be cut, `nginx` at 300 is whole.
+  expect(crumbs.style.marginLeft).toBe('-300px')
   expect(screen.getByText('…')).toBeInTheDocument()
 })
 
 test('a path that fits is shown whole, with no ellipsis', () => {
   pane()
-  expect(screen.getByRole('navigation', { name: 'Path' }).scrollLeft).toBe(0)
+  const crumbs = within(screen.getByRole('navigation', { name: 'Path' })).getByRole('button', { name: 'log' }).parentElement!
+  expect(crumbs.style.marginLeft).toBe('0px')
   expect(screen.queryByText('…')).toBeNull()
 })
 

@@ -68,18 +68,23 @@
     if (selected) grid?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   })
 
-  /** The head of the path is out of sight. */
-  let clipped = $state(false)
+  let crumbsEl = $state<HTMLElement>()
+  /** The room the path has; it changes with the window. */
+  let room = $state(0)
+  /** How much of the head of the path is out of sight, in px. */
+  let skip = $state(0)
+  /** The room the ellipsis takes, with its gap. */
+  const ELLIPSIS = 20
 
   // Of a path too long for its pane, the end is what is shown: where one is.
   $effect(() => {
-    // Again when the label changes with the language: it takes room from the path.
-    if (!path || !label || !trail) return
-    const over = trail.scrollWidth - trail.clientWidth
-    clipped = over > 0
+    // Again when the room changes, or the label with the language: it takes room from the path.
+    void room
+    if (!path || !label || !trail || !crumbsEl) return
+    const over = crumbsEl.offsetWidth - trail.clientWidth
     // From the first name that fits whole: a cut inside one reads as a directory that is not there.
-    const whole = [...trail.querySelectorAll('button')].find((crumb) => crumb.offsetLeft >= over)
-    trail.scrollLeft = clipped ? (whole?.offsetLeft ?? over) : 0
+    const whole = [...crumbsEl.querySelectorAll('button')].find((crumb) => crumb.offsetLeft >= over + ELLIPSIS)
+    skip = over > 0 ? (whole?.offsetLeft ?? over + ELLIPSIS) : 0
   })
 
   /** The last column: there from a pane of 20rem on. */
@@ -163,25 +168,30 @@
 >
   <header class="flex items-center gap-2 border-b border-edge px-3 py-1.5">
     <strong class="shrink-0 text-cyan">{label}</strong>
-    {#if clipped}<span aria-hidden="true" class="shrink-0 text-dim">…</span>{/if}
-    <!-- It scrolls, to its end; a bar across the crumbs would say nothing more.
-         relative: a crumb's offsetLeft is then its place in the trail. -->
     <nav
       bind:this={trail}
+      bind:clientWidth={room}
       aria-label={t('path')}
-      class="relative flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      class="flex min-w-0 flex-1 items-center whitespace-nowrap"
     >
-      {#each crumbs(path) as crumb, i (crumb.path)}
-        {#if i > 1}<span aria-hidden="true" class="text-dim">/</span>{/if}
-        <button
-          type="button"
-          onclick={() => cd(crumb.path)}
-          aria-current={crumb.path === path ? 'location' : undefined}
-          class="cursor-pointer rounded px-1 text-white hover:bg-selection hover:text-fg aria-[current]:text-fg"
-        >
-          {crumb.name}
-        </button>
-      {/each}
+      {#if skip}<span aria-hidden="true" class="shrink-0 pr-1 text-dim">…</span>{/if}
+      <div class="min-w-0 flex-1 overflow-hidden">
+        <!-- Pushed out by its head, not scrolled: a scroll stops where the path ends, which is inside a name.
+             relative: a crumb's offsetLeft is then its place among the crumbs. -->
+        <div bind:this={crumbsEl} style:margin-left="-{skip}px" class="relative flex w-max items-center">
+          {#each crumbs(path) as crumb, i (crumb.path)}
+            {#if i > 1}<span aria-hidden="true" class="text-dim">/</span>{/if}
+            <button
+              type="button"
+              onclick={() => cd(crumb.path)}
+              aria-current={crumb.path === path ? 'location' : undefined}
+              class="cursor-pointer rounded px-1 text-white hover:bg-selection hover:text-fg aria-[current]:text-fg"
+            >
+              {crumb.name}
+            </button>
+          {/each}
+        </div>
+      </div>
     </nav>
     <button
       type="button"

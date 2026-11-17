@@ -297,3 +297,18 @@ test('the selected host has its card marked and focused; a focused card is the s
   screen.getByRole('article', { name: 'bare' }).focus()
   expect(onselect).toHaveBeenLastCalledWith('bare')
 })
+
+test('x, s and L ask for a dialog and are not typed into what it opens with', async () => {
+  const heard = { onbatch: vi.fn(), onsnippets: vi.fn(), onforwards: vi.fn() }
+  render(Dashboard, props(heard))
+  const card = screen.getByRole('article', { name: 'web-01' })
+  card.focus()
+  // In the webview the dialog's field has the focus before the key is done:
+  // a key that is not stopped is the first letter in it.
+  for (const key of ['x', 's', 'L']) expect(await fireEvent.keyDown(card, { key }), key).toBe(false)
+  expect(heard.onbatch).toHaveBeenCalledOnce()
+  expect(heard.onsnippets).toHaveBeenCalledOnce()
+  expect(heard.onforwards).toHaveBeenCalledExactlyOnceWith('web-01')
+  // A key that is nobody's is left alone.
+  expect(await fireEvent.keyDown(card, { key: 'q' })).toBe(true)
+})
