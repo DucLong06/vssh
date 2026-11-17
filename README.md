@@ -88,10 +88,11 @@ The bottom line shows the mode, the focused host and pane, then its tags, group 
 
 - **CPU** is the 1-minute load average per core (over 100% means work is queueing), **MEM** is used / total memory, **/** is how full the root file system is. Each turns yellow, then red: CPU above 50% / 80%, memory above 70% / 85%, disk above 80% / 90%.
 - **In a session** the numbers are read every 5 seconds over a second channel of the connection that is already open: no extra login. Linux servers (`/proc`) and macOS servers (`uptime`, `vm_stat`) are understood; a host that does not answer shows nothing.
-- **On the host list**, resting on a host for a moment asks it once. Only a host you have connected to before (its key is in `known_hosts`) is asked, and only with your agent or key files: a vault password is never sent for this. A host with a session open uses that session's numbers.
+- **On the host list**, resting on a host for a moment asks it once. Only a host you have connected to before (its key is in `known_hosts`) is asked, and only with your agent or key files: a vault password is never sent for this. A host with a session open uses that session's numbers; a host that refuses is not asked again.
 - **Little room:** the bars go first, then disk, then memory. Portrait and small windows keep to mode and host.
 - `status_stats = false` in the config turns all of it off.
 - **Rounded badges:** the mode, the latency and the `vssh` mark are pills with half-circle ends (`◖NORMAL◗`). With a Nerd Font, `nerd_font = true` uses its full-height Powerline caps instead; without such a font those would show as empty boxes, so it is off by default.
+- **Tab switches:** the tab you switch to slides in from the right over three frames (120 ms). Remote terminals are not resized while it moves. On a slow link three redraws are three round trips: `transitions = false` turns it off.
 
 ## Session logs and login scripts
 
@@ -202,6 +203,7 @@ ping_on_start = false   # check every host at launch
 log_sessions = false    # log every session from the start
 status_stats = true     # load, memory and disk of the focused host in the status bar
 nerd_font = false       # true: Powerline round caps on the badges (needs a Nerd Font)
+transitions = true      # slide a tab in over three frames when switching to it
 
 [exec]                  # login scripts: typed into the shell after login
 web-01 = "cd /srv/app && git status"

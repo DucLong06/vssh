@@ -2,7 +2,7 @@
 //! panes), bottom bar with the keys of the focused view.
 
 use std::num::NonZeroU16;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -128,6 +128,19 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
+/// Frames a tab takes to slide in when it is switched to.
+pub const SLIDE: u16 = 3;
+/// How long one of those frames stays up: three frames, 120 ms.
+pub const FRAME: Duration = Duration::from_millis(40);
+
+/// Takes one frame off the countdown and returns the columns to shift it by:
+/// 2, 1, then 0 for good. While frames are left the main loop redraws on a
+/// timer, so the countdown must only reach zero with the unshifted frame.
+fn slide_step(left: &mut u16) -> u16 {
+    *left = left.saturating_sub(1);
+    *left
+}
+
 pub fn draw(app: &mut App, f: &mut Frame) {
     let screen = f.area();
     app.shape = Shape::of(screen.width, screen.height, app.cfg.layout);
@@ -149,10 +162,18 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     header(app, f, bar);
     let th = &app.cfg.theme;
     let tall = app.shape == Shape::Tall;
+    // A tab that was just switched to slides in from the right. Only the
+    // drawing moves: the sizes the rest of the app works with stay `body`.
+    let shift = slide_step(&mut app.slide).min(body.width.saturating_sub(1));
+    let view = Rect {
+        x: body.x + shift,
+        width: body.width - shift,
+        ..body
+    };
     match app.active.checked_sub(1).map(|i| &mut app.tabs[i].kind) {
-        None => hosts(app, f, body),
-        Some(Kind::Term { .. }) => sessions(app, f, body),
-        Some(Kind::Sftp(view)) => files(view, th, app.cfg.lang, tall, f, body),
+        None => hosts(app, f, view),
+        Some(Kind::Term { .. }) => sessions(app, f, view, shift == 0),
+        Some(Kind::Sftp(files_view)) => files(files_view, th, app.cfg.lang, tall, f, view),
     }
     hints(app, hint_rows, f, keys);
     status_line(app, f, status);
@@ -177,8 +198,9 @@ const BROADCAST: Color = Color::Rgb(255, 158, 100);
 const INK: Color = Color::Rgb(26, 27, 38);
 
 /// The session view: one pane per slot of the layout, the active session
-/// focused. A single pane uses the whole area without a border.
-fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
+/// focused. A single pane uses the whole area without a border. `settled` is
+/// false for the frames of a slide, which must not resize the remote PTYs.
+fn sessions(app: &mut App, f: &mut Frame, area: Rect, settled: bool) {
     let shown = app.shown();
     let focused = app.active - 1;
     // Portrait: every pane gets the full width, one above the other.
@@ -207,17 +229,17 @@ fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
             inner = block.inner(rect);
             f.render_widget(block, rect);
         }
-        term_pane(tab, inner, f, i == focused);
+        term_pane(tab, inner, f, i == focused, settled);
     }
 }
 
-fn term_pane(tab: &mut Tab, area: Rect, f: &mut Frame, focused: bool) {
+fn term_pane(tab: &mut Tab, area: Rect, f: &mut Frame, focused: bool, settled: bool) {
     let Kind::Term { parser, tx } = &mut tab.kind else {
         return;
     };
     // Keep the remote PTY the size of the pane.
     let size = (NonZeroU16::new(area.height), NonZeroU16::new(area.width));
-    if let (Some(rows), Some(cols)) = size {
+    if let (Some(rows), Some(cols), true) = (size.0, size.1, settled) {
         if parser.screen().size() != (rows, cols) {
             parser.set_size(rows, cols);
             let _ = tx.send(SessionCmd::Resize(area.width, area.height));
@@ -1088,7 +1110,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     let taken: usize = tail.iter().map(Span::width).sum();
     let room = free.saturating_sub(taken + 4);
     let mem = lang.pick("MEM", "RAM");
-    let stats = app.stats.get(&alias);
+    let stats = app.stats.get(&alias).and_then(Option::as_ref);
     let parts = stats.map(|s| s.compact(mem, room, app.shape));
     for (i, (label, value, level)) in parts.unwrap_or_default().into_iter().enumerate() {
         let colour = match level {
@@ -1356,6 +1378,17 @@ mod tests {
         assert_eq!(shorten("root@web-01.example.com", 12), "root@web-01…");
         assert_eq!(shorten("short", 12), "short");
         assert_eq!(shorten("héllo wörld", 5), "héll…");
+        // A tab switch shifts three frames by 2, 1 and 0 columns, then stays put.
+        let mut left = SLIDE;
+        let offsets: Vec<u16> = (0..5)
+            .map(|_| {
+                let offset = slide_step(&mut left);
+                // A shifted frame always has a timed redraw coming after it.
+                assert_eq!(offset > 0, left > 0);
+                offset
+            })
+            .collect();
+        assert_eq!(offsets, [2, 1, 0, 0, 0]);
         // A pill is as wide as the square badge it replaces, in either font.
         let badge = Style::new().fg(INK).bg(BLUE);
         for nerd in [false, true] {

@@ -195,8 +195,9 @@ pub struct App {
     sub_sel: usize,
     marked: BTreeSet<String>,
     reach: HashMap<String, Option<u128>>,
-    /// Latest server metrics, by tab title or host alias.
-    stats: HashMap<String, Stats>,
+    /// Latest server metrics, by tab title or host alias. `None`: it was
+    /// asked and had no answer, so the host list does not ask it again.
+    stats: HashMap<String, Option<Stats>>,
     /// The host-list selection whose metrics were last asked for, and the
     /// task asking; replaced, and the task aborted, when the selection moves.
     probe: (Option<String>, Option<JoinHandle<()>>),
@@ -219,6 +220,8 @@ pub struct App {
     info: bool,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
+    /// Frames left of the slide that follows a tab switch.
+    slide: u16,
     popup: Option<Popup>,
     /// A password waiting for the vault to be unlocked, with its alias.
     pending: Option<(String, Zeroizing<String>)>,
@@ -373,6 +376,7 @@ impl App {
             shape: Shape::Wide,
             info: false,
             body: (80, 24),
+            slide: 0,
             popup: None,
             pending: None,
             msg: String::new(),
@@ -759,7 +763,10 @@ impl App {
         self.probe.0 = alias.clone();
         let Some(alias) = alias else { return };
         let live = |t: &Tab| t.alias == alias && !t.closed && matches!(t.kind, Kind::Term { .. });
-        if self.tabs.iter().any(live) || self.reach.get(&alias) == Some(&None) {
+        // Not a host that is down, and not one that already refused: every
+        // refused probe is a failed login in that server's log.
+        let refused = self.stats.get(&alias) == Some(&None);
+        if self.tabs.iter().any(live) || refused || self.reach.get(&alias) == Some(&None) {
             return;
         }
         let Ok(target) = Target::from_config(&self.sshc, &alias) else {
@@ -907,11 +914,8 @@ impl App {
             Event::Ping(alias, ms) => {
                 self.reach.insert(alias, ms);
             }
-            Event::Stats(alias, Some(stats)) => {
+            Event::Stats(alias, stats) => {
                 self.stats.insert(alias, stats);
-            }
-            Event::Stats(alias, None) => {
-                self.stats.remove(&alias);
             }
             Event::Forward(key, Ok(true)) => {
                 if let Some(state) = self.fwds.get_mut(&key) {
@@ -1864,11 +1868,23 @@ pub async fn run(cfg: Config) -> Result<()> {
         while !app.quit {
             terminal.draw(|f| draw::draw(&mut app, f))?;
             app.probe_selected();
-            let Some(ev) = rx.recv().await else { break };
+            let tab = app.active;
+            // A transition under way draws its next frame on time, event or not.
+            let ev = match app.slide {
+                0 => rx.recv().await,
+                _ => match tokio::time::timeout(draw::FRAME, rx.recv()).await {
+                    Ok(ev) => ev,
+                    Err(_) => continue,
+                },
+            };
+            let Some(ev) = ev else { break };
             app.on_event(ev);
             // Coalesce bursts (fast output, transfer progress) into one redraw.
             while let Ok(ev) = rx.try_recv() {
                 app.on_event(ev);
+            }
+            if app.active != tab && app.cfg.transitions {
+                app.slide = draw::SLIDE;
             }
         }
         anyhow::Ok(())

@@ -83,6 +83,9 @@ pub struct Config {
     /// instead of the plain Unicode ones. Off by default: without such a
     /// font they show as empty boxes.
     pub nerd_font: bool,
+    /// Slide a tab in over three frames when switching to it. On by default;
+    /// turn it off on a slow link, where three redraws are three round trips.
+    pub transitions: bool,
 }
 
 impl Default for Config {
@@ -97,6 +100,7 @@ impl Default for Config {
             ping_on_start: false,
             status_stats: true,
             nerd_font: false,
+            transitions: true,
         }
     }
 }
@@ -292,9 +296,10 @@ mod tests {
     #[test]
     fn status_bar_switches_default_to_on() {
         let none: Config = toml::from_str("").unwrap();
-        assert!(none.status_stats && !none.nerd_font);
-        let set: Config = toml::from_str("status_stats = false\nnerd_font = true").unwrap();
-        assert!(!set.status_stats && set.nerd_font);
+        assert!(none.status_stats && none.transitions && !none.nerd_font);
+        let set = "status_stats = false\nnerd_font = true\ntransitions = false";
+        let set: Config = toml::from_str(set).unwrap();
+        assert!(!set.status_stats && !set.transitions && set.nerd_font);
     }
 
     #[test]

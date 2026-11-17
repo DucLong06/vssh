@@ -87,10 +87,11 @@ Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi
 
 - **CPU** là tải trung bình 1 phút chia cho số nhân (trên 100% nghĩa là việc đang phải xếp hàng), **RAM** là bộ nhớ đã dùng / tổng, **/** là mức đầy của phân vùng gốc. Mỗi số chuyển sang vàng rồi đỏ: CPU trên 50% / 80%, bộ nhớ trên 70% / 85%, đĩa trên 80% / 90%.
 - **Trong một phiên**, số liệu được đọc mỗi 5 giây qua một kênh thứ hai của chính kết nối đang mở: không đăng nhập thêm lần nào. Hỗ trợ máy chủ Linux (`/proc`) và macOS (`uptime`, `vm_stat`); máy không trả lời thì không hiện gì.
-- **Ở danh sách máy chủ**, dừng con trỏ trên một máy trong giây lát thì máy đó được hỏi một lần. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`), và chỉ dùng agent hoặc file khoá: mật khẩu trong kho không bao giờ được gửi cho việc này. Máy đang có phiên mở thì dùng số liệu của phiên đó.
+- **Ở danh sách máy chủ**, dừng con trỏ trên một máy trong giây lát thì máy đó được hỏi một lần. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`), và chỉ dùng agent hoặc file khoá: mật khẩu trong kho không bao giờ được gửi cho việc này. Máy đang có phiên mở thì dùng số liệu của phiên đó; máy đã từ chối thì không bị hỏi lại.
 - **Khi thiếu chỗ:** bỏ thanh nhỏ trước, rồi tới đĩa, rồi bộ nhớ. Màn hình dọc và cửa sổ nhỏ chỉ giữ chế độ và máy chủ.
 - `status_stats = false` trong file cấu hình sẽ tắt toàn bộ.
 - **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
+- **Chuyển tab:** tab được chuyển tới trượt vào từ bên phải trong ba khung hình (120 ms). Terminal từ xa không bị đổi kích thước trong lúc trượt. Trên đường truyền chậm, ba lần vẽ lại là ba lượt gửi nhận: đặt `transitions = false` để tắt.
 
 ## Ghi log phiên và script đăng nhập
 
@@ -201,6 +202,7 @@ ping_on_start = false   # kiểm tra mọi máy chủ khi khởi động
 log_sessions = false    # ghi log mọi phiên ngay từ đầu
 status_stats = true     # tải, bộ nhớ và đĩa của máy đang chọn trên thanh trạng thái
 nerd_font = false       # true: đầu bo Powerline cho các nhãn (cần Nerd Font)
+transitions = true      # tab trượt vào trong ba khung hình khi chuyển tab
 
 [exec]                  # script đăng nhập: được gõ vào shell sau khi đăng nhập
 web-01 = "cd /srv/app && git status"

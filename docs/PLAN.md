@@ -34,7 +34,10 @@ record for those.
 - **A probe is not a decision to connect.** It only goes to hosts whose key is
   already in `known_hosts` and it authenticates with the agent or key files
   only. Moving the cursor never records a new host key and never sends a
-  vault password. Hosts marked down by the reachability check are skipped.
+  vault password. Hosts marked down by the reachability check are skipped,
+  and a host that refused a probe (it wants a password, say) is not probed
+  again until a session to it has been opened and closed: each refusal is a
+  failed login in that server's log.
 - **Room.** The stats take what is free between the centred text and the
   tags; `Stats::compact` picks bars, then plain text, then fewer metrics.
   Outside the wide layout it returns nothing.
@@ -72,6 +75,24 @@ The audit of every frame, and what changed:
 No double borders: side by side, frames keep one empty column between them.
 Stacked frames (portrait, the 2x2 grid) touch, bottom edge on top edge; a
 free row there would cost every pane a line of terminal.
+
+### Transitions
+
+- **What moves.** After a tab switch (any change of the active tab, a new
+  session included) the body is drawn shifted right by 2 columns, then 1,
+  then in place: three frames, 40 ms each. The brief lists the offsets as
+  "1, 2, 0" and calls them shrinking; 2, 1, 0 is the shrinking order.
+- **Only the drawing moves.** The shift is applied to the rectangle the view
+  is drawn into, not to `App::body`, and the frames of a slide do not resize
+  the remote PTYs: a slide never sends a window change to a server.
+- **Timed redraws.** The main loop normally draws once per batch of events.
+  While `App::slide` counts frames it waits for an event at most 40 ms and
+  draws again, so the slide finishes on an idle screen too. The countdown
+  reaches zero only together with the unshifted frame.
+- **No flicker.** Nothing is cleared: ratatui diffs each frame against the
+  last one and the alternate screen stays up.
+- **Off switch.** `transitions = false`. There is no automatic latency check;
+  the flag is the whole mechanism.
 
 ### Limits
 
