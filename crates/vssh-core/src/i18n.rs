@@ -20,11 +20,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("no_tags", "no tags", "chưa có thẻ"),
     ("pinned", "pinned", "đã ghim"),
-    (
-        "session_note",
-        "Opened, with no terminal yet.",
-        "Đã mở, chưa có terminal.",
-    ),
     ("palette", "Command palette", "Bảng lệnh"),
     ("search", "Search hosts and actions", "Tìm máy chủ và lệnh"),
     (
@@ -70,6 +65,16 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("refresh", "refresh", "làm mới"),
     ("try_again", "try again", "thử lại"),
     ("secs_ago", "{n}s ago", "{n} giây trước"),
+    // The terminal tabs. The leader's keys are the TUI's.
+    ("connecting", "connecting", "đang kết nối"),
+    ("connected", "connected", "đã kết nối"),
+    ("disconnected", "disconnected", "mất kết nối"),
+    ("reconnect", "Reconnect", "Kết nối lại"),
+    (
+        "leader_menu",
+        "0-9 tab · Tab next · y copy output · x close",
+        "0-9 tab · Tab kế tiếp · y chép kết quả · x đóng",
+    ),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

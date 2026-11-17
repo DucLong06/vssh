@@ -11,5 +11,11 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
   this.dispatchEvent(new Event('close'))
 }
 Element.prototype.scrollIntoView ??= () => {}
+// Nor a layout to observe.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
 
 afterEach(() => setLang('en'))

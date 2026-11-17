@@ -5,7 +5,7 @@ pub mod forward;
 use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -356,7 +356,7 @@ impl client::Handler for Client {
         let PublicKeyOrCertificate::PublicKey { key, .. } = key else {
             bail!("host certificates are not supported");
         };
-        verify_host_key(&self.host, self.port, key, &known_hosts_path())?;
+        check_host_key(&self.host, self.port, key, &known_hosts_path())?;
         Ok(true)
     }
 
@@ -407,6 +407,55 @@ pub fn verify_host_key(host: &str, port: u16, key: &PublicKey, known_hosts: &Pat
         }
         .into());
     }
+    learn_known_hosts_path(host, port, key, known_hosts)
+        .with_context(|| format!("cannot write {}", known_hosts.display()))
+}
+
+/// Keys a person said yes to after a mismatch: host, port, fingerprint, and
+/// whether the key goes on record. Each is good for one connection.
+static ACCEPTED: Mutex<Vec<(String, u16, String, bool)>> = Mutex::new(Vec::new());
+
+/// Says yes to the key a `Fail::HostKey` named, for the next connection to
+/// that host and no further. `forever` puts it on record in place of the
+/// conflicting key; otherwise nothing is written and the next connection
+/// after that one is a mismatch again.
+pub fn trust_host_key(host: &str, port: u16, fingerprint: &str, forever: bool) {
+    let yes = (host.to_string(), port, fingerprint.to_string(), forever);
+    ACCEPTED.lock().unwrap().push(yes);
+}
+
+/// [`verify_host_key`], unless the mismatch is the very key a person
+/// accepted with [`trust_host_key`].
+fn check_host_key(host: &str, port: u16, key: &PublicKey, known_hosts: &Path) -> Result<()> {
+    let Err(err) = verify_host_key(host, port, key, known_hosts) else {
+        return Ok(());
+    };
+    let Some(Fail::HostKey { fingerprint, .. }) = err.downcast_ref::<Fail>() else {
+        return Err(err);
+    };
+    let forever = {
+        let mut accepted = ACCEPTED.lock().unwrap();
+        let same = |(h, p, f, _): &(String, u16, String, bool)| {
+            h == host && *p == port && f == fingerprint
+        };
+        let Some(at) = accepted.iter().position(same) else {
+            return Err(err);
+        };
+        accepted.remove(at).3
+    };
+    if !forever {
+        return Ok(());
+    }
+    // shortcut: a line that names several hosts (`a,b ssh-ed25519 ...`) goes
+    // whole, and the others are learned again on their next connection; split
+    // the line if anyone keeps such a file.
+    let old = known_host_keys_path(host, port, known_hosts)?;
+    let text = std::fs::read_to_string(known_hosts)?;
+    let lines = text.lines().enumerate();
+    let kept = lines.filter(|(i, _)| old.iter().all(|(line, _)| *line != i + 1));
+    let kept: String = kept.map(|(_, line)| format!("{line}\n")).collect();
+    std::fs::write(known_hosts, kept)
+        .with_context(|| format!("cannot write {}", known_hosts.display()))?;
     learn_known_hosts_path(host, port, key, known_hosts)
         .with_context(|| format!("cannot write {}", known_hosts.display()))
 }
@@ -692,6 +741,48 @@ mod tests {
         assert!(verify_host_key("alpha", 2222, &key(1), &path).is_err());
         assert!(verify_host_key("beta", 22, &key(3), &path).is_ok());
         assert!(fs::read_to_string(&path).unwrap().contains("[alpha]:2222 "));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_changed_key_gets_in_only_after_a_person_said_yes_to_it() {
+        let dir = std::env::temp_dir().join(format!("vssh-hostkey-yes-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("known_hosts");
+        check_host_key("delta", 22, &key(1), &path).unwrap();
+        check_host_key("other", 22, &key(7), &path).unwrap();
+        let on_record = fs::read_to_string(&path).unwrap();
+        let refused = |seed| check_host_key("delta", 22, &key(seed), &path).unwrap_err();
+        let Some(Fail::HostKey { fingerprint, .. }) = refused(2).downcast_ref::<Fail>().cloned()
+        else {
+            panic!("not a host key mismatch");
+        };
+
+        // A yes to another key, or to this key on another port, lets nobody in.
+        trust_host_key(
+            "delta",
+            22,
+            &key(3).fingerprint(HashAlg::Sha256).to_string(),
+            false,
+        );
+        trust_host_key("delta", 2022, &fingerprint, false);
+        refused(2);
+
+        // Once: in, nothing written, and the next connection is asked about again.
+        trust_host_key("delta", 22, &fingerprint, false);
+        check_host_key("delta", 22, &key(2), &path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), on_record);
+        refused(2);
+
+        // For good: the key on record gives way to it; other hosts keep theirs.
+        trust_host_key("delta", 22, &fingerprint, true);
+        check_host_key("delta", 22, &key(2), &path).unwrap();
+        check_host_key("delta", 22, &key(2), &path).unwrap();
+        refused(1);
+        check_host_key("other", 22, &key(7), &path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        // One line each (the library leaves blank ones between its entries).
+        assert_eq!(text.split_whitespace().count(), 6, "{text:?}");
         fs::remove_dir_all(dir).unwrap();
     }
 

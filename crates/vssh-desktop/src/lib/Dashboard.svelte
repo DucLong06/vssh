@@ -37,6 +37,7 @@
   let resting: ReturnType<typeof setTimeout> | undefined
   let search = $state<HTMLInputElement>()
   let grid = $state<HTMLElement>()
+  let root = $state<HTMLElement>()
 
   function saved(): string[] {
     try {
@@ -136,7 +137,9 @@
   function onwindowkey(e: KeyboardEvent) {
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     // The TUI's keys. Not while typing, with Ctrl (Ctrl-R), or under a dialog.
-    if (typing || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return
+    // Nor behind a terminal tab.
+    const away = document.querySelector('dialog[open]') || root?.closest('[hidden]')
+    if (typing || e.ctrlKey || e.metaKey || e.altKey || away) return
     if (e.key === '/') {
       e.preventDefault()
       search?.focus()
@@ -159,7 +162,7 @@
 
 <svelte:window onkeydown={onwindowkey} />
 
-<section aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+<section bind:this={root} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
   {#if error}
     <p role="alert" class="pt-4 break-words text-red"><strong>{error.label}</strong> {error.message}</p>
   {/if}

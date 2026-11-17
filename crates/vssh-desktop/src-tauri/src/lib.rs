@@ -10,19 +10,21 @@ use std::future::Future;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, ensure, Context, Result};
 use serde::Serialize;
 use tauri::State;
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
 use vssh_core::conn_err::{ConnError, Report};
-use vssh_core::ssh::{self, Target, Via};
+use vssh_core::ssh::{self, SessionCmd, Target, Via};
 use vssh_core::stats::Peek;
 use vssh_core::store::db::{Db, Snippet};
 use vssh_core::store::ssh_config::SshConfig;
 use vssh_core::store::{self, Host};
-use vssh_core::task::{self, Event, Peeks};
+use vssh_core::task::{self, Event, Peeks, Receiver, Shell};
+
+mod session;
 
 /// What a command answers: its value, or a failure the window can show.
 type Reply<T> = Result<T, ConnError>;
@@ -33,6 +35,9 @@ pub type Answer<T> = Pin<Box<dyn Future<Output = Reply<T>> + Send>>;
 /// How long a TCP connect to a host took, in ms; `None` if it is unreachable.
 pub type Ping = Pin<Box<dyn Future<Output = Option<u64>> + Send>>;
 
+/// Where a running shell reports to.
+pub type Heard = Arc<dyn Fn(Shell) + Send + Sync>;
+
 /// The network, as far as the commands use it. The app's is [`Core`]; the
 /// contract tests put one in its place that answers from memory.
 pub trait Transport: Send + Sync + 'static {
@@ -42,6 +47,18 @@ pub trait Transport: Send + Sync + 'static {
     fn ping(&self, target: Target) -> Ping;
     /// Whether the target's host key is on record: it was connected to before.
     fn known(&self, target: &Target) -> bool;
+    /// A shell on a PTY of that size, until either side ends it; dropping
+    /// the answer ends it. `keys` types into it and resizes it.
+    fn shell(
+        &self,
+        target: Target,
+        size: (u16, u16),
+        keys: Receiver<SessionCmd>,
+        report: Heard,
+    ) -> Answer<()>;
+    /// A person's yes to a host key that does not match the one on record,
+    /// for the next connection to the target.
+    fn trust(&self, target: &Target, fingerprint: &str, forever: bool);
 }
 
 /// The real network: `vssh_core::task`, on Tauri's own tokio runtime. It
@@ -70,6 +87,21 @@ impl Transport for Core {
     fn known(&self, target: &Target) -> bool {
         ssh::is_known(target)
     }
+
+    fn shell(
+        &self,
+        target: Target,
+        size: (u16, u16),
+        keys: Receiver<SessionCmd>,
+        report: Heard,
+    ) -> Answer<()> {
+        // Keys and the agent only, as `peek`.
+        Box::pin(task::shell(target, size, keys, move |ev| report(ev)))
+    }
+
+    fn trust(&self, target: &Target, fingerprint: &str, forever: bool) {
+        ssh::trust_host_key(&target.host, target.port, fingerprint, forever);
+    }
 }
 
 /// What the commands work on: where the user's hosts are, and the network.
@@ -77,7 +109,7 @@ pub struct Backend {
     ssh_config: PathBuf,
     data_dir: PathBuf,
     net: Box<dyn Transport>,
-    sessions: AtomicU64,
+    sessions: Mutex<session::Sessions>,
 }
 
 impl Backend {
@@ -86,7 +118,7 @@ impl Backend {
             ssh_config,
             data_dir,
             net: Box::new(net),
-            sessions: AtomicU64::new(0),
+            sessions: Mutex::default(),
         }
     }
 
@@ -119,11 +151,6 @@ impl Backend {
         let known = sshc.hosts().iter().any(|host| host == alias);
         ensure!(known, "no host named {alias:?}");
         Target::from_config(&sshc, alias)
-    }
-
-    /// The id of a new session.
-    fn session(&self) -> u64 {
-        self.sessions.fetch_add(1, Ordering::Relaxed) + 1
     }
 }
 
@@ -162,24 +189,6 @@ async fn ping_host(alias: String, backend: State<'_, Backend>) -> Reply<Option<u
     Ok(backend.net.ping(target).await)
 }
 
-/// Opens a session to a host of the config and returns its id.
-#[tauri::command(async)]
-fn connect_host(alias: String, backend: State<'_, Backend>) -> Reply<u64> {
-    backend.target(&alias)?;
-    // shortcut: as `quick_connect`, the id is all there is until D3.
-    Ok(backend.session())
-}
-
-/// Opens a session to a typed `[user@]host[:port]` and returns its id.
-/// Nothing is saved, as in the TUI.
-#[tauri::command]
-fn quick_connect(host: String, backend: State<'_, Backend>) -> Reply<u64> {
-    Target::parse(&host)?;
-    // shortcut: no connection is made, the id is all there is to a session;
-    // D3 opens the PTY here, through `Transport`.
-    Ok(backend.session())
-}
-
 #[tauri::command(async)]
 fn list_snippets(backend: State<'_, Backend>) -> Reply<Vec<Snippet>> {
     Ok(backend.db().and_then(|db| Ok(db.snippets()?))?)
@@ -212,8 +221,13 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             list_hosts,
             get_host_stats,
             ping_host,
-            connect_host,
-            quick_connect,
+            session::session_open,
+            session::quick_connect,
+            session::session_start,
+            session::session_write,
+            session::session_resize,
+            session::session_close,
+            session::session_trust,
             list_snippets,
             resolve_conn_error
         ])
@@ -223,6 +237,8 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
 pub fn run() {
     let backend = Backend::new(ssh_config_path(), data_dir(), Core::default());
     builder::<tauri::Wry>(backend)
+        // Here and not in `builder`: it wants a display, which tests have not.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .run(tauri::generate_context!())
         .expect("vssh could not start its window");
 }

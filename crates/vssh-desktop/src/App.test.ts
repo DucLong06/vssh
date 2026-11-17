@@ -1,5 +1,6 @@
+import { emit } from '@tauri-apps/api/event'
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
-import { render, screen, within } from '@testing-library/svelte'
+import { cleanup, render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
@@ -8,6 +9,7 @@ import hosts from './lib/fixtures/hosts.json'
 import peek from './lib/fixtures/peek.json'
 import refused from './lib/fixtures/refused.json'
 import shown from './lib/fixtures/shown.json'
+import { terminals } from './lib/fixtures/xterm'
 import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
 import strings from './lib/strings.json'
@@ -26,17 +28,25 @@ function shell(over: Record<string, (args: Args) => unknown> = {}) {
     list_snippets: () => snippets,
     get_host_stats: () => peek,
     ping_host: () => 12,
-    connect_host: () => ++sessions,
+    session_open: () => ++sessions,
     quick_connect: () => ++sessions,
+    session_start: () => null,
+    session_write: () => null,
+    session_resize: () => null,
+    session_close: () => null,
+    'plugin:clipboard-manager|write_text': () => null,
     // The core's own words for a failure of that class.
     resolve_conn_error: ({ error, lang }) =>
       shown[lang as 'en' | 'vi'][errors.findIndex((known) => known.class === (error as typeof refused).class)],
     ...over,
   }
-  mockIPC((cmd, args) => {
-    calls.push([cmd, args as Args])
-    return commands[cmd](args as Args)
-  })
+  mockIPC(
+    (cmd, args) => {
+      calls.push([cmd, args as Args])
+      return commands[cmd](args as Args)
+    },
+    { shouldMockEvents: true },
+  )
   render(App)
   // Under fake timers the user's own pauses are on the fake clock too.
   return userEvent.setup({ advanceTimers: (ms) => void (vi.isFakeTimers() && vi.advanceTimersByTime(ms)) })
@@ -48,9 +58,20 @@ const card = (alias: string) => screen.findByRole('article', { name: alias })
 const fails = () => {
   throw refused
 }
+const tab = (name: RegExp) => screen.findByRole('tab', { name })
+/** What a session's shell prints, and what it says about itself. */
+const prints = (id: number, text: string) => emit(`pty-data:${id}`, [...new TextEncoder().encode(text)])
+const says = (id: number, state: object) => emit(`pty-state:${id}`, state)
+const copied = () => asked('plugin:clipboard-manager|write_text').map((args) => args.text)
+const leader = '{Control>}a{/Control}'
 
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers()
+  // The terminals stop listening when they go, which takes the mocks: first
+  // the window, then a turn of the loop, then the mocks.
+  cleanup()
+  await new Promise((done) => setTimeout(done))
+  terminals.length = 0
   clearMocks()
   localStorage.clear()
   forget()
@@ -101,17 +122,136 @@ test('a host that does not answer: its card says which kind of failure, in the l
   await vi.waitFor(() => expect(down).toHaveTextContent('✗ BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối'))
 })
 
-test('Connect on a card opens a session that shows the host and its figures', async () => {
+// --- D3: terminal tabs -------------------------------------------------------
+
+test('Connect on a card opens a tab with a terminal: what the shell prints goes in, keys and size go out', async () => {
   const user = shell()
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
-  const sessions = await screen.findByRole('list', { name: 'Sessions' })
-  await vi.waitFor(() =>
-    expect(within(sessions).getByRole('listitem')).toHaveTextContent('#1 web-01 CPU 23% · MEM 4.2/16G · / 61%'),
-  )
-  expect(asked('connect_host')).toEqual([{ alias: 'web-01' }])
+  expect(await tab(/web-01/)).toHaveAttribute('aria-selected', 'true')
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }])
+  // It connects once its terminal listens, at the terminal's size.
+  await vi.waitFor(() => expect(asked('session_start')).toEqual([{ id: 1, cols: 80, rows: 24 }]))
+  const [term] = terminals
+  expect(term.focused).toBe(true)
+  expect(term.options).toMatchObject({ fontFamily: expect.stringContaining('Maple Mono NF') })
+  expect(term.unicode.activeVersion).toBe('11')
+  expect(within(await tab(/web-01/)).getByRole('img', { name: 'connecting' })).toBeInTheDocument()
+
+  await says(1, { state: 'up' })
+  await prints(1, 'web:~# ')
+  expect(term.written).toBe('web:~# ')
+  expect(within(await tab(/web-01/)).getByRole('img', { name: 'connected' })).toBeInTheDocument()
+  term.type('l')
+  term.type('s\r')
+  expect(asked('session_write')).toEqual([
+    { id: 1, data: 'l' },
+    { id: 1, data: 's\r' },
+  ])
+  term.resize(120, 40)
+  expect(asked('session_resize')).toEqual([{ id: 1, cols: 120, rows: 40 }])
   expect(status()).toHaveTextContent('Sessions 1')
-  // The dashboard stays where it was.
+  // The dashboard is behind it, out of reach.
+  expect(screen.queryByRole('article')).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'close web-01' }))
+  expect(asked('session_close')).toEqual([{ id: 1 }])
+  expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  expect(terminals).toHaveLength(0)
   expect(screen.getAllByRole('article')).toHaveLength(4)
+  expect(status()).toHaveTextContent('Sessions 0')
+})
+
+test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second Ctrl-A is for the shell', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/web-01/)
+  const picked = () => screen.getByRole('tab', { selected: true })
+  // The menu is on screen with a terminal, and lit while the next key is a command.
+  expect(status()).toHaveTextContent('Ctrl-A 0-9 tab · Tab next · y copy output')
+  await user.keyboard(`${leader}0`)
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
+  expect(picked()).toHaveTextContent('2 web-02')
+  expect(terminals[1].focused).toBe(true)
+
+  await user.keyboard(`${leader}1`)
+  expect(picked()).toHaveTextContent('1 web-01')
+  expect(terminals[0].focused).toBe(true)
+  expect(screen.getByRole('tabpanel', { name: 'web-01' })).toBeVisible()
+  await user.keyboard(`${leader}{Tab}`)
+  expect(picked()).toHaveTextContent('2 web-02')
+  await user.keyboard(`${leader}n`)
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await user.keyboard(`${leader}p`)
+  expect(picked()).toHaveTextContent('2 web-02')
+  // A tab that is not there, a key that means nothing: the leader is over.
+  await user.keyboard(`${leader}7${leader}{Escape}`)
+  expect(picked()).toHaveTextContent('2 web-02')
+
+  // The keys the window keeps reach the shell after the leader.
+  await user.keyboard(`${leader}${leader}${leader}{Control>}w{/Control}`)
+  expect(asked('session_write')).toEqual([
+    { id: 2, data: '\x01' },
+    { id: 2, data: '\x17' },
+  ])
+  // On its own Ctrl-W closes the tab in front, at once; Ctrl-A x is the TUI's key for it.
+  await user.keyboard('{Control>}w{/Control}')
+  expect(asked('session_close')).toEqual([{ id: 2 }])
+  expect(picked()).toHaveTextContent('1 web-01')
+  await user.keyboard(`${leader}x`)
+  expect(asked('session_close')).toEqual([{ id: 2 }, { id: 1 }])
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+})
+
+test('text leaves a terminal for the clipboard three ways: Ctrl-A y, a selection, and an OSC 52 from over there', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(1))
+  const [term] = terminals
+  await prints(1, 'web:~# ls\r\nold  news\r\nweb:~# df -h /\r\nFilesystem  Use%\r\n/dev/sda1   61%\r\nweb:~# ')
+  await user.keyboard(`${leader}y`)
+  expect(copied()).toEqual(['Filesystem  Use%\n/dev/sda1   61%'])
+  // No modifier and no menu: what the mouse selects is copied.
+  term.select('/dev/sda1')
+  term.select('')
+  expect(copied()).toHaveLength(2)
+  expect(copied()[1]).toBe('/dev/sda1')
+  // A program on the host copies; it cannot read what is there.
+  expect(term.osc.get(52)?.(`c;${btoa('from vim')}`)).toBe(true)
+  term.osc.get(52)?.('c;?')
+  expect(copied()).toEqual(['Filesystem  Use%\n/dev/sda1   61%', '/dev/sda1', 'from vim'])
+  // Nothing of this was typed into the shell.
+  expect(asked('session_write')).toEqual([])
+})
+
+test('a shell that ends leaves its tab red with a way back: reconnect starts the same session again', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(1))
+  await says(1, { state: 'up' })
+  expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument()
+
+  // The network went away under it.
+  await says(1, { state: 'closed', error: refused })
+  const badge = await within(screen.getByRole('tabpanel', { name: 'web-01' })).findByRole('status')
+  await vi.waitFor(() => expect(badge).toHaveTextContent('disconnected REFUSED Connection refused by 10.0.0.5:2222'))
+  expect(within(await tab(/web-01/)).getByRole('img', { name: 'disconnected' })).toBeInTheDocument()
+  // In the language of the window.
+  await user.click(screen.getByRole('button', { name: 'Language: EN' }))
+  await vi.waitFor(() => expect(badge).toHaveTextContent('mất kết nối BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối'))
+
+  terminals[0].resize(100, 30)
+  await user.click(within(badge).getByRole('button', { name: 'Kết nối lại' }))
+  expect(asked('session_start')).toEqual([
+    { id: 1, cols: 80, rows: 24 },
+    { id: 1, cols: 100, rows: 30 },
+  ])
+  expect(screen.queryByRole('button', { name: 'Kết nối lại' })).not.toBeInTheDocument()
+  expect(within(await tab(/web-01/)).getByRole('img', { name: 'đang kết nối' })).toBeInTheDocument()
+  // A clean end (`exit`) says so too, with nothing to explain.
+  await says(1, { state: 'up' })
+  await says(1, { state: 'closed', error: null })
+  expect(await screen.findByRole('button', { name: 'Kết nối lại' })).toBeInTheDocument()
 })
 
 test('a change made elsewhere, to the config or by the TUI, shows up on its own', async () => {
@@ -153,15 +293,21 @@ test('hosts that cannot be read: the reason is on screen', async () => {
   expect(alert).toHaveTextContent('REFUSED Connection refused by 10.0.0.5:2222 — is sshd running?')
 })
 
-test('Ctrl-K opens the palette, and so does the TUI leader Ctrl-A', async () => {
+test('Ctrl-K opens the palette; Ctrl-A is the leader and waits for its key', async () => {
   const user = shell()
   await screen.findByRole('button', { name: /db-primary/ })
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   await user.keyboard('{Control>}k{/Control}')
   expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
   screen.getByRole<HTMLDialogElement>('dialog').close()
-  await user.keyboard('{Control>}a{/Control}')
-  expect(await screen.findByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
+  await user.keyboard(leader)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(within(status()).getByRole('status')).toHaveTextContent('Ctrl-A 0-9 tab')
+  await user.keyboard('{Escape}')
+  expect(within(status()).queryByRole('status')).not.toBeInTheDocument()
+  // In a field Ctrl-A is the field's: it selects the text.
+  await user.type(screen.getByRole('searchbox'), `web${leader}`)
+  expect(within(status()).queryByRole('status')).not.toBeInTheDocument()
 })
 
 test('a host chosen in the palette is the selected one', async () => {
@@ -197,8 +343,8 @@ test('quick connect from the palette opens a session and saves no host', async (
   // Behind a modal dialog the cards and their buttons are inert; jsdom does not know.
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }))
 
-  const sessions = await screen.findByRole('list', { name: 'Sessions' })
-  expect(within(sessions).getByRole('listitem')).toHaveTextContent('#7 deploy@10.0.0.9')
+  expect(await tab(/deploy@10.0.0.9/)).toHaveAttribute('aria-selected', 'true')
+  await vi.waitFor(() => expect(asked('session_start')).toEqual([{ id: 7, cols: 80, rows: 24 }]))
   expect(sent).toEqual([{ host: 'deploy@10.0.0.9' }])
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(status()).toHaveTextContent('Sessions 1')
@@ -278,7 +424,11 @@ test('in Vietnamese no English string is left anywhere: cards in every state, th
 
   // A session, and the quick peek of a host that answered and of one that is down.
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
-  await screen.findByRole('list', { name: 'Phiên' })
+  await screen.findByRole('tablist', { name: 'Phiên' })
+  await says(1, { state: 'closed', error: refused })
+  await screen.findByRole('button', { name: 'Kết nối lại' })
+  expect(english(words())).toEqual([])
+  await user.keyboard(`${leader}0`)
   ;(await card('web-01')).focus()
   await user.keyboard('v')
   expect(screen.getByRole('dialog', { name: 'Xem nhanh: web-01' })).toHaveTextContent('Đã chạy')
