@@ -1,0 +1,6 @@
+load 1.30 1.12 0.97 2/211 9120
+cpus 2
+/dev/vda1       206292968 173286092  24551140      84% /
+uptime 10:15:01 up 12 min, load average: 1.30, 1.12, 0.97
+uname Linux 6.1.0-28-amd64 x86_64
+host db-primary

@@ -1,0 +1,8 @@
+load 0.92 0.58 0.59 1/389 12345
+cpus 4
+MemTotal:       16303428 kB
+MemAvailable:   11883116 kB
+/dev/nvme0n1p2   487652000 278412000 184340000      61% /
+uptime 10:15:01 up 3 days, 2:15, 2 users, load average: 0.92, 0.58, 0.59
+uname Linux 6.14.0-37-generic x86_64
+host web-01

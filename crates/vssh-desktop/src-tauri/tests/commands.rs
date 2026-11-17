@@ -15,10 +15,11 @@ use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
 use vssh_core::config::Lang;
 use vssh_core::conn_err::{ConnError, Fail};
 use vssh_core::ssh::Target;
+use vssh_core::stats::parse_peek;
 use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::Host;
-use vssh_desktop::{builder, Answer, Backend, Transport};
+use vssh_desktop::{builder, Answer, Backend, Ping, Transport};
 
 const SSH_CONFIG: &str = "\
 Host web-01
@@ -33,11 +34,13 @@ Host *.lan
 ";
 
 /// A network that answers every peek with the same thing and remembers
-/// whom it was asked about.
+/// whom it was asked about. Every host is one it has met, 12 ms away.
 #[derive(Clone)]
 struct Fake {
     answer: Result<Peek, ConnError>,
     asked: Arc<Mutex<Vec<String>>>,
+    known: bool,
+    ping: Option<u64>,
 }
 
 impl Fake {
@@ -45,6 +48,8 @@ impl Fake {
         Self {
             answer,
             asked: Arc::default(),
+            known: true,
+            ping: Some(12),
         }
     }
 
@@ -60,6 +65,24 @@ impl Transport for Fake {
         let answer = self.answer.clone();
         Box::pin(async move { answer })
     }
+
+    fn ping(&self, target: Target) -> Ping {
+        let line = format!("ping {}:{}", target.host, target.port);
+        self.asked.lock().unwrap().push(line);
+        let ms = self.ping;
+        Box::pin(async move { ms })
+    }
+
+    fn known(&self, _: &Target) -> bool {
+        self.known
+    }
+}
+
+/// A host that is reached through another one.
+const HIDDEN: &str = "\nHost hidden\n  HostName 10.9.9.9\n  User deploy\n  ProxyJump web-01\n";
+
+fn with_hidden(home: &Path) {
+    fs::write(home.join("config"), format!("{SSH_CONFIG}{HIDDEN}")).unwrap();
 }
 
 /// A home of its own for one test: an ssh config and an empty data directory.
@@ -229,6 +252,91 @@ fn get_host_stats_passes_a_connection_failure_on_with_its_class() {
     );
 }
 
+/// The dashboard asks on its own, every few seconds, about every host. That
+/// must trust nothing new and log in nowhere the user did not go before.
+#[test]
+fn a_passive_get_host_stats_leaves_hosts_alone_that_asking_would_commit_to() {
+    let home = home("stats-passive");
+    with_hidden(&home);
+    let stats = |window: &WebviewWindow<MockRuntime>, alias: &str, passive: bool| {
+        let args = json!({ "alias": alias, "passive": passive });
+        call(window, "get_host_stats", args).map(|peek| !peek.is_null())
+    };
+
+    // A host whose key is not on record: connecting would record it.
+    let net = Fake {
+        known: false,
+        ..Fake::silent()
+    };
+    let (_app, stranger) = window(&home, net.clone());
+    assert_eq!(stats(&stranger, "web-01", true), Ok(false));
+    assert!(net.asked.lock().unwrap().is_empty());
+    // Asked for by a person, it is peeked at, as `v` does in the TUI.
+    assert_eq!(stats(&stranger, "web-01", false), Ok(true));
+    assert_eq!(net.asked.lock().unwrap().len(), 1);
+
+    let net = Fake::silent();
+    let (_app, met) = window(&home, net.clone());
+    assert_eq!(stats(&met, "web-01", true), Ok(true));
+    // Behind a jump host: a round would log in to the jump host too.
+    assert_eq!(stats(&met, "hidden", true), Ok(false));
+    assert_eq!(stats(&met, "hidden", false), Ok(true));
+    assert_eq!(
+        *net.asked.lock().unwrap(),
+        [
+            "web-01 = deploy@10.0.0.5:2222",
+            "hidden = deploy@10.9.9.9:22"
+        ]
+    );
+    // What is not a host is refused either way.
+    assert!(stats(&met, "nope", true).is_err());
+}
+
+#[test]
+fn ping_host_times_the_way_to_a_host_that_is_reached_directly() {
+    let home = home("ping");
+    with_hidden(&home);
+    let net = Fake::silent();
+    let (_app, up) = window(&home, net.clone());
+    let ping = |window: &WebviewWindow<MockRuntime>, alias: &str| {
+        call(window, "ping_host", json!({ "alias": alias }))
+    };
+    assert_eq!(ping(&up, "web-01"), Ok(json!(12)));
+    assert_eq!(*net.asked.lock().unwrap(), ["ping 10.0.0.5:2222"]);
+    // Its own address may not be reachable from here at all: no answer
+    // rather than "down".
+    assert_eq!(
+        ping(&up, "hidden"),
+        Err(other("\"hidden\" is not reached directly"))
+    );
+    assert_eq!(ping(&up, "nope"), Err(other("no host named \"nope\"")));
+    assert_eq!(net.asked.lock().unwrap().len(), 1);
+
+    let net = Fake {
+        ping: None,
+        ..Fake::silent()
+    };
+    let (_app, down) = window(&home, net);
+    assert_eq!(ping(&down, "web-01"), Ok(Value::Null));
+}
+
+#[test]
+fn connect_host_opens_a_session_to_a_host_of_the_config_only() {
+    let home = home("connect");
+    let (_app, window) = window(&home, Fake::silent());
+    let connect = |alias: &str| call(&window, "connect_host", json!({ "alias": alias }));
+    assert_eq!(connect("web-01"), Ok(json!(1)));
+    assert_eq!(connect("nope"), Err(other("no host named \"nope\"")));
+    // One counter for every kind of session.
+    let quick = call(
+        &window,
+        "quick_connect",
+        json!({ "host": "db.example.com" }),
+    );
+    assert_eq!(quick, Ok(json!(2)));
+    assert_eq!(connect("bare"), Ok(json!(3)));
+}
+
 #[test]
 fn quick_connect_gives_each_session_its_own_id_and_saves_nothing() {
     let home = home("quick");
@@ -354,7 +462,8 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
         listener.local_addr().unwrap().port()
     };
     let target = Target::parse(&format!("nobody@127.0.0.1:{port}")).unwrap();
-    let answer = tauri::async_runtime::block_on(vssh_desktop::Core.peek("closed".into(), target));
+    let answer =
+        tauri::async_runtime::block_on(vssh_desktop::Core::default().peek("closed".into(), target));
     let err = answer.unwrap_err();
     assert_eq!(
         serde_json::to_value(&err.fail).unwrap(),
@@ -362,25 +471,71 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
     );
 }
 
+fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib")
+}
+
+/// A file the frontend reads that is written from here: `UPDATE_STRINGS=1
+/// cargo test -p vssh-desktop` writes it again after its source changed.
+fn held(file: &str, value: &Value) {
+    let path = fixtures().join(file);
+    if std::env::var_os("UPDATE_STRINGS").is_some() {
+        let text = serde_json::to_string_pretty(value).unwrap();
+        fs::write(&path, text + "\n").unwrap();
+    }
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(&on_disk, value, "{file}: run again with UPDATE_STRINGS=1");
+}
+
 /// The frontend's tests render `src/lib/fixtures`. Those files must be what
 /// a command could really answer: each goes through the Rust type and comes
 /// back the same, so a field renamed on one side fails here.
 #[test]
 fn the_frontend_fixtures_are_answers_the_commands_can_give() {
-    fn same<T: serde::Serialize + serde::de::DeserializeOwned>(file: &str) {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../src/lib/fixtures")
-            .join(file);
-        let json: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let read = |file: &str| fs::read_to_string(fixtures().join("fixtures").join(file)).unwrap();
+    fn same<T: serde::Serialize + serde::de::DeserializeOwned>(text: &str) -> T {
+        let json: Value = serde_json::from_str(text).unwrap();
         let typed: T = serde_json::from_value(json.clone()).unwrap();
-        assert_eq!(serde_json::to_value(typed).unwrap(), json, "{file}");
+        assert_eq!(serde_json::to_value(&typed).unwrap(), json);
+        typed
     }
-    same::<Vec<Host>>("hosts.json");
-    same::<ConnError>("refused.json");
+    same::<Vec<Host>>(&read("hosts.json"));
+    same::<ConnError>(&read("refused.json"));
+    // The card's numbers are the core parser's reading of what a host prints.
+    let peek = same::<Peek>(&read("peek.json"));
+    assert_eq!(peek, parse_peek(&read("peek.txt")));
+
+    // One failure of every class, and each in the words of both languages:
+    // what the cards show for a host that is down.
+    let errors = same::<Vec<ConnError>>(&read("errors.json"));
+    let classes: Vec<String> = errors
+        .iter()
+        .map(|e| {
+            serde_json::to_value(e.class)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .into()
+        })
+        .collect();
+    let all = "dns timeout refused unreachable auth host_key jump other";
+    assert_eq!(classes.join(" "), all);
+    let home = home("fixtures");
+    let (_app, window) = window(&home, Fake::silent());
+    let shown = |lang: &str| -> Value {
+        let resolve = |error| json!({ "error": error, "lang": lang });
+        let words = errors
+            .iter()
+            .map(|error| call(&window, "resolve_conn_error", resolve(error)).unwrap());
+        words.collect()
+    };
+    held(
+        "fixtures/shown.json",
+        &json!({ "en": shown("en"), "vi": shown("vi") }),
+    );
 }
 
-/// The window's words are the core's table, as JSON. `UPDATE_STRINGS=1 cargo
-/// test -p vssh-desktop strings` writes the file again after the table changed.
+/// The window's words are the core's table, as JSON.
 #[test]
 fn the_frontend_strings_are_the_core_table() {
     let words = |lang: Lang| -> Value {
@@ -388,12 +543,8 @@ fn the_frontend_strings_are_the_core_table() {
         rows.map(|(key, en, vi)| (key.to_string(), json!(lang.pick(en, vi))))
             .collect()
     };
-    let table = json!({ "en": words(Lang::En), "vi": words(Lang::Vi) });
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/strings.json");
-    if std::env::var_os("UPDATE_STRINGS").is_some() {
-        let text = serde_json::to_string_pretty(&table).unwrap();
-        fs::write(&path, text + "\n").unwrap();
-    }
-    let file: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(file, table, "run again with UPDATE_STRINGS=1");
+    held(
+        "strings.json",
+        &json!({ "en": words(Lang::En), "vi": words(Lang::Vi) }),
+    );
 }

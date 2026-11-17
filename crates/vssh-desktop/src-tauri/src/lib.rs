@@ -17,12 +17,12 @@ use serde::Serialize;
 use tauri::State;
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
 use vssh_core::conn_err::{ConnError, Report};
-use vssh_core::ssh::Target;
+use vssh_core::ssh::{self, Target, Via};
 use vssh_core::stats::Peek;
 use vssh_core::store::db::{Db, Snippet};
 use vssh_core::store::ssh_config::SshConfig;
 use vssh_core::store::{self, Host};
-use vssh_core::task::{self, Event};
+use vssh_core::task::{self, Event, Peeks};
 
 /// What a command answers: its value, or a failure the window can show.
 type Reply<T> = Result<T, ConnError>;
@@ -30,27 +30,45 @@ type Reply<T> = Result<T, ConnError>;
 /// An answer from the network, some time later.
 pub type Answer<T> = Pin<Box<dyn Future<Output = Reply<T>> + Send>>;
 
+/// How long a TCP connect to a host took, in ms; `None` if it is unreachable.
+pub type Ping = Pin<Box<dyn Future<Output = Option<u64>> + Send>>;
+
 /// The network, as far as the commands use it. The app's is [`Core`]; the
 /// contract tests put one in its place that answers from memory.
 pub trait Transport: Send + Sync + 'static {
     /// One round of metrics from a host of the ssh config.
     fn peek(&self, alias: String, target: Target) -> Answer<Peek>;
+    /// Times a TCP connect to the target itself.
+    fn ping(&self, target: Target) -> Ping;
+    /// Whether the target's host key is on record: it was connected to before.
+    fn known(&self, target: &Target) -> bool;
 }
 
-/// The real network: `vssh_core::task`, on Tauri's own tokio runtime.
-pub struct Core;
+/// The real network: `vssh_core::task`, on Tauri's own tokio runtime. It
+/// keeps one connection per host it was asked about.
+#[derive(Default)]
+pub struct Core(Peeks);
 
 impl Transport for Core {
     fn peek(&self, alias: String, target: Target) -> Answer<Peek> {
+        let peeks = self.0.clone();
+        // Keys and the agent only: the vault has no window yet (D6).
+        Box::pin(async move { peeks.ask(&alias, target).await })
+    }
+
+    fn ping(&self, target: Target) -> Ping {
         Box::pin(async move {
             let (tx, mut rx) = task::channel();
-            // Keys and the agent only: the vault has no window yet (D6).
-            task::peek(alias, Ok(target), None, move |ev| drop(tx.send(ev)));
+            task::ping(String::new(), target, move |ev| drop(tx.send(ev)));
             match rx.recv().await {
-                Some(Event::Peek(_, answer)) => answer,
-                _ => Err(anyhow!("the peek ended without an answer").into()),
+                Some(Event::Ping(_, ms)) => ms.map(|ms| ms as u64),
+                _ => None,
             }
         })
+    }
+
+    fn known(&self, target: &Target) -> bool {
+        ssh::is_known(target)
     }
 }
 
@@ -102,6 +120,11 @@ impl Backend {
         ensure!(known, "no host named {alias:?}");
         Target::from_config(&sshc, alias)
     }
+
+    /// The id of a new session.
+    fn session(&self) -> u64 {
+        self.sessions.fetch_add(1, Ordering::Relaxed) + 1
+    }
 }
 
 #[tauri::command(async)]
@@ -109,10 +132,42 @@ fn list_hosts(backend: State<'_, Backend>) -> Reply<Vec<Host>> {
     Ok(backend.hosts()?)
 }
 
+/// One round of metrics from a host. `passive` is the dashboard asking on
+/// its own, not a person: it gets `None` where an answer would take trusting
+/// a host key nobody has seen, or logging in to a jump host. The core's
+/// `task::probe` draws the same line for the TUI.
 #[tauri::command]
-async fn get_host_stats(alias: String, backend: State<'_, Backend>) -> Reply<Peek> {
+async fn get_host_stats(
+    alias: String,
+    passive: Option<bool>,
+    backend: State<'_, Backend>,
+) -> Reply<Option<Peek>> {
     let target = backend.target(&alias)?;
-    backend.net.peek(alias, target).await
+    let committing = target.via != Via::Direct || !backend.net.known(&target);
+    if passive == Some(true) && committing {
+        return Ok(None);
+    }
+    backend.net.peek(alias, target).await.map(Some)
+}
+
+/// How long a TCP connect to the host takes, in ms; `None` if it is down.
+/// Refused for a host behind a jump host or a proxy command: its own address
+/// may mean nothing from here, and "down" would be a guess.
+#[tauri::command]
+async fn ping_host(alias: String, backend: State<'_, Backend>) -> Reply<Option<u64>> {
+    let target = backend.target(&alias)?;
+    if target.via != Via::Direct {
+        return Err(anyhow!("{alias:?} is not reached directly").into());
+    }
+    Ok(backend.net.ping(target).await)
+}
+
+/// Opens a session to a host of the config and returns its id.
+#[tauri::command(async)]
+fn connect_host(alias: String, backend: State<'_, Backend>) -> Reply<u64> {
+    backend.target(&alias)?;
+    // shortcut: as `quick_connect`, the id is all there is until D3.
+    Ok(backend.session())
 }
 
 /// Opens a session to a typed `[user@]host[:port]` and returns its id.
@@ -122,7 +177,7 @@ fn quick_connect(host: String, backend: State<'_, Backend>) -> Reply<u64> {
     Target::parse(&host)?;
     // shortcut: no connection is made, the id is all there is to a session;
     // D3 opens the PTY here, through `Transport`.
-    Ok(backend.sessions.fetch_add(1, Ordering::Relaxed) + 1)
+    Ok(backend.session())
 }
 
 #[tauri::command(async)]
@@ -156,6 +211,8 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
         .invoke_handler(tauri::generate_handler![
             list_hosts,
             get_host_stats,
+            ping_host,
+            connect_host,
             quick_connect,
             list_snippets,
             resolve_conn_error
@@ -164,7 +221,7 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
 
 /// Opens the window over the user's own hosts and runs until it is closed.
 pub fn run() {
-    let backend = Backend::new(ssh_config_path(), data_dir(), Core);
+    let backend = Backend::new(ssh_config_path(), data_dir(), Core::default());
     builder::<tauri::Wry>(backend)
         .run(tauri::generate_context!())
         .expect("vssh could not start its window");

@@ -1,27 +1,61 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { api, explain, type Host, type Shown, type Snippet } from './lib/api'
+  import Dashboard from './lib/Dashboard.svelte'
   import { i18n, t } from './lib/i18n.svelte'
+  import { live, poll, relabel } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
   import Sidebar from './lib/Sidebar.svelte'
   import Statusbar from './lib/Statusbar.svelte'
+  import { compact, parts } from './lib/stats'
+
+  /** How often the hosts are asked for their figures, and every how many rounds pinged. */
+  const EVERY = 5000
+  const PING_ROUNDS = 12
 
   let hosts = $state<Host[]>([])
   let snippets = $state<Snippet[]>([])
   let sessions = $state<{ id: number; target: string }[]>([])
   let selected = $state<string | null>(null)
+  /** The tag the sidebar narrowed the hosts to. */
+  let tag = $state<string | null>(null)
   let modal = $state<'palette' | 'quick' | null>(null)
   /** Why the hosts could not be read. */
   let failed = $state<Shown | null>(null)
 
-  onMount(async () => {
+  const fail = async (error: unknown) => (failed = await explain(error, i18n.lang))
+
+  /** Reads the hosts again: the ssh config or the TUI's database may have changed. */
+  async function reload() {
     try {
-      ;[hosts, snippets] = await Promise.all([api.listHosts(), api.listSnippets()])
+      const next = await api.listHosts()
+      // shortcut: asked every round instead of watching the two files; a
+      // change shows up within EVERY. Watch them (notify + an event) if that lag matters.
+      if (JSON.stringify(next) !== JSON.stringify(hosts)) hosts = next
+      failed = null
     } catch (error) {
-      failed = await explain(error, i18n.lang)
+      await fail(error)
     }
+  }
+
+  onMount(() => {
+    let round = 0
+    const tick = async () => {
+      await reload()
+      poll(
+        hosts.map((host) => host.alias),
+        round++ % PING_ROUNDS === 0,
+      )
+    }
+    void tick()
+    api.listSnippets().then((list) => (snippets = list), fail)
+    const timer = setInterval(tick, EVERY)
+    return () => clearInterval(timer)
   })
+
+  // A failure is kept as data: the words for it follow the language.
+  $effect(() => void relabel(i18n.lang))
 
   function onkeydown(e: KeyboardEvent) {
     // Ctrl-K as desktop apps have it, Ctrl-A as the TUI's leader. Not over
@@ -29,6 +63,15 @@
     if (modal === null && (e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'a')) {
       e.preventDefault()
       modal = 'palette'
+    }
+  }
+
+  /** Opens a session to a host of the config. */
+  async function open(alias: string) {
+    try {
+      sessions.push({ id: await api.connectHost(alias), target: alias })
+    } catch (error) {
+      await fail(error)
     }
   }
 
@@ -47,37 +90,34 @@
 <svelte:window {onkeydown} />
 
 <div class="grid h-full grid-cols-[16rem_1fr] grid-rows-[1fr_auto]">
-  <Sidebar {hosts} {selected} error={failed} onselect={(alias) => (selected = alias)} />
+  <Sidebar {hosts} {selected} bind:tag onselect={(alias) => (selected = alias)} />
 
-  <main class="min-h-0 overflow-y-auto">
-    {#if sessions.length === 0}
-      <div class="grid h-full place-content-center justify-items-center gap-2 text-center">
-        <p aria-hidden="true" class="text-4xl text-edge">&gt;_</p>
-        <h1 class="text-base">{t('no_sessions')}</h1>
-        <p class="text-white">{t('no_sessions_hint')}</p>
-        <button
-          type="button"
-          onclick={() => (modal = 'palette')}
-          aria-label={t('palette')}
-          class="mt-2 cursor-pointer rounded-md border border-edge px-3 py-1 text-magenta hover:bg-selection"
-        >
-          Ctrl-K
-        </button>
-      </div>
-    {:else}
-      <ul aria-label={t('sessions')} class="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3 p-4">
+  <main class="flex min-h-0 flex-col">
+    {#if sessions.length}
+      <!-- shortcut: a session is a chip with its host's figures; D3 makes it a terminal tab. -->
+      <ul aria-label={t('sessions')} class="flex flex-wrap gap-2 border-b border-edge px-4 py-2">
         {#each sessions as session (session.id)}
-          <li class="rounded-xl border border-edge bg-black p-3">
-            <p class="truncate">
-              <span aria-hidden="true" class="text-green">●</span>
-              <span class="text-white">#{session.id}</span>
-              {session.target}
-            </p>
-            <p class="pt-1 text-white">{t('session_note')}</p>
+          {@const peek = live[session.target]?.peek}
+          <li title={t('session_note')} class="rounded-full border border-edge bg-black px-3 py-0.5">
+            <span aria-hidden="true" class="text-green">●</span>
+            <span class="text-white">#{session.id}</span>
+            {session.target}
+            {#if peek}
+              <span class="text-white">{compact(parts(peek.stats, t('mem')))}</span>
+            {/if}
           </li>
         {/each}
       </ul>
     {/if}
+    <Dashboard
+      {hosts}
+      {tag}
+      {selected}
+      error={failed}
+      onselect={(alias) => (selected = alias)}
+      onconnect={open}
+      onpalette={() => (modal = 'palette')}
+    />
   </main>
 
   <Statusbar

@@ -72,7 +72,12 @@ export type Shown = { class: ErrorClass; label: string; message: string; chain: 
 
 export const api = {
   listHosts: () => invoke<Host[]>('list_hosts'),
-  getHostStats: (alias: string) => invoke<Peek>('get_host_stats', { alias }),
+  /** `passive`: the dashboard asking on its own; `null` where it may not. */
+  getHostStats: (alias: string, passive = false) => invoke<Peek | null>('get_host_stats', { alias, passive }),
+  /** TCP connect time in ms, `null` if down; rejects for a host behind a jump host. */
+  pingHost: (alias: string) => invoke<number | null>('ping_host', { alias }),
+  /** Resolves to the id of the new session. */
+  connectHost: (alias: string) => invoke<number>('connect_host', { alias }),
   /** `[user@]host[:port]`; resolves to the id of the new session. */
   quickConnect: (host: string) => invoke<number>('quick_connect', { host }),
   listSnippets: () => invoke<Snippet[]>('list_snippets'),

@@ -15,6 +15,13 @@
   <span>{t('sessions')} <span class="text-fg">{sessions}</span></span>
   {#if selected}
     <span class="truncate"><span class="text-cyan">{selected.alias}</span> {address(selected)}</span>
+    <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
+    <span class="shrink-0">
+      <kbd class="text-magenta">Enter</kbd>
+      {t('connect')} ·
+      <kbd class="text-magenta">v</kbd>
+      {t('quick_peek')}
+    </span>
   {/if}
   <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto text-magenta">
     Ctrl-K

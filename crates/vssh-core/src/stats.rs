@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use russh::client::Handle;
 
+use crate::config::Lang;
 use crate::ssh::{self, Client};
 
 /// One round of metrics. Linux reads `/proc`; anything else (macOS) falls
@@ -90,6 +91,26 @@ pub struct Peek {
     /// `uname -srm`.
     pub os: Option<String>,
     pub host: Option<String>,
+}
+
+/// [`Peek::uptime`] in this language: `uptime` itself speaks English only.
+/// `41 days, 3 min` is `41 ngày, 3 phút`; the `2:15` form needs nothing.
+pub fn uptime(up: &str, lang: Lang) -> String {
+    let word = |w: &str| {
+        let unit = w.trim_end_matches(',');
+        let vi = match unit.trim_end_matches('s') {
+            "day" => "ngày",
+            "hr" => "giờ",
+            "min" => "phút",
+            "sec" => "giây",
+            _ => return w.to_string(),
+        };
+        format!("{vi}{}", &w[unit.len()..])
+    };
+    match lang {
+        Lang::En => up.to_string(),
+        Lang::Vi => up.split(' ').map(word).collect::<Vec<_>>().join(" "),
+    }
 }
 
 /// Parses the output of [`PEEK`]. Never fails: what parsed is filled in.
@@ -198,7 +219,9 @@ impl Stats {
         };
         let mut parts = vec![];
         if let Some(cpu) = self.cpu {
-            let value = format!("{}{}%", gauge(cpu), cpu.min(999));
+            // Load per core runs past 100; as a percentage that reads as a
+            // bug. The queue itself is the quick peek's load row.
+            let value = format!("{}{}%", gauge(cpu), cpu.min(100));
             parts.push(("CPU".to_string(), value, level(cpu, 50, 80)));
         }
         if let Some((used, total)) = self.mem {
@@ -322,6 +345,16 @@ mod tests {
         let old = "uptime 08:00:01 up 41 days, 3 min, 1 user, load average: 0,10, 0,20, 0,30";
         assert_eq!(up(old).as_deref(), Some("41 days, 3 min"));
 
+        // In Vietnamese the units are translated: Linux's, and macOS's hrs, mins and secs.
+        let vi = |up: &str| uptime(up, Lang::Vi);
+        assert_eq!(vi("41 days, 3 min"), "41 ngày, 3 phút");
+        assert_eq!(vi("1 day, 2:15"), "1 ngày, 2:15");
+        assert_eq!(vi("2 hrs"), "2 giờ");
+        assert_eq!(vi("5 mins"), "5 phút");
+        assert_eq!(vi("30 secs"), "30 giây");
+        assert_eq!(vi("2:15"), "2:15");
+        assert_eq!(uptime("41 days, 3 min", Lang::En), "41 days, 3 min");
+
         // What did not come back stays empty, and what did is kept.
         let partial = parse_peek("uname Linux 5.10 aarch64\nuptime\nhost\n[exit status 127]\n");
         assert_eq!(partial.os.as_deref(), Some("Linux 5.10 aarch64"));
@@ -351,7 +384,8 @@ mod tests {
             disk: Some(85),
         };
         let parts = stats.parts("MEM", false);
-        assert_eq!(text(&parts), "CPU 250% · MEM 0.4/0.5G · / 85%");
+        // A queue of 2.5 per core is shown as a full CPU, and is still critical.
+        assert_eq!(text(&parts), "CPU 100% · MEM 0.4/0.5G · / 85%");
         let levels: Vec<Level> = parts.iter().map(|p| p.2).collect();
         assert_eq!(levels, [Level::Crit, Level::Crit, Level::Warn]);
         assert_eq!((bar(0), bar(50), bar(100), bar(250)), ('▁', '▄', '█', '█'));

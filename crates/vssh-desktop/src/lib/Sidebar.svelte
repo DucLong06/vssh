@@ -1,18 +1,17 @@
 <script lang="ts">
-  import type { Host, Shown } from './api'
-  import { address, hasTag, tagCounts } from './hosts'
+  import type { Host } from './api'
+  import { address, chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
 
   type Props = {
     hosts: Host[]
     selected: string | null
     onselect: (alias: string) => void
-    /** Why there are no hosts to show, if they could not be read. */
-    error?: Shown | null
+    /** The tag the list is narrowed to; the dashboard follows it. */
+    tag?: string | null
   }
-  let { hosts, selected, onselect, error = null }: Props = $props()
+  let { hosts, selected, onselect, tag = $bindable(null) }: Props = $props()
 
-  let tag = $state<string | null>(null)
   let list = $state<HTMLElement>()
 
   const tags = $derived(tagCounts(hosts))
@@ -28,12 +27,7 @@
 
 <nav aria-label={t('hosts')} class="flex min-h-0 flex-col border-r border-edge bg-black">
   <h2 class={heading}>{t('hosts')} <span class="text-white">{shown.length}</span></h2>
-  {#if error}
-    <p role="alert" class="px-3 break-words text-red"><strong>{error.label}</strong> {error.message}</p>
-  {:else if hosts.length === 0}
-    <p class="px-3">{t('no_hosts')}</p>
-    <p class="px-3 pt-1 text-white">{t('no_hosts_hint')}</p>
-  {:else}
+  {#if hosts.length}
     <ul bind:this={list} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto">
       {#each shown as host (host.alias)}
         <li>
@@ -69,7 +63,8 @@
             type="button"
             aria-pressed={tag === name}
             onclick={() => (tag = tag === name ? null : name)}
-            class="cursor-pointer rounded-full border border-edge px-2 py-0.5 text-magenta aria-pressed:border-magenta aria-pressed:bg-selection"
+            style="color: {chip(name)}"
+            class="cursor-pointer rounded-full border border-edge px-2 py-0.5 aria-pressed:border-current aria-pressed:bg-selection"
           >
             #{name} <span class="text-white">{count}</span>
           </button>

@@ -10,10 +10,9 @@ const hosts: Host[] = fixture
 const props = (over = {}) => ({ hosts, selected: null, onselect: vi.fn(), ...over })
 const rows = () => within(screen.getByRole('list', { name: 'Hosts' })).getAllByRole('button')
 
-test('no hosts: says so, and how to get one', () => {
+test('no hosts: nothing listed; the dashboard is where it says what to do', () => {
   render(Sidebar, props({ hosts: [] }))
-  expect(screen.getByText('No hosts yet.')).toBeInTheDocument()
-  expect(screen.getByText(/connect once without saving/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Hosts 0' })).toBeInTheDocument()
   expect(screen.queryByRole('list', { name: 'Hosts' })).not.toBeInTheDocument()
   expect(screen.getByText('no tags')).toBeInTheDocument()
 })
@@ -71,17 +70,28 @@ test('a click selects a host, and the selected one is marked', async () => {
   expect(onselect).toHaveBeenCalledExactlyOnceWith('db-primary')
 })
 
-test('a list that could not be read shows why instead of "no hosts"', () => {
-  const error = { class: 'other' as const, label: 'ERROR', message: 'cannot read config', chain: '' }
-  render(Sidebar, props({ hosts: [], error }))
-  expect(screen.getByRole('alert')).toHaveTextContent('ERROR cannot read config')
-  expect(screen.queryByText('No hosts yet.')).not.toBeInTheDocument()
-})
-
 test('in Vietnamese the words are the TUI\'s', () => {
   setLang('vi')
   render(Sidebar, props({ hosts: [] }))
   expect(screen.getByRole('heading', { name: 'Máy chủ 0' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Thẻ 0' })).toBeInTheDocument()
-  expect(screen.getByText('Chưa có máy chủ nào.')).toBeInTheDocument()
+  expect(screen.getByText('chưa có thẻ')).toBeInTheDocument()
+})
+
+test('the tag chosen is the caller\'s to use: the dashboard filters by it too', async () => {
+  const user = userEvent.setup()
+  let tag: string | null = null
+  render(Sidebar, {
+    ...props(),
+    get tag() {
+      return tag
+    },
+    set tag(value) {
+      tag = value
+    },
+  })
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(tag).toBe('db')
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(tag).toBeNull()
 })
