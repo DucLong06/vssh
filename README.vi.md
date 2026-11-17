@@ -288,6 +288,7 @@ Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hì
 
 ```sh
 cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
+./scripts/check-core-deps.sh    # crates/vssh-core không được phụ thuộc thư viện TUI
 cargo audit    # cần: cargo install cargo-audit
 ```
 

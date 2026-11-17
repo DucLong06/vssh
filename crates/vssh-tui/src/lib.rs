@@ -1,5 +1,5 @@
-//! vssh: a terminal SSH connection manager. The binary is a thin wrapper;
-//! the modules live here so integration tests can reach them.
+//! vssh: a terminal SSH connection manager. This crate is the terminal
+//! frontend; connections, stores and the vault are in `vssh-core`.
 
 pub mod theme;
 pub mod ui;
