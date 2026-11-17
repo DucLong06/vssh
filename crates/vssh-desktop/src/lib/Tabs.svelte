@@ -21,8 +21,9 @@
   let { sessions, active, onpick, onclose }: Props = $props()
 
   // The TUI's tab: a pill with a rounded top, filled when it is in front.
+  // Broadcast takes the colours, so the tab in front is also bold, and only it has the full border.
   const pill =
-    'flex shrink-0 items-center rounded-t-lg border border-b-0 border-transparent text-white hover:text-fg has-[[aria-selected=true]]:border-edge has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:text-fg data-[broadcast]:border-yellow! data-[broadcast]:text-yellow!'
+    'flex shrink-0 items-center rounded-t-lg border border-b-0 border-transparent text-white hover:text-fg has-[[aria-selected=true]]:border-edge has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-bold has-[[aria-selected=true]]:text-fg data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!'
   const tab = 'flex cursor-pointer items-center gap-1.5 py-1 pl-3'
 </script>
 
