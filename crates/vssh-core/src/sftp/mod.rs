@@ -27,6 +27,8 @@ pub struct Entry {
 pub enum Cmd {
     /// Change to and list a directory.
     List(String),
+    /// Where a path leads, in full: the answer is one entry, named by it.
+    Realpath(String),
     Upload(PathBuf, String),
     Download(String, PathBuf),
     Mkdir(String),
@@ -114,7 +116,7 @@ async fn read_dir(sftp: &SftpSession, dir: &str) -> Result<Vec<Entry>> {
 /// it. `List` changes nothing.
 async fn apply(sftp: &SftpSession, cmd: Cmd, progress: &impl Fn(u64, u64)) -> Result<&'static str> {
     Ok(match cmd {
-        Cmd::List(_) => "",
+        Cmd::List(_) | Cmd::Realpath(_) => "",
         Cmd::Upload(local, remote) => {
             let from = tokio::fs::File::open(local).await?;
             let total = from.metadata().await?.len();
@@ -154,6 +156,12 @@ pub async fn once(h: &Handle<Client>, cmd: Cmd, progress: impl Fn(u64, u64)) -> 
     let sftp = open(h).await?;
     match cmd {
         Cmd::List(path) => read_dir(&sftp, &sftp.canonicalize(path).await?).await,
+        Cmd::Realpath(path) => Ok(vec![Entry {
+            name: sftp.canonicalize(path).await?,
+            is_dir: true,
+            size: 0,
+            mtime: 0,
+        }]),
         change => apply(&sftp, change, &progress).await.map(|_| vec![]),
     }
 }

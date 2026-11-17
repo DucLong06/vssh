@@ -1,16 +1,20 @@
 //! SFTP for the window (D4). A listing or a small change is asked and
 //! answered; a transfer answers when it is over and says how far it is on
 //! the event `sftp-progress:<id>` meanwhile, under an id the window picks
-//! (so it can listen before it asks) and can cancel it by.
+//! (so it can listen before it asks) and can cancel it by. The `local_*`
+//! commands are the other pane: the same on this machine, which the window
+//! cannot read on its own.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::{fs, io};
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::sync::oneshot;
-use vssh_core::sftp::{Cmd, Entry};
+use vssh_core::config::home;
+use vssh_core::sftp::{list_local, Cmd, Entry};
 
 use crate::{Backend, Reply};
 
@@ -30,6 +34,64 @@ pub async fn sftp_list(
 ) -> Reply<Vec<Entry>> {
     let path = if path.is_empty() { ".".into() } else { path };
     run(&backend, &host, Cmd::List(path)).await
+}
+
+/// Where a remote path leads, in full. An empty path is the directory the
+/// server starts in: this is how the window learns where that is.
+#[tauri::command]
+pub async fn sftp_realpath(
+    host: String,
+    path: String,
+    backend: State<'_, Backend>,
+) -> Reply<String> {
+    let path = if path.is_empty() { ".".into() } else { path };
+    let found = run(&backend, &host, Cmd::Realpath(path)).await?;
+    Ok(found.into_iter().next().map(|e| e.name).unwrap_or_default())
+}
+
+/// A directory of this machine: where it is, in full, and what is in it.
+#[derive(Serialize)]
+pub struct Listing {
+    path: String,
+    entries: Vec<Entry>,
+}
+
+/// An io error, naming the path it is about.
+fn at<T>(path: &Path, res: io::Result<T>) -> Result<T> {
+    res.with_context(|| path.display().to_string())
+}
+
+/// The entries of a local directory, directories first. An empty path is
+/// the user's home.
+#[tauri::command(async)]
+pub fn local_list(path: String) -> Reply<Listing> {
+    let asked = if path.is_empty() { home() } else { path.into() };
+    let dir = at(&asked, asked.canonicalize())?;
+    Ok(Listing {
+        entries: at(&dir, list_local(&dir))?,
+        path: dir.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn local_mkdir(path: PathBuf) -> Reply<()> {
+    Ok(at(&path, fs::create_dir(&path))?)
+}
+
+/// Removes a file, or a directory that is empty.
+#[tauri::command(async)]
+pub fn local_rm(path: PathBuf, is_dir: bool) -> Reply<()> {
+    let removed = if is_dir {
+        fs::remove_dir(&path)
+    } else {
+        fs::remove_file(&path)
+    };
+    Ok(at(&path, removed)?)
+}
+
+#[tauri::command(async)]
+pub fn local_rename(from: PathBuf, to: PathBuf) -> Reply<()> {
+    Ok(at(&from, fs::rename(&from, &to))?)
 }
 
 #[tauri::command]
