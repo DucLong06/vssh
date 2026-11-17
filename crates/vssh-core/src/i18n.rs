@@ -2,7 +2,7 @@
 //! be added in one of them only. The desktop app reads this table as JSON
 //! (`crates/vssh-desktop/src/lib/strings.json`, held equal to it by a test).
 //! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh,
-//! chưa kiểm tra, mất kết nối.
+//! chưa kiểm tra, mất kết nối. `{n}` in a text is a number the window puts in.
 
 use crate::config::Lang;
 
@@ -57,6 +57,19 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("sort_order", "My order", "Thứ tự của tôi"),
     ("sort_name", "Name", "Tên"),
     ("sort_latency", "Latency", "Độ trễ"),
+    // The quick peek: the rows and the keys of the TUI's.
+    ("quick_peek", "Quick peek", "Xem nhanh"),
+    ("connection", "CONNECTION", "KẾT NỐI"),
+    ("reachable", "reachable", "kết nối được"),
+    ("unreachable", "unreachable", "không kết nối được"),
+    ("hostname", "Host", "Tên máy"),
+    ("system", "System", "Hệ thống"),
+    ("uptime", "Uptime", "Đã chạy"),
+    ("load", "Load", "Tải"),
+    ("disk", "Disk /", "Đĩa /"),
+    ("refresh", "refresh", "làm mới"),
+    ("try_again", "try again", "thử lại"),
+    ("secs_ago", "{n}s ago", "{n} giây trước"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

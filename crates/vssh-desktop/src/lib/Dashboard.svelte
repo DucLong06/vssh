@@ -4,7 +4,8 @@
   import HostCard from './HostCard.svelte'
   import { address, chip, groupOf, hasTag, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
-  import { live, sick } from './live.svelte'
+  import { ask, live, sick } from './live.svelte'
+  import QuickPeek from './QuickPeek.svelte'
 
   type Props = {
     hosts: Host[]
@@ -19,6 +20,10 @@
   }
   let { hosts, error = null, tag = null, selected = null, onselect, onconnect, onpalette }: Props = $props()
 
+  /** How long the pointer rests on a card before its quick peek opens, and how long an answer is good for. */
+  const REST = 600
+  const FRESH = 30_000
+
   type Sort = 'order' | 'name' | 'latency' | 'cpu'
   let sort = $state<Sort>('order')
   let grouped = $state(true)
@@ -27,6 +32,9 @@
   let order = $state<string[]>(saved())
   /** The card being dragged. */
   let dragging: string | null = null
+  /** The card whose quick peek is open, and whether the pointer opened it. */
+  let peeking = $state<{ alias: string; hover: boolean } | null>(null)
+  let resting: ReturnType<typeof setTimeout> | undefined
   let search = $state<HTMLInputElement>()
   let grid = $state<HTMLElement>()
 
@@ -97,12 +105,22 @@
     localStorage.setItem('vssh.order', JSON.stringify(names))
   }
 
+  /** Opens a quick peek as a person asking for it: the host is asked, unless its answer is fresh. */
+  function peek(alias: string) {
+    peeking = { alias, hover: false }
+    const host = live[alias]
+    const fresh = host?.at !== undefined && (host.peek || host.error) && Date.now() - host.at < FRESH
+    if (!fresh) void ask(alias, false)
+  }
+
   async function onkeydown(e: KeyboardEvent, alias: string) {
     // Not from the card's own button: there Enter is a click already.
     if (e.target !== e.currentTarget) return
     const step = e.altKey && { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key]
     if (e.key === 'Enter') {
       onconnect(alias)
+    } else if (e.key === 'v') {
+      peek(alias)
     } else if (step) {
       // Drag and drop for the keyboard: one place along, among the cards on screen.
       e.preventDefault()
@@ -117,10 +135,16 @@
 
   function onwindowkey(e: KeyboardEvent) {
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
-    // The TUI's key for search. Not while a dialog is open over the page.
-    if (e.key === '/' && !typing && !document.querySelector('dialog[open]')) {
+    // The TUI's keys. Not while typing, with Ctrl (Ctrl-R), or under a dialog.
+    if (typing || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return
+    if (e.key === '/') {
       e.preventDefault()
       search?.focus()
+    } else if (peeking && e.key === 'Escape') {
+      peeking = null
+    } else if (peeking && e.key === 'r') {
+      // A key is a person asking, even over a popover the pointer opened.
+      void ask(peeking.alias, false)
     }
   }
 
@@ -156,7 +180,7 @@
       </div>
     {/if}
   {:else}
-    <div class="sticky top-0 z-2 flex flex-wrap items-center gap-2 bg-bg py-3">
+    <div class="sticky top-0 z-20 flex flex-wrap items-center gap-2 bg-bg py-3">
       <input
         bind:this={search}
         bind:value={query}
@@ -210,18 +234,34 @@
           class="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3 pb-3"
         >
           {#each list as host (host.alias)}
-            <li>
+            <!-- Resting on a card shows what is known. It does not ask: a host
+                 never connected to is not connected to by a pointer passing. -->
+            <li
+              class="relative"
+              onpointerenter={() => {
+                resting = setTimeout(() => (peeking ??= { alias: host.alias, hover: true }), REST)
+              }}
+              onpointerleave={() => {
+                clearTimeout(resting)
+                if (peeking?.hover && peeking.alias === host.alias) peeking = null
+              }}
+            >
               <HostCard
                 {host}
-                state={live[host.alias]}
+                info={live[host.alias]}
                 onconnect={() => onconnect(host.alias)}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Alt+ArrowLeft Alt+ArrowRight"
-                onfocus={() => onselect?.(host.alias)}
+                aria-keyshortcuts="Enter v Alt+ArrowLeft Alt+ArrowRight"
+                onfocus={() => {
+                  onselect?.(host.alias)
+                  if (peeking && peeking.alias !== host.alias) peeking = null
+                }}
                 onkeydown={(e) => onkeydown(e, host.alias)}
                 draggable="true"
                 ondragstart={(e) => {
+                  clearTimeout(resting)
+                  peeking = null
                   dragging = host.alias
                   // Some webviews do not start a drag that carries nothing.
                   e.dataTransfer?.setData('text/plain', host.alias)
@@ -235,6 +275,9 @@
                 ondragend={() => (dragging = null)}
                 class="cursor-grab aria-[current]:border-blue"
               />
+              {#if peeking?.alias === host.alias}
+                <QuickPeek {host} info={live[host.alias]} />
+              {/if}
             </li>
           {/each}
         </ul>

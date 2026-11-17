@@ -6,18 +6,19 @@
   import { critical, down, type Live } from './live.svelte'
   import { compact, parts } from './stats'
 
-  type Props = { host: Host; state?: Live; onconnect?: () => void } & HTMLAttributes<HTMLElement>
-  let { host, state, onconnect, class: extra = '', ...rest }: Props = $props()
+  /** `info`: what is known about the host. (Not `state`: next to a rune that name reads as a store.) */
+  type Props = { host: Host; info?: Live; onconnect?: () => void } & HTMLAttributes<HTMLElement>
+  let { host, info, onconnect, class: extra = '', ...rest }: Props = $props()
 
-  const list = $derived(state?.peek ? parts(state.peek.stats, t('mem')) : [])
+  const list = $derived(info?.peek ? parts(info.peek.stats, t('mem')) : [])
   const kind = $derived(
-    down(state) ? 'down' : critical(state) ? 'crit' : state?.peek ? 'ok' : state?.peek === null ? 'unchecked' : 'asking',
+    down(info) ? 'down' : critical(info) ? 'crit' : info?.peek ? 'ok' : info?.peek === null ? 'unchecked' : 'asking',
   )
   // The TUI's `latency`.
   const latency = $derived(
-    state?.ms === undefined ? '—' : state.ms === null ? t('down') : state.ms === 0 ? '<1 ms' : `${state.ms} ms`,
+    info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
   )
-  const reached = $derived(typeof state?.ms === 'number')
+  const reached = $derived(typeof info?.ms === 'number')
   const tone = { ok: 'text-green', warn: 'text-yellow', crit: 'text-red' }
 </script>
 
@@ -52,7 +53,7 @@
         <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
       {/if}
       <span
-        class="ml-auto shrink-0 rounded-full bg-bar px-2 {state?.ms === null ? 'text-red' : state?.ms === undefined ? 'text-dim' : 'text-green'}"
+        class="ml-auto shrink-0 rounded-full bg-bar px-2 {info?.ms === null ? 'text-red' : info?.ms === undefined ? 'text-dim' : 'text-green'}"
       >
         {latency}
       </span>
@@ -73,12 +74,12 @@
   </div>
 
   <div class="pt-3">
-    {#if state?.shown}
-      <p title={state.shown.chain} class="line-clamp-2 break-words">
-        <strong class="text-red">✗ {state.shown.label}</strong>
-        <span class="text-white">{state.shown.message}</span>
+    {#if info?.shown}
+      <p title={info.shown.chain} class="line-clamp-2 break-words">
+        <strong class="text-red">✗ {info.shown.label}</strong>
+        <span class="text-white">{info.shown.message}</span>
       </p>
-    {:else if state?.peek}
+    {:else if info?.peek}
       <div role="group" aria-label={compact(list)} class="grid grid-cols-3 gap-3">
         {#each ['CPU', t('mem'), '/'] as label (label)}
           {@const part = list.find((part) => part.label === label)}
@@ -109,8 +110,8 @@
           </div>
         {/each}
       </div>
-    {:else if state?.peek === null}
-      <p class="text-white">{t('not_checked')}</p>
+    {:else if info?.peek === null}
+      <p class="text-white">{t('not_checked')} <span class="text-dim">· <kbd>v</kbd> {t('quick_peek')}</span></p>
     {:else}
       <p class="text-white">{t('asking')} {host.alias}…</p>
     {/if}

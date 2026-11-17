@@ -12,7 +12,7 @@ import type { Live } from './live.svelte'
 const peek = fixture as unknown as Peek
 const [web01, , , bare] = hosts as Host[]
 const card = (state?: Live, host = web01) => {
-  render(HostCard, { host, state })
+  render(HostCard, { host, info: state })
   return screen.getByRole('article', { name: host.alias })
 }
 const stats = (cpu: number | null, mem: [number, number] | null, disk: number | null): Live => ({
@@ -55,7 +55,7 @@ test('CPU at 100%: a full red bar and a sick card; past 100 the bar stays in its
   expect(meter('MEM')).toHaveAttribute('data-level', 'crit')
   expect(el).toHaveAttribute('data-state', 'crit')
 
-  render(HostCard, { host: bare, state: stats(250, null, null) })
+  render(HostCard, { host: bare, info: stats(250, null, null) })
   const queue = screen.getByRole('article', { name: 'bare' })
   expect(queue).toHaveTextContent('CPU 250%')
   expect(within(queue).getByRole('meter', { name: 'CPU' })).toHaveAttribute('aria-valuenow', '100')
@@ -135,7 +135,7 @@ test("in Vietnamese the states are the TUI's words", () => {
   setLang('vi')
   expect(card({ ms: null, peek: null })).toHaveTextContent('mất kết nối')
   expect(screen.getByRole('article')).toHaveTextContent('chưa kiểm tra')
-  render(HostCard, { host: bare, state: { ms: 3, peek } })
+  render(HostCard, { host: bare, info: { ms: 3, peek } })
   expect(screen.getByRole('group', { name: 'CPU 23% · RAM 4.2/16G · / 61%' })).toBeInTheDocument()
   render(HostCard, { host: (hosts as Host[])[1] })
   expect(screen.getByRole('article', { name: 'web-02' })).toHaveTextContent('đang hỏi web-02…')

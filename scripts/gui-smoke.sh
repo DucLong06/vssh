@@ -140,18 +140,29 @@ step "the page read the hosts of the fixture config"
 # Groups and tags, written the way the TUI writes them, while the window is
 # open: it has to notice on its own.
 python3 - "$home/.local/share/vssh/vssh.db" <<'EOF'
-import sqlite3, sys
+import sqlite3, sys, time
 rows = [
     ("web-01", "prod", "web eu", 1), ("web-02", "prod", "web us", 0),
     ("db-primary", "prod", "db eu", 0), ("db-replica", "prod", "db us", 0),
     ("cache-01", "staging", "cache", 0), ("legacy", "staging", "web", 0),
     ("app-internal", "staging", "app", 0), ("new-box", "", "", 0),
 ]
-db = sqlite3.connect(sys.argv[1])
+db = sqlite3.connect(sys.argv[1], timeout=10)
+# The file is there before the app has put its hosts in it.
+for _ in range(100):
+    try:
+        if db.execute("SELECT count(*) FROM hosts").fetchone()[0] == len(rows):
+            break
+    except sqlite3.OperationalError:
+        pass
+    time.sleep(0.1)
+else:
+    sys.exit("FAIL: the app never imported the hosts")
 for alias, grp, tags, pinned in rows:
     db.execute("UPDATE hosts SET grp=?, tags=?, pinned=? WHERE alias=?", (grp, tags, pinned, alias))
 db.commit()
 EOF
+step "groups and tags written to the database behind the window's back"
 
 # Three rounds of the poll: long enough for every host to have answered, for
 # the tags to have been read, and for a second login to show if there is one.
@@ -166,11 +177,46 @@ grep -q '127.0.0.2' "$home/.ssh/known_hosts" && { echo "FAIL: the dashboard reco
 step "the host nobody connected to was left alone"
 
 xdotool windowfocus "$win"
+# / is the search box; three Tabs on is the first card.
+first_card() { xdotool key --window "$win" slash Tab Tab Tab; }
 # The language button, bottom right.
-xdotool mousemove --window "$win" 1073 686 click 1
+language() { xdotool mousemove --window "$win" 1073 686 click 1; }
+
+# The quick peek, by its key: on the first card, which is being polled.
+first_card
+xdotool key --window "$win" v
+shot docs/img/desktop-d2-peek.png
+xdotool key --window "$win" Escape
+
+language
 sleep 6
 shot docs/img/desktop-d2.vi.png
-xdotool mousemove --window "$win" 1073 686 click 1
+first_card
+xdotool key --window "$win" v
+shot docs/img/desktop-d2-peek.vi.png
+xdotool key --window "$win" Escape
+language
+
+# And by resting the pointer on a card.
+xdotool mousemove --window "$win" 880 310
+sleep 1
+shot target/smoke/hover.png
+xdotool mousemove --window "$win" 600 20
+
+# A person asking about the host nobody connected to: the last card, two tab
+# stops per card further on. That is a decision: its key goes on record, as
+# with `v` in the TUI, and from then on it is polled like the others.
+first_card
+xdotool key --window "$win" --repeat 14 Tab
+xdotool key --window "$win" v
+sleep 3
+shot target/smoke/asked.png
+xdotool key --window "$win" Escape
+grep -q '127.0.0.2' "$home/.ssh/known_hosts" || { echo "FAIL: v on new-box did not ask it"; exit 1; }
+sleep 6
+logins=$(accepted)
+[ "$logins" -eq 4 ] || { echo "FAIL: $logins logins, expected 4 once new-box is polled too"; exit 1; }
+step "v asked the new host, and it joined the poll on one connection of its own"
 
 # A card moved by hand: db-primary dragged onto web-01, its neighbour on the left.
 xdotool mousemove --window "$win" 880 310 mousedown 1
@@ -178,9 +224,9 @@ for x in 860 800 700 600 500 470; do xdotool mousemove --window "$win" "$x" 312;
 xdotool mouseup 1
 shot target/smoke/dragged.png
 
-# The same without a mouse: / is the search box, three Tabs on is the first
-# card; Alt-Right moves it one place along.
-xdotool key --window "$win" slash Tab Tab Tab alt+Right
+# The same without a mouse: Alt-Right moves the first card one place along.
+first_card
+xdotool key --window "$win" alt+Right
 shot target/smoke/moved.png
 
 xdotool key --window "$win" ctrl+k
