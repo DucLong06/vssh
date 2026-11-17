@@ -500,6 +500,10 @@ test('a host chosen in the palette is the selected one', async () => {
   expect(status()).toHaveTextContent('Enter Connect · Space select · v Quick peek')
   await user.click(screen.getByRole('button', { name: 'Language: EN' }))
   expect(status()).toHaveTextContent('Enter Kết nối · Space chọn · v Xem nhanh')
+  // Chosen again from where the focus went (the button): the card has it back, for its keys.
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'db{Enter}')
+  await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
 })
 
 test('the selected host is scrolled back into view when the sessions take room from the sidebar\'s list', async () => {

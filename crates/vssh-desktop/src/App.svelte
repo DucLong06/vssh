@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick as rendered } from 'svelte'
   import { api, explain, type ConnError, type Host, type PtyState, type Shown, type Snippet } from './lib/api'
   import Dashboard from './lib/Dashboard.svelte'
   import Failure from './lib/Failure.svelte'
@@ -44,6 +44,7 @@
   let marked = $state<string[]>([])
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
+  let dashboard = $state<Dashboard>()
   let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | null>(null)
   /** The host whose forwards are open. */
   let forwarding = $state('')
@@ -260,6 +261,7 @@
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
     <Dashboard
+      bind:this={dashboard}
       {hosts}
       {tag}
       {selected}
@@ -333,6 +335,8 @@
       selected = alias
       active = null
       modal = null
+      // Also when it was the selected one already; once the palette is gone, which held the focus.
+      void rendered().then(() => dashboard?.focus(alias))
     }}
     onquick={() => (modal = 'quick')}
     onsnippets={() => (modal = 'snippets')}

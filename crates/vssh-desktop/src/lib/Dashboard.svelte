@@ -114,6 +114,9 @@
   const card = (alias: string) =>
     [...(grid?.querySelectorAll('article') ?? [])].find((el) => el.getAttribute('aria-label') === alias)
 
+  /** For a host chosen again while it is the selected one: nothing changed for the effect below to hear of. */
+  export const focus = (alias: string) => card(alias)?.focus()
+
   // A host chosen elsewhere (the palette, the sidebar) is brought into view.
   $effect(() => {
     // Also when the dashboard comes back to the front.
