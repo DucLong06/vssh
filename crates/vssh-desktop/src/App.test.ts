@@ -1210,7 +1210,7 @@ test('streamer mode: every address in the window is a made-up one, and nothing b
   await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent('REFUSED Connection refused by 10.0.0.5:2222'))
   expect(words()).toMatch(real)
 
-  const toggle = within(status()).getByRole('button', { name: /Streamer mode/ })
+  const toggle = screen.getByRole('button', { name: /Streamer mode/ })
   expect(toggle).toHaveAttribute('aria-pressed', 'false')
   await user.click(toggle)
   expect(toggle).toHaveAttribute('aria-pressed', 'true')
@@ -1292,15 +1292,15 @@ test('streamer mode that was left on is on when the app opens, in Vietnamese too
   setLang('vi')
   shell()
   expect(await card('web-01')).toHaveTextContent(`deploy@${fake('web-01')}:2222`)
-  expect(within(status()).getByRole('button', { name: /Chế độ phát trực tiếp/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: /Chế độ phát trực tiếp/ })).toHaveAttribute('aria-pressed', 'true')
   expect(english(words())).toEqual([])
 })
 
 // --- D7: the Day theme --------------------------------------------------------
 
-test('the theme toggle in the status bar: Night until Day is chosen, a terminal dark in both', async () => {
+test('the theme toggle in the sidebar: Night until Day is chosen, a terminal dark in both', async () => {
   const user = shell()
-  const toggle = within(status()).getByRole('button', { name: 'Theme: Night' })
+  const toggle = screen.getByRole('button', { name: 'Theme: Night' })
   expect(document.documentElement.dataset.theme).toBe('night')
   await user.click(toggle)
   expect(toggle).toHaveAccessibleName('Theme: Day')

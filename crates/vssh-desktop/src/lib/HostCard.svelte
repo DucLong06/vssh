@@ -5,7 +5,7 @@
   import { t } from './i18n.svelte'
   import { critical, down, type Live } from './live.svelte'
   import { compact, parts } from './stats'
-import { addr } from './streamer.svelte'
+  import { addr } from './streamer.svelte'
 
   /** `info`: what is known about the host. (Not `state`: next to a rune that name reads as a store.) */
   type Props = {

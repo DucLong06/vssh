@@ -3,8 +3,9 @@
   import { chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
   import SessionDot from './SessionDot.svelte'
-import { addr } from './streamer.svelte'
+  import { addr, setStreamer, streamer } from './streamer.svelte'
   import type { Tab } from './Tabs.svelte'
+  import { setTheme, theme } from './theme.svelte'
 
   type Props = {
     hosts: Host[]
@@ -45,6 +46,7 @@ import { addr } from './streamer.svelte'
   })
 
   const heading = 'flex justify-between px-3 pt-3 pb-1 text-cyan'
+  const toggle = 'cursor-pointer px-2 text-white hover:bg-bar hover:text-fg'
 </script>
 
 <nav aria-label={t('hosts')} class="flex min-h-0 flex-col border-r border-edge bg-black">
@@ -114,18 +116,55 @@ import { addr } from './streamer.svelte'
     </ul>
   {/if}
 
-  {#if onvault}
+  <!-- The vault, and how the window looks: streamer mode and the theme. Here, where there is room in every language. -->
+  <div class="flex border-t border-edge">
+    {#if onvault}
+      <button
+        type="button"
+        onclick={onvault}
+        class="flex min-w-0 flex-1 cursor-pointer justify-between gap-2 px-3 py-2 text-left text-cyan hover:bg-bar"
+      >
+        {t('vault')}
+        {#if vault !== 'none'}
+          <span class={vault === 'unlocked' ? 'text-green' : 'text-yellow'}>
+            {vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
+          </span>
+        {/if}
+      </button>
+    {/if}
+    <!-- An eye, struck through while the addresses on screen are made up. -->
     <button
       type="button"
-      onclick={onvault}
-      class="flex cursor-pointer justify-between border-t border-edge px-3 py-2 text-left text-cyan hover:bg-bar"
+      onclick={() => setStreamer(!streamer.on)}
+      aria-pressed={streamer.on}
+      aria-label={t('streamer_mode')}
+      title={t('streamer_mode')}
+      class="{toggle} ml-auto py-2 aria-pressed:text-magenta"
     >
-      {t('vault')}
-      {#if vault !== 'none'}
-        <span class={vault === 'unlocked' ? 'text-green' : 'text-yellow'}>
-          {vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
-        </span>
-      {/if}
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-none stroke-current stroke-2">
+        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
+        <circle cx="12" cy="12" r="3" />
+        {#if streamer.on}
+          <path d="M4 4l16 16" />
+        {/if}
+      </svg>
     </button>
-  {/if}
+    <!-- A moon for Night, a sun for Day. -->
+    <button
+      type="button"
+      onclick={() => setTheme(theme.name === 'night' ? 'day' : 'night')}
+      aria-label="{t('theme')}: {theme.name === 'night' ? t('theme_night') : t('theme_day')}"
+      title={t('theme')}
+      class="{toggle} py-2"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-none stroke-current stroke-2">
+        {#if theme.name === 'night'}
+          <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+        {:else}
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+        {/if}
+      </svg>
+    </button>
+  </div>
 </nav>
