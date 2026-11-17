@@ -6,23 +6,30 @@
 //! The answers' shapes are declared again in `src/lib/api.ts`;
 //! `tests/commands.rs` is where the two are held together.
 
+mod files;
+
+use std::collections::HashMap;
 use std::future::Future;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use serde::Serialize;
 use tauri::State;
+use tokio::sync::oneshot;
 use vssh_core::config::{data_dir, ssh_config_path, Lang};
 use vssh_core::conn_err::{ConnError, Report};
-use vssh_core::ssh::Target;
+use vssh_core::sftp::{self, Entry};
+use vssh_core::ssh::{self, Target};
 use vssh_core::stats::Peek;
 use vssh_core::store::db::{Db, Snippet};
 use vssh_core::store::ssh_config::SshConfig;
 use vssh_core::store::{self, Host};
 use vssh_core::task::{self, Event};
+use zeroize::Zeroizing;
 
 /// What a command answers: its value, or a failure the window can show.
 type Reply<T> = Result<T, ConnError>;
@@ -30,26 +37,56 @@ type Reply<T> = Result<T, ConnError>;
 /// An answer from the network, some time later.
 pub type Answer<T> = Pin<Box<dyn Future<Output = Reply<T>> + Send>>;
 
+/// A host's password from the vault, wiped when it is dropped.
+pub type Password = Option<Zeroizing<String>>;
+
+/// Hears how far a transfer is: bytes done, bytes in all.
+pub type Progress = Box<dyn Fn(u64, u64) + Send + Sync>;
+
 /// The network, as far as the commands use it. The app's is [`Core`]; the
-/// contract tests put one in its place that answers from memory.
+/// contract tests put one in its place that answers from memory. Dropping
+/// an answer that has not come yet stops the work behind it.
 pub trait Transport: Send + Sync + 'static {
     /// One round of metrics from a host of the ssh config.
-    fn peek(&self, alias: String, target: Target) -> Answer<Peek>;
+    fn peek(&self, alias: String, target: Target, password: Password) -> Answer<Peek>;
+
+    /// One SFTP command: what a `List` found, nothing for the rest.
+    fn sftp(
+        &self,
+        target: Target,
+        password: Password,
+        cmd: sftp::Cmd,
+        progress: Progress,
+    ) -> Answer<Vec<Entry>>;
 }
 
 /// The real network: `vssh_core::task`, on Tauri's own tokio runtime.
 pub struct Core;
 
 impl Transport for Core {
-    fn peek(&self, alias: String, target: Target) -> Answer<Peek> {
+    fn peek(&self, alias: String, target: Target, password: Password) -> Answer<Peek> {
         Box::pin(async move {
             let (tx, mut rx) = task::channel();
-            // Keys and the agent only: the vault has no window yet (D6).
-            task::peek(alias, Ok(target), None, move |ev| drop(tx.send(ev)));
+            task::peek(alias, Ok(target), password, move |ev| drop(tx.send(ev)));
             match rx.recv().await {
                 Some(Event::Peek(_, answer)) => answer,
                 _ => Err(anyhow!("the peek ended without an answer").into()),
             }
+        })
+    }
+
+    fn sftp(
+        &self,
+        target: Target,
+        password: Password,
+        cmd: sftp::Cmd,
+        progress: Progress,
+    ) -> Answer<Vec<Entry>> {
+        Box::pin(async move {
+            // shortcut: a connection for every command; keep one per host
+            // if browsing over a slow link drags.
+            let h = ssh::connect(&target, password.as_ref().map(|p| p.as_str()), None).await?;
+            Ok(sftp::once(&h, cmd, progress).await?)
         })
     }
 }
@@ -60,6 +97,8 @@ pub struct Backend {
     data_dir: PathBuf,
     net: Box<dyn Transport>,
     sessions: AtomicU64,
+    /// Transfers under way, by the id the window gave them: how to stop each.
+    transfers: Mutex<HashMap<String, oneshot::Sender<()>>>,
 }
 
 impl Backend {
@@ -69,6 +108,7 @@ impl Backend {
             data_dir,
             net: Box::new(net),
             sessions: AtomicU64::new(0),
+            transfers: Mutex::default(),
         }
     }
 
@@ -102,6 +142,13 @@ impl Backend {
         ensure!(known, "no host named {alias:?}");
         Target::from_config(&sshc, alias)
     }
+
+    /// How to log in to a host of the config: where it is, and its password
+    /// if the vault has one.
+    fn login(&self, alias: &str) -> Result<(Target, Password)> {
+        // Keys and the agent only: the vault has no window yet (D6).
+        Ok((self.target(alias)?, None))
+    }
 }
 
 #[tauri::command(async)]
@@ -111,8 +158,8 @@ fn list_hosts(backend: State<'_, Backend>) -> Reply<Vec<Host>> {
 
 #[tauri::command]
 async fn get_host_stats(alias: String, backend: State<'_, Backend>) -> Reply<Peek> {
-    let target = backend.target(&alias)?;
-    backend.net.peek(alias, target).await
+    let (target, password) = backend.login(&alias)?;
+    backend.net.peek(alias, target, password).await
 }
 
 /// Opens a session to a typed `[user@]host[:port]` and returns its id.
@@ -158,7 +205,14 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             get_host_stats,
             quick_connect,
             list_snippets,
-            resolve_conn_error
+            resolve_conn_error,
+            files::sftp_list,
+            files::sftp_mkdir,
+            files::sftp_rm,
+            files::sftp_rename,
+            files::sftp_upload,
+            files::sftp_download,
+            files::sftp_cancel
         ])
 }
 

@@ -5,20 +5,26 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{get_ipc_response, mock_context, noop_assets, MockRuntime};
 use tauri::webview::InvokeRequest;
-use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Listener, Manager, WebviewWindow, WebviewWindowBuilder};
 use vssh_core::config::Lang;
 use vssh_core::conn_err::{ConnError, Fail};
+use vssh_core::sftp::{Cmd, Entry};
 use vssh_core::ssh::Target;
 use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::Host;
-use vssh_desktop::{builder, Answer, Backend, Transport};
+use vssh_desktop::{builder, Answer, Backend, Password, Progress, Transport};
+
+#[path = "commands/files.rs"]
+mod files;
 
 const SSH_CONFIG: &str = "\
 Host web-01
@@ -32,12 +38,32 @@ Host *.lan
   User ops
 ";
 
-/// A network that answers every peek with the same thing and remembers
-/// whom it was asked about.
+/// A network that answers from memory and remembers what it was asked.
 #[derive(Clone)]
 struct Fake {
+    /// What every peek answers.
     answer: Result<Peek, ConnError>,
     asked: Arc<Mutex<Vec<String>>>,
+    /// What every SFTP command answers, once it has reported `steps`.
+    files: Result<Vec<Entry>, ConnError>,
+    steps: Vec<(u64, u64)>,
+    /// While set, a transfer reports its steps and then never ends.
+    stall: Arc<AtomicBool>,
+    /// A stalled transfer was dropped: it stopped where it was.
+    dropped: Arc<AtomicBool>,
+}
+
+/// Says so when it is dropped.
+struct Flag(Arc<AtomicBool>);
+
+impl Drop for Flag {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+fn at(target: &Target) -> String {
+    format!("{}@{}:{}", target.user, target.host, target.port)
 }
 
 impl Fake {
@@ -45,7 +71,15 @@ impl Fake {
         Self {
             answer,
             asked: Arc::default(),
+            files: Ok(vec![]),
+            steps: vec![],
+            stall: Arc::default(),
+            dropped: Arc::default(),
         }
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
     }
 
     fn silent() -> Self {
@@ -54,12 +88,39 @@ impl Fake {
 }
 
 impl Transport for Fake {
-    fn peek(&self, alias: String, target: Target) -> Answer<Peek> {
-        let line = format!("{alias} = {}@{}:{}", target.user, target.host, target.port);
+    fn peek(&self, alias: String, target: Target, _: Password) -> Answer<Peek> {
+        let line = format!("{alias} = {}", at(&target));
         self.asked.lock().unwrap().push(line);
         let answer = self.answer.clone();
         Box::pin(async move { answer })
     }
+
+    fn sftp(
+        &self,
+        target: Target,
+        _: Password,
+        cmd: Cmd,
+        progress: Progress,
+    ) -> Answer<Vec<Entry>> {
+        let line = format!("{} {cmd:?}", at(&target));
+        self.asked.lock().unwrap().push(line);
+        let fake = self.clone();
+        Box::pin(async move {
+            for (done, total) in fake.steps {
+                progress(done, total);
+            }
+            if fake.stall.load(Ordering::SeqCst) {
+                let _stopped = Flag(fake.dropped);
+                std::future::pending::<()>().await;
+            }
+            fake.files
+        })
+    }
+}
+
+/// A failure the connect path tagged, as a command answers with it.
+fn failed(fail: Fail) -> ConnError {
+    ConnError::from(anyhow::Error::new(fail))
 }
 
 /// A home of its own for one test: an ssh config and an empty data directory.
@@ -99,6 +160,20 @@ fn call(window: &WebviewWindow<MockRuntime>, cmd: &str, args: Value) -> Result<V
         invoke_key: window.app_handle().invoke_key().to_string(),
     };
     get_ipc_response(window, request).map(|body| body.deserialize::<Value>().unwrap())
+}
+
+/// Everything the app emits under one event name, as the window would hear it.
+fn listen(app: &tauri::App<MockRuntime>, event: &str) -> mpsc::Receiver<Value> {
+    let (tx, rx) = mpsc::channel();
+    app.listen(event, move |ev| {
+        drop(tx.send(serde_json::from_str(ev.payload()).unwrap()))
+    });
+    rx
+}
+
+/// The next event, which must come.
+fn next(events: &mpsc::Receiver<Value>) -> Value {
+    events.recv_timeout(Duration::from_secs(5)).unwrap()
 }
 
 /// The shape of an error that is not a connection failure.
@@ -207,7 +282,7 @@ fn get_host_stats_refuses_a_host_that_is_not_in_the_config() {
         assert!(err.as_str().unwrap().contains("alias"), "{err}");
     }
     // Nobody was connected to for any of that.
-    assert!(net.asked.lock().unwrap().is_empty());
+    assert!(net.asked().is_empty());
 }
 
 #[test]
@@ -354,12 +429,15 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
         listener.local_addr().unwrap().port()
     };
     let target = Target::parse(&format!("nobody@127.0.0.1:{port}")).unwrap();
-    let answer = tauri::async_runtime::block_on(vssh_desktop::Core.peek("closed".into(), target));
-    let err = answer.unwrap_err();
-    assert_eq!(
-        serde_json::to_value(&err.fail).unwrap(),
-        json!({ "kind": "refused", "addr": format!("127.0.0.1:{port}") })
-    );
+    let refused = json!({ "kind": "refused", "addr": format!("127.0.0.1:{port}") });
+    let fail = |err: ConnError| serde_json::to_value(&err.fail).unwrap();
+    use tauri::async_runtime::block_on;
+
+    let answer = block_on(vssh_desktop::Core.peek("closed".into(), target.clone(), None));
+    assert_eq!(fail(answer.unwrap_err()), refused);
+    let list = Cmd::List(".".into());
+    let answer = block_on(vssh_desktop::Core.sftp(target, None, list, Box::new(|_, _| {})));
+    assert_eq!(fail(answer.unwrap_err()), refused);
 }
 
 /// The frontend's tests render `src/lib/fixtures`. Those files must be what
