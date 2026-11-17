@@ -40,6 +40,8 @@ function shell(over: Record<string, (args: Args) => unknown> = {}) {
   return userEvent.setup({ advanceTimers: (ms) => void (vi.isFakeTimers() && vi.advanceTimersByTime(ms)) })
 }
 const status = () => screen.getByRole('contentinfo')
+/** The palette's box. Behind its dialog the page is inert; jsdom does not know. */
+const palette = () => within(screen.getByRole('dialog')).getByRole('combobox')
 const card = (alias: string) => screen.findByRole('article', { name: alias })
 const fails = () => {
   throw refused
@@ -110,6 +112,33 @@ test('Connect on a card opens a session that shows the host and its figures', as
   expect(screen.getAllByRole('article')).toHaveLength(4)
 })
 
+test('a change made elsewhere, to the config or by the TUI, shows up on its own', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  let list = hosts
+  shell({ list_hosts: () => list })
+  await card('bare')
+  expect(screen.queryByRole('heading', { name: '#staging 2' })).not.toBeInTheDocument()
+
+  const moved = { ...hosts[3], meta: { ...hosts[3].meta, grp: 'staging' } }
+  const added = { ...hosts[3], alias: 'cache-01', meta: { ...hosts[3].meta, tags: 'staging' } }
+  list = [hosts[0], hosts[1], moved, added]
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(await screen.findByRole('heading', { name: '#staging 2' })).toBeInTheDocument()
+  expect(screen.queryByRole('article', { name: 'db-primary' })).not.toBeInTheDocument()
+  expect(status()).toHaveTextContent('Hosts 4')
+  // The new host is asked like the others from the next round on.
+  expect(asked('get_host_stats').at(-1)).toEqual({ alias: 'cache-01', passive: true })
+})
+
+test('a tag clicked in the sidebar filters the dashboard, and a second click lets go', async () => {
+  const user = shell()
+  await card('bare')
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(screen.getAllByRole('article').map((el) => el.getAttribute('aria-label'))).toEqual(['db-primary'])
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(screen.getAllByRole('article')).toHaveLength(4)
+})
+
 test('with no hosts at all it still opens, and says what to do', async () => {
   shell({ list_hosts: () => [], list_snippets: () => [] })
   expect(await screen.findByRole('heading', { name: 'No hosts yet.' })).toBeInTheDocument()
@@ -137,10 +166,11 @@ test('a host chosen in the palette is the selected one', async () => {
   const user = shell()
   await screen.findByRole('button', { name: /db-primary/ })
   await user.keyboard('{Control>}k{/Control}')
-  await user.type(screen.getByRole('combobox'), 'db{Enter}')
+  await user.type(palette(), 'db{Enter}')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: /db-primary/ })).toHaveAttribute('aria-current', 'true')
   expect(status()).toHaveTextContent('db-primary postgres@db.internal.example.com')
+  await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
 })
 
 test('quick connect from the palette opens a session and saves no host', async () => {
@@ -153,7 +183,7 @@ test('quick connect from the palette opens a session and saves no host', async (
   })
   await screen.findByRole('button', { name: /db-primary/ })
   await user.keyboard('{Control>}k{/Control}')
-  await user.type(screen.getByRole('combobox'), 'qc{Enter}')
+  await user.type(palette(), 'qc{Enter}')
   await user.type(screen.getByLabelText('Host'), '10.0.0.9')
   await user.type(screen.getByLabelText('User'), 'deploy')
   // Behind a modal dialog the cards and their buttons are inert; jsdom does not know.
@@ -171,7 +201,7 @@ test('a refused quick connect says why, in the language of the window', async ()
   const user = shell({ quick_connect: fails })
   await user.click(await screen.findByRole('button', { name: /Language/ }))
   await user.keyboard('{Control>}k{/Control}')
-  await user.type(screen.getByRole('combobox'), 'qc{Enter}')
+  await user.type(palette(), 'qc{Enter}')
   await user.type(screen.getByRole('textbox', { name: 'Máy chủ' }), 'web')
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Kết nối' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối')

@@ -77,3 +77,21 @@ test('in Vietnamese the words are the TUI\'s', () => {
   expect(screen.getByRole('heading', { name: 'Thẻ 0' })).toBeInTheDocument()
   expect(screen.getByText('chưa có thẻ')).toBeInTheDocument()
 })
+
+test('the tag chosen is the caller\'s to use: the dashboard filters by it too', async () => {
+  const user = userEvent.setup()
+  let tag: string | null = null
+  render(Sidebar, {
+    ...props(),
+    get tag() {
+      return tag
+    },
+    set tag(value) {
+      tag = value
+    },
+  })
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(tag).toBe('db')
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(tag).toBeNull()
+})

@@ -18,6 +18,8 @@
   let snippets = $state<Snippet[]>([])
   let sessions = $state<{ id: number; target: string }[]>([])
   let selected = $state<string | null>(null)
+  /** The tag the sidebar narrowed the hosts to. */
+  let tag = $state<string | null>(null)
   let modal = $state<'palette' | 'quick' | null>(null)
   /** Why the hosts could not be read. */
   let failed = $state<Shown | null>(null)
@@ -88,7 +90,7 @@
 <svelte:window {onkeydown} />
 
 <div class="grid h-full grid-cols-[16rem_1fr] grid-rows-[1fr_auto]">
-  <Sidebar {hosts} {selected} onselect={(alias) => (selected = alias)} />
+  <Sidebar {hosts} {selected} bind:tag onselect={(alias) => (selected = alias)} />
 
   <main class="flex min-h-0 flex-col">
     {#if sessions.length}
@@ -107,7 +109,15 @@
         {/each}
       </ul>
     {/if}
-    <Dashboard {hosts} error={failed} onconnect={open} onpalette={() => (modal = 'palette')} />
+    <Dashboard
+      {hosts}
+      {tag}
+      {selected}
+      error={failed}
+      onselect={(alias) => (selected = alias)}
+      onconnect={open}
+      onpalette={() => (modal = 'palette')}
+    />
   </main>
 
   <Statusbar

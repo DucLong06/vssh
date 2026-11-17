@@ -51,6 +51,12 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("down", "down", "mất kết nối"),
     ("asking", "asking", "đang hỏi"),
     ("mem", "MEM", "RAM"),
+    ("search_hosts", "Search hosts, #tag", "Tìm máy chủ, #thẻ"),
+    ("group_by_tag", "Group by tag", "Nhóm theo thẻ"),
+    ("sort", "Sort", "Sắp xếp"),
+    ("sort_order", "My order", "Thứ tự của tôi"),
+    ("sort_name", "Name", "Tên"),
+    ("sort_latency", "Latency", "Độ trễ"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

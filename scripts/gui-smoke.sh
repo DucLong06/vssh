@@ -13,7 +13,8 @@
 #   db-replica   a name that does not resolve  legacy      a user sshd refuses: AUTH
 #   app-internal behind a jump host            new-box     a key never seen before
 #
-# Screenshots land in docs/img/desktop-d2*.png (.vi.png: the Vietnamese UI).
+# Screenshots land in docs/img/desktop-d2*.png (.vi.png: the Vietnamese UI);
+# those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -34,6 +35,7 @@ if [ -z "${VSSH_SMOKE_DISPLAY:-}" ]; then
     exec env VSSH_SMOKE_DISPLAY=1 xvfb-run -a -s "-screen 0 ${SIZE}x24" "$0"
 fi
 
+mkdir -p target/smoke
 home=$(mktemp -d)
 app=
 sshd=
@@ -111,8 +113,8 @@ EOF
 
 shot() {
     sleep 1
-    ffmpeg -loglevel error -y -f x11grab -draw_mouse 0 -video_size "$SIZE" -i "$DISPLAY" -frames:v 1 "docs/img/$1"
-    echo "shot: docs/img/$1"
+    ffmpeg -loglevel error -y -f x11grab -draw_mouse 0 -video_size "$SIZE" -i "$DISPLAY" -frames:v 1 "$1"
+    echo "shot: $1"
 }
 step() { echo "ok: $1"; }
 accepted() { grep -c 'Accepted publickey' "$home/sshd/log" || true; }
@@ -154,7 +156,7 @@ EOF
 # Three rounds of the poll: long enough for every host to have answered, for
 # the tags to have been read, and for a second login to show if there is one.
 sleep 13
-shot desktop-d2.png
+shot docs/img/desktop-d2.png
 
 # One connection per host that lets us in, however many rounds were asked.
 logins=$(accepted)
@@ -167,8 +169,19 @@ xdotool windowfocus "$win"
 # The language button, bottom right.
 xdotool mousemove --window "$win" 1073 686 click 1
 sleep 6
-shot desktop-d2.vi.png
+shot docs/img/desktop-d2.vi.png
 xdotool mousemove --window "$win" 1073 686 click 1
+
+# A card moved by hand: db-primary dragged onto web-01, its neighbour on the left.
+xdotool mousemove --window "$win" 880 310 mousedown 1
+for x in 860 800 700 600 500 470; do xdotool mousemove --window "$win" "$x" 312; sleep 0.1; done
+xdotool mouseup 1
+shot target/smoke/dragged.png
+
+# The same without a mouse: / is the search box, three Tabs on is the first
+# card; Alt-Right moves it one place along.
+xdotool key --window "$win" slash Tab Tab Tab alt+Right
+shot target/smoke/moved.png
 
 xdotool key --window "$win" ctrl+k
 xdotool type --window "$win" db

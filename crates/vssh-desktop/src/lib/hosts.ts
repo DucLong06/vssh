@@ -12,6 +12,9 @@ export function tagsOf(host: Host): string[] {
   return [...host.meta.tags.split(/[ ,]/), host.meta.grp].filter(Boolean)
 }
 
+/** Where a host's card goes: its group, else its first tag, else nowhere (''). */
+export const groupOf = (host: Host) => host.meta.grp || tagsOf(host)[0] || ''
+
 export const hasTag = (host: Host, tag: string) =>
   tagsOf(host).some((name) => name.toLowerCase() === tag.toLowerCase())
 

@@ -1,16 +1,17 @@
 <script lang="ts">
   import type { Host } from './api'
-  import { address, hasTag, tagCounts } from './hosts'
+  import { address, chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
 
   type Props = {
     hosts: Host[]
     selected: string | null
     onselect: (alias: string) => void
+    /** The tag the list is narrowed to; the dashboard follows it. */
+    tag?: string | null
   }
-  let { hosts, selected, onselect }: Props = $props()
+  let { hosts, selected, onselect, tag = $bindable(null) }: Props = $props()
 
-  let tag = $state<string | null>(null)
   let list = $state<HTMLElement>()
 
   const tags = $derived(tagCounts(hosts))
@@ -62,7 +63,8 @@
             type="button"
             aria-pressed={tag === name}
             onclick={() => (tag = tag === name ? null : name)}
-            class="cursor-pointer rounded-full border border-edge px-2 py-0.5 text-magenta aria-pressed:border-magenta aria-pressed:bg-selection"
+            style="color: {chip(name)}"
+            class="cursor-pointer rounded-full border border-edge px-2 py-0.5 aria-pressed:border-current aria-pressed:bg-selection"
           >
             #{name} <span class="text-white">{count}</span>
           </button>
