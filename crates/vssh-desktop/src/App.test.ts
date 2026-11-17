@@ -167,12 +167,18 @@ test('Ctrl-K opens the palette, and so does the TUI leader Ctrl-A', async () => 
 test('a host chosen in the palette is the selected one', async () => {
   const user = shell()
   await screen.findByRole('button', { name: /db-primary/ })
+  // With no host selected there is nothing for the keys to act on.
+  expect(status()).not.toHaveTextContent('Enter')
   await user.keyboard('{Control>}k{/Control}')
   await user.type(palette(), 'db{Enter}')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: /db-primary/ })).toHaveAttribute('aria-current', 'true')
   expect(status()).toHaveTextContent('db-primary postgres@db.internal.example.com')
   await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
+  // What the selected card's keys do, in the window's language.
+  expect(status()).toHaveTextContent('Enter Connect · v Quick peek')
+  await user.click(screen.getByRole('button', { name: 'Language: EN' }))
+  expect(status()).toHaveTextContent('Enter Kết nối · v Xem nhanh')
 })
 
 test('quick connect from the palette opens a session and saves no host', async () => {
