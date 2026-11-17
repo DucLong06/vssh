@@ -22,6 +22,8 @@
   let again = $state('')
   /** The two new ones were not the same when last sent. */
   let mismatch = $state(false)
+  /** The new one was empty when last sent. The fields are `required`: this is for a webview that sends the form all the same. */
+  let empty = $state(false)
   /** The shell's refusal, and what went well; one of them at most. */
   let failed = $state<Shown | null>(null)
   let note = $state('')
@@ -38,8 +40,10 @@
   async function attempt(twice: boolean, act: () => Promise<string>, refused?: string) {
     failed = null
     note = ''
-    mismatch = twice && (vault === 'none' ? pass : next) !== again
-    if (mismatch) return false
+    const fresh = vault === 'none' ? pass : next
+    empty = twice && !fresh
+    mismatch = twice && !empty && fresh !== again
+    if (empty || mismatch) return false
     try {
       note = await act()
       return true
@@ -62,7 +66,7 @@
       // Making a vault takes any passphrase: only one that is there refuses a wrong one.
       vault === 'locked' ? t('wrong_passphrase') : undefined,
     )
-    if (mismatch) return
+    if (mismatch || empty) return
     pass = again = ''
     if (opened) vault = 'unlocked'
     else wrong++
@@ -123,7 +127,9 @@
 {/snippet}
 
 {#snippet said()}
-  {#if mismatch}
+  {#if empty}
+    <p role="alert" class="text-red">{t('passphrase_required')}</p>
+  {:else if mismatch}
     <p role="alert" class="text-red">{t('passphrase_mismatch')}</p>
   {:else if failed}
     <p role="alert" title={failed.chain} class="break-words">

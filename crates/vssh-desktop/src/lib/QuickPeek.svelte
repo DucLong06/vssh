@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Host } from './api'
-  import { address } from './hosts'
   import { i18n, t } from './i18n.svelte'
   import type { Live } from './live.svelte'
   import { parts, uptime } from './stats'
+  import { addr, fake, streamer } from './streamer.svelte'
 
   // The TUI's quick peek, as a popover under a card: what the host said
   // about itself the last time it was asked, and how long ago that was.
@@ -48,7 +48,8 @@
     }
     const text = (label: string, value: string | null): [string, string?, string?] => [label, value ?? undefined]
     return [
-      text(t('hostname'), peek.host),
+      // What the host calls itself is an address too.
+      text(t('hostname'), peek.host && streamer.on ? fake(host.alias) : peek.host),
       text(t('system'), peek.os),
       text(t('uptime'), peek.uptime && uptime(peek.uptime, i18n.lang)),
       text(t('load'), peek.load),
@@ -71,8 +72,8 @@
   </p>
 
   <h4 class="pt-2 text-xs text-cyan">{t('connection')}</h4>
-  {#if address(host)}
-    <p class="truncate">{address(host)}</p>
+  {#if addr(host)}
+    <p class="truncate">{addr(host)}</p>
   {/if}
   <p class={reach.tone}><span aria-hidden="true">{reach.dot}</span> {reach.text}</p>
 

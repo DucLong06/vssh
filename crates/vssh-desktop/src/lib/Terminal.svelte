@@ -94,7 +94,8 @@
   }
 </script>
 
-<div role="tabpanel" aria-label={label} hidden={!active} class="relative min-h-0 flex-1 bg-bg p-2">
+<!-- Dark in both themes, as the terminal in it is; in Day the theme's border is around it. -->
+<div role="tabpanel" aria-label={label} hidden={!active} class="relative min-h-0 flex-1 bg-term p-2 day:border day:border-edge">
   <div bind:this={box} class="h-full"></div>
   {#if closed}
     <p

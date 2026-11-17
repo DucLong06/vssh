@@ -4,6 +4,7 @@
   import { api, explain, type ConnError, type Forward, type ForwardState, type Shown } from './api'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
+  import { hide, streamer } from './streamer.svelte'
 
   type Props = {
     /** The host of the ssh config whose forwards these are. */
@@ -22,7 +23,9 @@
   let portField = $state<HTMLInputElement>()
   let root = $state<HTMLElement>()
 
-  const leads = (row: Forward) => (row.kind === 'D' ? '' : `${row.host}:${row.hport}`)
+  const leads = (row: Forward) => (row.kind === 'D' ? '' : `${hide(row.host)}:${row.hport}`)
+  /** What a row is called: its line of the config, in streamer mode without where it leads. */
+  const name = (row: Forward) => (streamer.on ? `${row.port} ${leads(row)}`.trim() : row.value)
 
   /** Does what was asked; a refusal is said in the form. */
   async function attempt(act: () => Promise<void>, row?: Forward) {
@@ -138,7 +141,7 @@
                   type="button"
                   role="switch"
                   aria-checked={row.state !== 'off'}
-                  aria-label="{row.kind} {row.value}"
+                  aria-label="{row.kind} {name(row)}"
                   onclick={() => toggle(row)}
                   class="cursor-pointer rounded-md border border-edge px-2 whitespace-nowrap hover:bg-selection {tone[row.state]}"
                 >
@@ -149,7 +152,7 @@
               <td class="py-1 text-right">
                 <button
                   type="button"
-                  aria-label="{t('delete')} {row.kind} {row.value}"
+                  aria-label="{t('delete')} {row.kind} {name(row)}"
                   onclick={() => kill(row)}
                   class="cursor-pointer rounded px-1.5 text-white hover:bg-selection hover:text-red"
                 >

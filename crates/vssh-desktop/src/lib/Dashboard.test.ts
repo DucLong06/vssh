@@ -312,3 +312,19 @@ test('x, s and L ask for a dialog and are not typed into what it opens with', as
   // A key that is nobody's is left alone.
   expect(await fireEvent.keyDown(card, { key: 'q' })).toBe(true)
 })
+
+test('the controls beside the search are one group: short of room they take a second row together, from the same margin', async () => {
+  const user = userEvent.setup()
+  render(Dashboard, props({ onadd: vi.fn() }))
+  cards()[0].focus()
+  await user.keyboard(' ')
+  const search = screen.getByRole('searchbox', { name: 'Search hosts, #tag' })
+  const group = search.nextElementSibling!
+  // Everything but the search is in it, in the order of the Tab key, and nothing follows it.
+  const inside = [...group.querySelectorAll('button, [role=radiogroup]')].map((el) => el.getAttribute('aria-label') ?? el.textContent?.trim())
+  expect(inside).toEqual(['Group by tag', 'Connect 1', 'Run 1', 'Add host', 'Sort'])
+  expect(group.nextElementSibling).toBeNull()
+  // Both wrap: the bar puts the group on a row of its own, the group breaks only where even that is too narrow.
+  expect(search.parentElement).toHaveClass('flex', 'flex-wrap', 'sticky', 'bg-bg')
+  expect(group).toHaveClass('flex', 'flex-wrap')
+})

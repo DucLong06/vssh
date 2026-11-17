@@ -4,6 +4,7 @@
   import { address, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import Modal from './Modal.svelte'
+  import { addr } from './streamer.svelte'
 
   type Props = {
     hosts: Host[]
@@ -35,8 +36,9 @@
       ...(onvault ? [{ key: 'vault', label: t('vault'), detail: '', en: 'vault', run: onvault }] : []),
     ].map(({ en, ...item }) => ({ item: { ...item, action: true }, en }))
     const rows = hosts.map((host) => {
+      // Found by its real address, shown at the one the window may show.
       const detail = address(host)
-      const item = { key: host.alias, label: host.alias, detail, action: false, run: () => onhost(host.alias) }
+      const item = { key: host.alias, label: host.alias, detail: addr(host), action: false, run: () => onhost(host.alias) }
       // The name counts most; the address and the tags find a host too, each
       // on its own: letters scattered over all of them match nearly anything.
       const rest = best(...[detail, ...tagsOf(host)].map((field) => fuzzy(query, field)))

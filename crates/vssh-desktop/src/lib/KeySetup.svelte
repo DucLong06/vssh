@@ -66,7 +66,8 @@
   const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 hover:bg-selection disabled:opacity-60'
 </script>
 
-<Modal label="{t('key_setup')} {host}" {onclose}>
+<!-- While it runs the shell goes on whatever the window does, to the end or to the restore: it stays to say which. -->
+<Modal label="{t('key_setup')} {host}" locked={phase === 'running'} {onclose}>
   <div class="grid gap-3 p-4">
     <p>
       <span class="text-cyan">{t('key_setup')}</span>
@@ -111,7 +112,6 @@
       <p class="text-yellow">{t('key_setup_note')}</p>
     {/if}
     <div class="flex justify-end gap-2">
-      <!-- shortcut: Esc still closes while it runs, and the shell goes on to the end or to the restore; hold the dialog open (a cancel handler in Modal) if that is ever missed. -->
       <button type="button" onclick={onclose} disabled={phase === 'running'} class="{button} text-white">
         {t('close')}
       </button>

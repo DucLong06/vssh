@@ -42,6 +42,16 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("connect", "Connect", "Kết nối"),
     ("cancel", "Cancel", "Huỷ"),
     ("language", "Language", "Ngôn ngữ"),
+    (
+        "streamer_mode",
+        "Streamer mode (made-up addresses)",
+        "Chế độ phát trực tiếp (địa chỉ giả)",
+    ),
+    // What the core calls a failure it has no class for; the window's own, for one the core never saw.
+    ("error", "ERROR", "LỖI"),
+    ("theme", "Theme", "Giao diện"),
+    ("theme_night", "Night", "Tối"),
+    ("theme_day", "Day", "Sáng"),
     // The dashboard. A host's states are the TUI's words for them.
     ("not_checked", "not checked", "chưa kiểm tra"),
     ("down", "down", "mất kết nối"),
@@ -177,6 +187,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "passphrase_mismatch",
         "passphrases do not match",
         "hai lần nhập không khớp",
+    ),
+    (
+        "passphrase_required",
+        "The passphrase must not be empty",
+        "Mật khẩu kho không được để trống",
     ),
     (
         "wrong_passphrase",

@@ -27,8 +27,41 @@
   --color-dim: #737aa2;
   --color-selection: #292e42;
   --color-bar: #2d3142;
+  /* The terminal's own ground: Night's, whatever the theme (term.ts). */
+  --color-term: #1a1b26;
   --font-mono: "Maple Mono NF", "Maple Mono", ui-monospace, monospace;
 }
+
+/* TokyoNight Day (folke/tokyonight.nvim, extras/lua/tokyonight_day.lua),
+   chosen in the status bar. What text is drawn on is the palette's own: bg,
+   bg_dark for the sidebar, the dialogs and the cards, bg_dark1, bg_highlight,
+   and terminal_black for borders. What text is drawn in is the palette's
+   colour of that name made darker, the same hue: as published none of them is
+   4.5:1 on anything but fg on bg (red is 3.0:1, blue 3.1:1), and here all of
+   them are, on every ground and on a tag pill's tint (theme.test.ts works it
+   out from this block). The published one is in the comment. */
+:root[data-theme='day'] {
+  --color-bg: #e1e2e7;
+  --color-panel: #d0d5e3;
+  --color-black: #d0d5e3;
+  --color-bar: #c1c9df;
+  --color-selection: #c4c8da;
+  --color-edge: #a1a6c5;
+  --color-fg: #2d4e9c; /* fg #3760bf */
+  --color-white: #44507c; /* fg_dark #6172b0 */
+  --color-dim: #4b516f; /* dark5 #68709a */
+  --color-red: #9a1a40; /* #f52a65 */
+  --color-green: #43592b; /* #587539 */
+  --color-yellow: #654e2d; /* #8c6c3e */
+  --color-blue: #1e5197; /* #2e7de9 */
+  --color-magenta: #6638a1; /* #9854f1 */
+  --color-cyan: #005876; /* #007197 */
+  --color-orange: #7e4100; /* #b15c00 */
+  --color-teal: #0b5d4d; /* #118c74 */
+}
+
+/* `day:` on a class: only under the Day theme. */
+@custom-variant day (&:where([data-theme='day'] *));
 
 html,
 body,

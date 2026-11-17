@@ -2,6 +2,7 @@
   import type { Shown } from './api'
   import { t } from './i18n.svelte'
   import Modal from './Modal.svelte'
+  import { streamer } from './streamer.svelte'
 
   /** `onconnect` rejects with the refusal, already in words. */
   type Props = { onconnect: (target: string) => Promise<void>; onclose: () => void }
@@ -48,7 +49,7 @@
     <div class="grid grid-cols-[2fr_1fr_5.5rem] gap-2 text-white">
       <label>
         {t('host')}
-        <input bind:value={host} required autocomplete="off" autocapitalize="off" spellcheck="false" class={field} />
+        <input bind:value={host} type={streamer.on ? 'password' : 'text'} required autocomplete="off" autocapitalize="off" spellcheck="false" class={field} />
       </label>
       <label>
         {t('user')}

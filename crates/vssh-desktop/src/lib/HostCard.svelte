@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { HTMLAttributes } from 'svelte/elements'
   import type { Host } from './api'
-  import { address, chip, tagsOf } from './hosts'
+  import { chip, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { critical, down, type Live } from './live.svelte'
   import { compact, parts } from './stats'
+  import { addr } from './streamer.svelte'
 
   /** `info`: what is known about the host. (Not `state`: next to a rune that name reads as a store.) */
   type Props = {
@@ -92,8 +93,8 @@
       {latency}
     </span>
   </header>
-  {#if address(host)}
-    <p class="truncate pl-4 text-white">{address(host)}</p>
+  {#if addr(host)}
+    <p class="truncate pl-4 text-white">{addr(host)}</p>
   {/if}
   {#if tagsOf(host).length}
     <ul aria-label={t('tags')} class="flex flex-wrap gap-1 pt-2 pl-4">

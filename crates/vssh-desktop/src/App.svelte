@@ -27,6 +27,7 @@
   import Batch from './lib/Batch.svelte'
   import Snippets from './lib/Snippets.svelte'
   import Statusbar from './lib/Statusbar.svelte'
+  import { learn, streamer, target } from './lib/streamer.svelte'
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
   import Vault from './lib/Vault.svelte'
@@ -86,7 +87,7 @@
       const next = await api.listHosts()
       // shortcut: asked every round instead of watching the two files; a
       // change shows up within EVERY. Watch them (notify + an event) if that lag matters.
-      if (JSON.stringify(next) !== JSON.stringify(hosts)) hosts = next
+      if (JSON.stringify(next) !== JSON.stringify(hosts)) learn((hosts = next))
       failed = null
     } catch (error) {
       await fail(error)
@@ -114,11 +115,16 @@
     return () => clearInterval(timer)
   })
 
-  // A failure is kept as data: the words for it follow the language.
-  $effect(() => void relabel(i18n.lang))
+  // A failure is kept as data: the words for it follow the language, and
+  // streamer mode, which takes the addresses out of them.
+  $effect(() => {
+    void streamer.on
+    void relabel(i18n.lang)
+  })
 
   // Why a session ended, in the window's language.
   $effect(() => {
+    void streamer.on
     for (const session of sessions) {
       const error = session.error
       if (!error) continue
@@ -131,6 +137,9 @@
   /** The tabs in order: the dashboard, the sessions, the file views. */
   const tabs = $derived<(number | null)[]>([null, ...[...sessions, ...files].map((tab) => tab.id)])
   const front = $derived(sessions.find((session) => session.id === active))
+  /** What a session is called on screen: a host's alias, or what a quick connect was typed as, which is an address. */
+  const named = (title: string) => (hosts.some((host) => host.alias === title) ? title : target(title))
+  const listed = $derived(streamer.on ? sessions.map((session) => ({ ...session, title: named(session.title) })) : sessions)
 
   function step(by: number) {
     active = tabs[(tabs.indexOf(active) + by + tabs.length) % tabs.length]
@@ -306,7 +315,7 @@
     {selected}
     bind:tag
     onselect={(alias) => (selected = alias)}
-    {sessions}
+    sessions={listed}
     {active}
     onsession={(id) => (active = id)}
     {vault}
@@ -316,7 +325,7 @@
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
   <main class="flex min-h-0 min-w-0 flex-col">
     {#if sessions.length || files.length}
-      <Tabs {sessions} {files} {active} onpick={(id) => (active = id)} onclose={close} />
+      <Tabs sessions={listed} {files} {active} onpick={(id) => (active = id)} onclose={close} />
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
     <Dashboard
@@ -352,7 +361,7 @@
       <Terminal
         bind:this={terms[session.id]}
         id={session.id}
-        label={session.title}
+        label={named(session.title)}
         active={session.id === active}
         closed={session.state === 'closed'}
         why={session.why}
@@ -384,7 +393,7 @@
 {#if failed_session?.error && failed_session.why}
   {@const session = failed_session}
   <Failure
-    title={session.title}
+    title={named(session.title)}
     error={failed_session.error}
     why={failed_session.why}
     ontrust={(key, forever) => trust(session, key.host, key.fingerprint, forever)}

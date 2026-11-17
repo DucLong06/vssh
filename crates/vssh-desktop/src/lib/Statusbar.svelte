@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Host } from './api'
-  import { address } from './hosts'
   import { i18n, setLang, t } from './i18n.svelte'
+  import { addr } from './streamer.svelte'
 
   type Props = {
     hosts: number
@@ -68,7 +68,7 @@
       {t('right_click_more')}
     </span>
   {:else if selected}
-    <span class="truncate"><span class="text-cyan">{selected.alias}</span> {address(selected)}</span>
+    <span class="truncate"><span class="text-cyan">{selected.alias}</span> {addr(selected)}</span>
     <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
     <span class="shrink-0">
       <kbd class="text-magenta">Enter</kbd>

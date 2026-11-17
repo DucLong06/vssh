@@ -215,3 +215,34 @@ test('in Vietnamese a refused backup is said in Vietnamese; a failure the core h
   end().reject(auth)
   expect(await screen.findByRole('alert')).toHaveTextContent('✗ XÁC THỰC Khoá công khai bị từ chối cho deploy@10.0.0.5')
 })
+
+test('while it runs neither Esc nor a click beside it closes it; before and after, both do', async () => {
+  const { user, end, onclose } = open()
+  const dialog = screen.getByRole<HTMLDialogElement>('dialog')
+  // Esc on a modal dialog is a `cancel`, which whoever hears it may refuse.
+  const esc = () => {
+    const event = new Event('cancel', { cancelable: true })
+    dialog.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+  expect(esc()).toBe(false)
+
+  await user.click(button('Start'))
+  await says('generate', 'running')
+  expect(esc()).toBe(true)
+  await user.click(dialog)
+  expect(dialog.open).toBe(true)
+  // A webview that closes it all the same: it is open again at once, and nobody was told it went.
+  dialog.close()
+  expect(dialog.open).toBe(true)
+  expect(onclose).not.toHaveBeenCalled()
+  expect(button('close')).toBeDisabled()
+
+  // Over, one way or the other: it is the user's to close again.
+  end().reject(other('sudo: a password is required'))
+  await screen.findByRole('alert')
+  expect(esc()).toBe(false)
+  expect(button('close')).toBeEnabled()
+  dialog.close()
+  expect(onclose).toHaveBeenCalledOnce()
+})
