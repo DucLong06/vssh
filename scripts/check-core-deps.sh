@@ -26,5 +26,17 @@ if echo "$direct" | grep -E "^tokio[ -]"; then
     fail=1
 fi
 
+# The desktop app is a second frontend over the core, not a wrapper around
+# the first one: it shares nothing with the terminal app but vssh-core.
+desktop=$(cargo tree -p vssh-desktop --edges normal,build,dev --prefix none)
+if echo "$desktop" | grep -E "^(vssh|$BAD) "; then
+    echo "FAIL: vssh-desktop depends on the terminal app or a TUI crate (above)"
+    fail=1
+fi
+if grep -rnE "\b(vssh|$BAD)::|extern crate (vssh|$BAD)\b" crates/vssh-desktop/src-tauri --include='*.rs'; then
+    echo "FAIL: vssh-desktop names the terminal app in its source (above)"
+    fail=1
+fi
+
 [ "$fail" = 0 ] && echo "core deps: ok"
 exit "$fail"

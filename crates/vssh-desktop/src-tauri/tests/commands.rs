@@ -12,6 +12,7 @@ use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{get_ipc_response, mock_context, noop_assets, MockRuntime};
 use tauri::webview::InvokeRequest;
 use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
+use vssh_core::config::Lang;
 use vssh_core::conn_err::{ConnError, Fail};
 use vssh_core::ssh::Target;
 use vssh_core::stats::{Peek, Stats};
@@ -376,4 +377,23 @@ fn the_frontend_fixtures_are_answers_the_commands_can_give() {
     }
     same::<Vec<Host>>("hosts.json");
     same::<ConnError>("refused.json");
+}
+
+/// The window's words are the core's table, as JSON. `UPDATE_STRINGS=1 cargo
+/// test -p vssh-desktop strings` writes the file again after the table changed.
+#[test]
+fn the_frontend_strings_are_the_core_table() {
+    let words = |lang: Lang| -> Value {
+        let rows = vssh_core::i18n::STRINGS.iter();
+        rows.map(|(key, en, vi)| (key.to_string(), json!(lang.pick(en, vi))))
+            .collect()
+    };
+    let table = json!({ "en": words(Lang::En), "vi": words(Lang::Vi) });
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/strings.json");
+    if std::env::var_os("UPDATE_STRINGS").is_some() {
+        let text = serde_json::to_string_pretty(&table).unwrap();
+        fs::write(&path, text + "\n").unwrap();
+    }
+    let file: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(file, table, "run again with UPDATE_STRINGS=1");
 }
