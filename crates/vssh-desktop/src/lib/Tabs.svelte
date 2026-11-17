@@ -52,7 +52,7 @@
         {session.title}
         {#if session.busy}
           <!-- Closing is at once, as in the TUI: this is the warning there is. -->
-          <span class="rounded-full bg-bar px-1.5 text-xs text-yellow">{t('running')} {session.busy}</span>
+          <span class="rounded-full bg-bar px-1.5 text-xs text-white">{t('running')} {session.busy}</span>
         {/if}
       </button>
       <button
