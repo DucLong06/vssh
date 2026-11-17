@@ -4,7 +4,7 @@
       "chain": "cannot resolve db.internal.example.com: failed to lookup address information: Name or service not known",
       "class": "dns",
       "label": "DNS",
-      "message": "Cannot resolve db.internal.example.com: failed to lookup address information: Name or service not known"
+      "message": "Cannot resolve db.internal.example.com"
     },
     {
       "chain": "10.0.0.5:2222 did not answer within 10s",
@@ -54,7 +54,7 @@
       "chain": "cannot resolve db.internal.example.com: failed to lookup address information: Name or service not known",
       "class": "dns",
       "label": "DNS",
-      "message": "Không phân giải được tên db.internal.example.com: failed to lookup address information: Name or service not known"
+      "message": "Không phân giải được tên db.internal.example.com"
     },
     {
       "chain": "10.0.0.5:2222 did not answer within 10s",
