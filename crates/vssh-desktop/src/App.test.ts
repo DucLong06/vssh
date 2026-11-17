@@ -1130,6 +1130,7 @@ test('a host signed in to with a vault password is given a key from its form; af
 test('in Vietnamese no English string is left in the vault, the host form, the import, the question and the key setup', async () => {
   setLang('vi')
   let open = false
+  let stop = (_: object) => {}
   const user = editable({
     vault_state: () => (open ? 'unlocked' : 'locked'),
     vault_unlock: ({ passphrase }) => {
@@ -1139,7 +1140,7 @@ test('in Vietnamese no English string is left in the vault, the host form, the i
     vault_hosts: () => ['web-02'],
     vault_export: () => null,
     hosts_import_preview: () => [hosts[3]],
-    ssh_key_setup: () => new Promise(() => {}),
+    ssh_key_setup: () => new Promise((_, reject) => (stop = reject)),
   })
   const said = async (name: string) => {
     const dialog = await screen.findByRole('dialog', { name })
@@ -1186,6 +1187,12 @@ test('in Vietnamese no English string is left in the vault, the host form, the i
   await user.click(keys.getByRole('button', { name: 'Bắt đầu' }))
   await emit('key-setup-step', { host: 'web-02', step: 'generate', state: 'running' })
   expect(await keys.findByRole('progressbar', { name: 'đang chạy' })).toBeInTheDocument()
+  expect(english(words())).toEqual([])
+  // While it runs it stays; once it has failed it can be shut.
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  expect(screen.getByRole('dialog', { name: 'Cài khoá SSH web-02' })).toBeInTheDocument()
+  stop(errors[4])
+  expect(await keys.findByRole('alert')).toHaveTextContent('XÁC THỰC')
   expect(english(words())).toEqual([])
   await shut()
   ;(await card('web-02')).focus()

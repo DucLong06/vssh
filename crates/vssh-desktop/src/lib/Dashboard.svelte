@@ -262,6 +262,9 @@
       </div>
     {/if}
   {:else}
+    <!-- The search, and the controls as one group: where they have no room
+         beside it (Vietnamese, with cards marked) they all go to a second
+         row, from the same margin, and the cards start below it. -->
     <div class="sticky top-0 z-20 flex flex-wrap items-center gap-2 bg-bg py-3">
       <input
         bind:this={search}
@@ -277,47 +280,49 @@
         }}
         class="{control} min-w-40 flex-1 text-fg placeholder:text-dim"
       />
-      <button
-        type="button"
-        aria-pressed={grouped}
-        onclick={() => (grouped = !grouped)}
-        class="{control} cursor-pointer hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
-      >
-        {t('group_by_tag')}
-      </button>
-      {#if marked.length}
+      <div class="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onclick={() => connect()}
-          class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+          aria-pressed={grouped}
+          onclick={() => (grouped = !grouped)}
+          class="{control} cursor-pointer hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
         >
-          {t('connect')} {marked.length}
+          {t('group_by_tag')}
         </button>
-        <button
-          type="button"
-          aria-keyshortcuts="x"
-          onclick={() => onbatch?.()}
-          class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
-        >
-          {t('run')} {marked.length}
-        </button>
-      {/if}
-      {#if onadd}
-        <button type="button" aria-keyshortcuts="a" onclick={onadd} class="{control} cursor-pointer hover:bg-selection">
-          {t('add_host')}
-        </button>
-      {/if}
-      <!-- Radio buttons, drawn as one control: a native select opens the
-           toolkit's own light menu over the dark window. -->
-      <div role="radiogroup" aria-label={t('sort')} class="flex rounded-md border border-edge bg-panel p-0.5">
-        {#each sorts as [value, label] (value)}
-          <label
-            class="cursor-pointer rounded px-2 py-0.5 text-white hover:text-fg has-checked:bg-selection has-checked:text-blue has-focus-visible:outline-2 has-focus-visible:outline-blue"
+        {#if marked.length}
+          <button
+            type="button"
+            onclick={() => connect()}
+            class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
           >
-            <input type="radio" bind:group={sort} {value} class="sr-only" />
-            {label}
-          </label>
-        {/each}
+            {t('connect')} {marked.length}
+          </button>
+          <button
+            type="button"
+            aria-keyshortcuts="x"
+            onclick={() => onbatch?.()}
+            class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+          >
+            {t('run')} {marked.length}
+          </button>
+        {/if}
+        {#if onadd}
+          <button type="button" aria-keyshortcuts="a" onclick={onadd} class="{control} cursor-pointer hover:bg-selection">
+            {t('add_host')}
+          </button>
+        {/if}
+        <!-- Radio buttons, drawn as one control: a native select opens the
+             toolkit's own light menu over the dark window. -->
+        <div role="radiogroup" aria-label={t('sort')} class="flex rounded-md border border-edge bg-panel p-0.5">
+          {#each sorts as [value, label] (value)}
+            <label
+              class="cursor-pointer rounded px-2 py-0.5 text-white hover:text-fg has-checked:bg-selection has-checked:text-blue has-focus-visible:outline-2 has-focus-visible:outline-blue"
+            >
+              <input type="radio" bind:group={sort} {value} class="sr-only" />
+              {label}
+            </label>
+          {/each}
+        </div>
       </div>
     </div>
 

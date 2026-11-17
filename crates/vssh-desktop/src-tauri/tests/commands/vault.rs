@@ -95,6 +95,71 @@ fn an_unlocked_vault_gives_each_host_its_password() {
 }
 
 #[test]
+fn unlocking_drops_the_passwords_of_hosts_deleted_while_it_was_locked() {
+    let home = home("vault-gone");
+    let path = home.join("data/vault");
+    let mut vault = Vault::create(&path, "master").unwrap();
+    vault.set("web-01", &mut "hunter2".to_string()).unwrap();
+    vault.set("bare", &mut "s3cret".to_string()).unwrap();
+    drop(vault);
+    let (_app, window) = window(&home, Fake::silent());
+    let file = || Vault::open(&path, "master").unwrap();
+
+    // Deleted with the vault shut: the host goes, its password cannot.
+    call(&window, "hosts_delete", json!({ "alias": "bare" })).unwrap();
+    assert_eq!(file().get("bare"), Some("s3cret"));
+
+    // Unlocked, the vault lets go of what no host is there for.
+    call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
+    assert_eq!(
+        call(&window, "vault_hosts", json!({})),
+        Ok(json!(["web-01"]))
+    );
+    assert_eq!(
+        (file().get("web-01"), file().get("bare")),
+        (Some("hunter2"), None)
+    );
+}
+
+#[test]
+fn a_new_passphrase_drops_the_passwords_of_hosts_that_are_gone_too() {
+    let home = home("vault-gone-change");
+    let path = home.join("data/vault");
+    let mut vault = Vault::create(&path, "master").unwrap();
+    vault.set("web-01", &mut "hunter2".to_string()).unwrap();
+    vault.set("gone-box", &mut "s3cret".to_string()).unwrap();
+    drop(vault);
+    let (_app, window) = window(&home, Fake::silent());
+
+    let change = json!({ "old": "master", "new": "battery staple" });
+    call(&window, "vault_pass_change", change).unwrap();
+    let file = Vault::open(&path, "battery staple").unwrap();
+    assert_eq!(file.names().collect::<Vec<_>>(), ["web-01"]);
+}
+
+#[test]
+fn a_config_that_is_not_there_costs_the_vault_nothing() {
+    let home = home("vault-no-config");
+    let path = home.join("data/vault");
+    let mut vault = Vault::create(&path, "master").unwrap();
+    vault.set("web-01", &mut "hunter2".to_string()).unwrap();
+    drop(vault);
+    // Moved away, or another HOME: no host is listed, and none was deleted.
+    fs::remove_file(home.join("config")).unwrap();
+    let (_app, window) = window(&home, Fake::silent());
+
+    call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
+    assert_eq!(
+        call(&window, "vault_hosts", json!({})),
+        Ok(json!(["web-01"]))
+    );
+    assert_eq!(
+        Vault::open(&path, "master").unwrap().get("web-01"),
+        Some("hunter2")
+    );
+}
+
+#[test]
 fn the_passphrase_is_changed_by_who_knows_the_old_one() {
     let home = home("vault-change");
     let path = home.join("data/vault");

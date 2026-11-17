@@ -152,9 +152,9 @@ fn delete(backend: &Backend, alias: &str) -> Result<()> {
     sshc.remove_host(alias);
     backend.save(&sshc)?;
     backend.db()?.delete(alias)?;
-    // Or the next host of that name would be logged in to with it.
-    // shortcut: a locked vault keeps the password; drop it at the next
-    // unlock if hosts are deleted and their names reused with the vault shut.
+    // Or the next host of that name would be logged in to with it. A
+    // locked vault keeps the password until it is next unlocked
+    // (`vault::forget_gone`).
     if let Some(vault) = backend.vault.lock().unwrap().as_mut() {
         vault.set(alias, &mut String::new())?;
     }

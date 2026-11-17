@@ -187,6 +187,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "hai lần nhập không khớp",
     ),
     (
+        "passphrase_required",
+        "The passphrase must not be empty",
+        "Mật khẩu kho không được để trống",
+    ),
+    (
         "wrong_passphrase",
         "Wrong vault passphrase, or the vault file is damaged",
         "Sai mật khẩu kho, hoặc tệp kho bị hỏng",

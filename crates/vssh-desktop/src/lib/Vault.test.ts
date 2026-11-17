@@ -213,3 +213,24 @@ test('in Vietnamese it is the TUI\'s kho', async () => {
   expect(screen.getByRole('dialog')).toHaveTextContent('Mật khẩu 2')
   expect(button('Xuất bản sao lưu')).toBeInTheDocument()
 })
+
+test('an empty passphrase that got past the form is refused in the window\'s language, and the shell is not asked', async () => {
+  shell('none')
+  // The fields are `required`: this is a webview that sends the form all the same.
+  const send = () => screen.getByRole('dialog').querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }))
+  send()
+  expect(await screen.findByRole('alert')).toHaveTextContent('The passphrase must not be empty')
+  setLang('vi')
+  send()
+  await vi.waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Mật khẩu kho không được để trống'))
+  expect(asked('vault_unlock')).toEqual([])
+  cleanup()
+
+  // The same for a new one, of a vault that is open.
+  setLang('en')
+  shell('unlocked')
+  await screen.findByText('Change passphrase')
+  send()
+  expect(await screen.findByRole('alert')).toHaveTextContent('The passphrase must not be empty')
+  expect(asked('vault_pass_change')).toEqual([])
+})
