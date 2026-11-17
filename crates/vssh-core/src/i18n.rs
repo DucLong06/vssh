@@ -2,7 +2,8 @@
 //! be added in one of them only. The desktop app reads this table as JSON
 //! (`crates/vssh-desktop/src/lib/strings.json`, held equal to it by a test).
 //! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh,
-//! chưa kiểm tra, mất kết nối. `{n}` in a text is a number the window puts in.
+//! chưa kiểm tra, mất kết nối. `{n}` in a text is a number the window puts in,
+//! `{name}` a file's name.
 
 use crate::config::Lang;
 
@@ -89,6 +90,22 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "leader_menu",
         "0-9 tab · Tab next · y copy output · b broadcast · x close",
         "0-9 tab · Tab kế tiếp · y chép kết quả · b phát · x đóng",
+    ),
+    // The file view. The panes are named as the TUI names them.
+    ("files", "Files", "Tệp"),
+    ("local", "local", "máy mình"),
+    ("path", "Path", "Đường dẫn"),
+    ("size", "Size", "Kích thước"),
+    ("modified", "Modified", "Sửa đổi"),
+    ("empty_dir", "Empty directory.", "Thư mục trống."),
+    ("hidden_files", "Hidden files", "Tệp ẩn"),
+    ("filter", "Filter", "Lọc"),
+    ("upload", "Upload", "Tải lên"),
+    ("download", "Download", "Tải xuống"),
+    (
+        "files_keys",
+        "Space select · c copy · / filter · . hidden files · right-click more",
+        "Space chọn · c sao chép · / lọc · . tệp ẩn · chuột phải: thêm",
     ),
 ];
 

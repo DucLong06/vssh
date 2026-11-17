@@ -3,6 +3,7 @@
   import { api, explain, type ConnError, type Host, type PtyState, type Shown, type Snippet } from './lib/api'
   import Dashboard from './lib/Dashboard.svelte'
   import Failure from './lib/Failure.svelte'
+  import Files from './lib/Files.svelte'
   import { i18n, t } from './lib/i18n.svelte'
   import { poll, relabel } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
@@ -25,7 +26,9 @@
   /** The session whose failure to connect is in a dialog. */
   let failure = $state<number | null>(null)
   const failed_session = $derived(sessions.find((session) => session.id === failure))
-  /** The session whose tab is in front; `null` = the dashboard. */
+  /** The file views, one per host. Their ids count down from -1: a session's is never below zero. */
+  let files = $state<{ id: number; host: string }[]>([])
+  /** The session or the file view whose tab is in front; `null` = the dashboard. */
   let active = $state<number | null>(null)
   /** Ctrl-A was pressed: the next key is a command, as in the TUI. */
   let leader = $state(false)
@@ -82,8 +85,8 @@
     }
   })
 
-  /** The tabs in order: the dashboard, then the sessions. */
-  const tabs = $derived<(number | null)[]>([null, ...sessions.map((session) => session.id)])
+  /** The tabs in order: the dashboard, the sessions, the file views. */
+  const tabs = $derived<(number | null)[]>([null, ...[...sessions, ...files].map((tab) => tab.id)])
   const front = $derived(sessions.find((session) => session.id === active))
 
   function step(by: number) {
@@ -107,7 +110,7 @@
     } else if (e.key === 'y') {
       if (front) terms[front.id]?.copyLast()
     } else if (e.key === 'x' || e.key === 'd') {
-      if (front) close(front.id)
+      if (active !== null) close(active)
     } else if (e.key === 'b') {
       if (front) front.broadcast = !front.broadcast
     } else if (e.key === 'B') {
@@ -138,9 +141,9 @@
     } else if (ctrl && e.key === 'a' && !(e.target instanceof HTMLInputElement)) {
       mine()
       leader = true
-    } else if (ctrl && e.key === 'w' && front) {
+    } else if (ctrl && e.key === 'w' && active !== null) {
       mine()
-      close(front.id)
+      close(active)
     }
   }
 
@@ -168,14 +171,27 @@
     }
   }
 
+  /** A host's files, in the tab they are already open in if there is one. */
+  function browse(alias: string) {
+    const open = files.find((view) => view.host === alias)
+    const id = open?.id ?? Math.min(0, ...files.map((view) => view.id)) - 1
+    if (!open) files.push({ id, host: alias })
+    active = id
+  }
+
   /** Closes a tab at once, as the TUI does; the one that takes its place comes to the front. */
   function close(id: number) {
-    const at = sessions.findIndex((session) => session.id === id)
+    const at = tabs.indexOf(id)
     if (at < 0) return
-    sessions.splice(at, 1)
-    delete terms[id]
-    void api.sessionClose(id)
-    if (active === id) active = (sessions[at] ?? sessions[at - 1])?.id ?? null
+    if (id < 0) {
+      files = files.filter((view) => view.id !== id)
+    } else {
+      sessions = sessions.filter((session) => session.id !== id)
+      delete terms[id]
+      void api.sessionClose(id)
+    }
+    // `tabs` is the tabs that are left now.
+    if (active === id) active = tabs[at] ?? tabs[at - 1] ?? null
   }
 
   /** What was typed into a session's terminal. */
@@ -227,8 +243,8 @@
   />
 
   <main class="flex min-h-0 flex-col">
-    {#if sessions.length}
-      <Tabs {sessions} {active} onpick={(id) => (active = id)} onclose={close} />
+    {#if sessions.length || files.length}
+      <Tabs {sessions} {files} {active} onpick={(id) => (active = id)} onclose={close} />
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
     <Dashboard
@@ -239,6 +255,7 @@
       error={failed}
       onselect={(alias) => (selected = alias)}
       onconnect={open}
+      onfiles={browse}
       onpalette={() => (modal = 'palette')}
     />
     {#each sessions as session (session.id)}
@@ -254,6 +271,9 @@
         onreconnect={() => reconnect(session)}
       />
     {/each}
+    {#each files as view (view.id)}
+      <Files host={view.host} active={view.id === active} />
+    {/each}
   </main>
 
   <Statusbar
@@ -261,7 +281,8 @@
     snippets={snippets.length}
     sessions={sessions.length}
     selected={hosts.find((host) => host.alias === selected)}
-    terminal={active !== null}
+    terminal={front !== undefined}
+    files={active !== null && !front}
     broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
     onpalette={() => (modal = 'palette')}

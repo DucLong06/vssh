@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte'
-import { expect, test } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { expect, test, vi } from 'vitest'
 import type { ConnError, Host, Peek, Shown } from './api'
 import errors from './fixtures/errors.json'
 import hosts from './fixtures/hosts.json'
@@ -147,4 +148,14 @@ test("in Vietnamese the states are the TUI's words", () => {
   expect(screen.getByRole('group', { name: 'CPU 23% · RAM 4.2/16G · / 61%' })).toBeInTheDocument()
   render(HostCard, { host: (hosts as Host[])[1] })
   expect(screen.getByRole('article', { name: 'web-02' })).toHaveTextContent('đang hỏi web-02…')
+})
+
+test('a card that can open the host\'s files has a button for it, next to Connect', async () => {
+  const [onfiles, onconnect] = [vi.fn(), vi.fn()]
+  render(HostCard, { host: web01, onfiles, onconnect })
+  const buttons = screen.getAllByRole('button').map((button) => button.textContent?.trim())
+  expect(buttons).toEqual(['Files', 'Connect'])
+  await userEvent.click(screen.getByRole('button', { name: 'Files' }))
+  expect(onfiles).toHaveBeenCalledOnce()
+  expect(onconnect).not.toHaveBeenCalled()
 })

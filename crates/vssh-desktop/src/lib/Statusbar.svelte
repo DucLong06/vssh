@@ -10,6 +10,8 @@
     selected?: Host
     /** A terminal is in front: the keys are its keys. */
     terminal?: boolean
+    /** A file view is in front. */
+    files?: boolean
     /** Ctrl-A was pressed and the next key is a command. */
     leader?: boolean
     /** How many tabs are broadcasting. */
@@ -22,6 +24,7 @@
     sessions,
     selected,
     terminal = false,
+    files = false,
     leader = false,
     broadcasting = 0,
     onpalette,
@@ -43,6 +46,8 @@
       <kbd class="text-magenta">Ctrl-A</kbd>
       {t('leader_menu')}
     </span>
+  {:else if files}
+    <span role="status" class="truncate">{t('files_keys')}</span>
   {:else if selected}
     <span class="truncate"><span class="text-cyan">{selected.alias}</span> {address(selected)}</span>
     <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
@@ -52,7 +57,9 @@
       <kbd class="text-magenta">Space</kbd>
       {t('select')} ·
       <kbd class="text-magenta">v</kbd>
-      {t('quick_peek')}
+      {t('quick_peek')} ·
+      <kbd class="text-magenta">f</kbd>
+      {t('files')}
     </span>
   {/if}
   <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto text-magenta">
