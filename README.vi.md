@@ -93,6 +93,15 @@ Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi
 - **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
 - **Chuyển tab:** tab được chuyển tới trượt vào từ bên phải trong ba khung hình (120 ms). Terminal từ xa không bị đổi kích thước trong lúc trượt. Trên đường truyền chậm, ba lần vẽ lại là ba lượt gửi nhận: đặt `transitions = false` để tắt.
 
+## Chép vào clipboard
+
+vssh không dùng thư viện clipboard nào. Nó nhờ chính terminal đang chạy nó chép giúp, bằng chuỗi thoát OSC 52, nên vẫn dùng được khi bạn SSH vào máy đang chạy vssh.
+
+- **Danh sách máy chủ:** `y` chép `ssh <máy>`.
+- **Phiên làm việc:** `Ctrl-a y` chép kết quả của lệnh cuối: các dòng nằm giữa dấu nhắc bạn đang đứng và dấu nhắc trước đó. Nếu hai dấu nhắc không giống hệt nhau (có đồng hồ trong đó, hoặc bạn đã gõ dở), mọi thứ phía trên con trỏ sẽ được chép. Chỉ tính những gì đang hiện trên màn hình. Phím là `Ctrl-a y` chứ không phải `y`, vì `y` trần là của shell.
+- **SFTP:** `y` chép đường dẫn đầy đủ của file đang chọn.
+- **Terminal hỗ trợ:** hầu hết terminal hiện nay nhận OSC 52 (có cái hỏi trước hoặc cần bật). Trong tmux, vssh còn đưa văn bản cho chính tmux (`tmux load-buffer -w`), vì tmux bỏ qua OSC 52 của chương trình trừ khi `set-clipboard on`. `osc52 = false` tắt chuỗi thoát cho terminal in nó ra thay vì thực hiện; bộ đệm tmux vẫn được đặt.
+
 ## Xem nhanh
 
 Nhấn `v` ở danh sách máy chủ để mở một cửa sổ nhỏ cho biết máy đó tự nói gì về mình: tên máy, hệ thống (`uname -srm`), thời gian đã chạy, ba chỉ số tải trung bình, CPU, bộ nhớ và đĩa gốc. Không mở shell nào: chỉ là một lệnh qua một kết nối ngắn, với cùng cách kiểm tra khoá máy chủ và đăng nhập như một phiên (agent, khoá, rồi mật khẩu trong kho).
@@ -171,7 +180,8 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `T` | kết nối mọi máy có cùng thẻ hoặc nhóm |
 | | `c` | kết nối nhanh; `Ctrl-s` trong biểu mẫu để lưu máy chủ và mật khẩu |
 | | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm); `Esc` để xoá |
-| | `a` `e` `d` `y` | thêm, sửa, xoá, nhân bản máy chủ |
+| | `a` `e` `d` `Y` | thêm, sửa, xoá, nhân bản máy chủ |
+| | `y` | chép `ssh <máy>` vào clipboard |
 | | `p` | ghim máy chủ |
 | | `f` / `n` | chuyển tiếp cổng / snippet của máy chủ |
 | | `r` | kiểm tra máy chủ nào kết nối được |
@@ -189,6 +199,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Ctrl-a` `w` | menu cửa sổ: `h` `j` `k` `l` chọn khung, `s` `v` `g` `t` bố cục, `d` đóng |
 | | `Ctrl-a` `l` | bật / tắt ghi log phiên ra file |
 | | `Ctrl-a` `s` | gõ một snippet vào phiên |
+| | `Ctrl-a` `y` | chép kết quả của lệnh cuối vào clipboard |
 | | `Ctrl-a` `d` hoặc `x` | đóng phiên |
 | | `Ctrl-a` `q` | về danh sách máy chủ |
 | | `Ctrl-a` `Tab` / `p`, `1`-`9` | tab kế tiếp / tab trước, tới tab số đó |
@@ -198,9 +209,10 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Enter` / `h` | vào thư mục / lên thư mục cha |
 | | `c` | chép file sang khung bên kia |
 | | `m` `r` `d` `R` | tạo thư mục, đổi tên, xoá, tải lại |
+| | `y` | chép đường dẫn của file đang chọn vào clipboard |
 | | `q` / `Q` | đóng / thoát |
 
-`Alt-b` và, khi đang hiện nhiều khung, `Alt-h/j/k/l` do vssh xử lý nên không còn tới shell ở máy từ xa. Nếu bạn dùng bản cũ: `Ctrl-a h` (về danh sách máy chủ) nay là `Ctrl-a q`, còn `Ctrl-a k` / `j` (cuộn) nay là `Ctrl-a PgUp` / `PgDn`.
+`Alt-b` và, khi đang hiện nhiều khung, `Alt-h/j/k/l` do vssh xử lý nên không còn tới shell ở máy từ xa. Nếu bạn dùng bản cũ: `Ctrl-a h` (về danh sách máy chủ) nay là `Ctrl-a q`, `Ctrl-a k` / `j` (cuộn) nay là `Ctrl-a PgUp` / `PgDn`, còn nhân bản chuyển từ `y` sang `Y` vì `y` nay là chép (file cấu hình có `duplicate = "y"` thì vẫn giữ nguyên).
 
 Chuyển tiếp cổng được gõ giống cờ của `ssh`: `L 8080 localhost:80`, `R 9000 localhost:3000`, `D 1080`.
 
@@ -227,6 +239,7 @@ log_sessions = false    # ghi log mọi phiên ngay từ đầu
 status_stats = true     # tải, bộ nhớ và đĩa của máy đang chọn trên thanh trạng thái
 nerd_font = false       # true: đầu bo Powerline cho các nhãn (cần Nerd Font)
 transitions = true      # tab trượt vào trong ba khung hình khi chuyển tab
+osc52 = true            # chép qua chuỗi thoát OSC 52 của terminal
 
 [exec]                  # script đăng nhập: được gõ vào shell sau khi đăng nhập
 web-01 = "cd /srv/app && git status"
@@ -236,7 +249,7 @@ accent = "cyan"         # còn có: border, text, dim, selection, ok, error, war
 
 [keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
 leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, peek, password, vault, help
+quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, peek, password, vault, help
 ```
 
 Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hình viết cho phiên bản cũ vẫn dùng được. Cũng có thể chọn ngôn ngữ cho từng lần chạy bằng `vssh --lang vi` hoặc `VSSH_LANG=vi`; các biểu mẫu và thông báo lỗi vẫn bằng tiếng Anh.

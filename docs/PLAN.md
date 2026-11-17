@@ -142,3 +142,26 @@ free row there would cost every pane a line of terminal.
   A good answer also feeds the status line and clears the host's last failure.
 - **Spinner.** While a host is being asked the main loop redraws every
   100 ms (`App::waiting`), the same timed wait the tab slide uses.
+
+## OSC 52 copy (brief 9, M2)
+
+- **No clipboard dependency.** `ui/term.rs` holds a twelve-line base64, the
+  `ESC ] 52 ; c ; <base64> BEL` sequence, and `copy`, which writes it to
+  stdout. Base64 also means copied text can never act as an escape sequence.
+- **tmux.** With its default `set-clipboard external`, tmux drops OSC 52
+  coming from a program. So under `$TMUX` the text is also piped to
+  `tmux load-buffer -w -` (`-w` forwards to the outer terminal; without it on
+  tmux older than 3.2).
+- **`y` in a session is `Ctrl-a y`.** The brief asks for `y` in a session
+  pane, but every bare key there belongs to the remote shell. The leader is
+  the only place a session key can live. With that, the brief's "when not
+  broadcasting" has nothing left to guard, and copy works either way.
+- **Last command output** has no shell integration to lean on, so it is the
+  rows between two identical prompts: the text left of the cursor, and the
+  nearest row above that starts with it. No match (a clock in the prompt,
+  text already typed) falls back to everything above the cursor. Visible
+  screen only, and a wrapped command line counts as output.
+- **`y` on the host list was duplicate.** Duplicate's default is now `Y`; a
+  config that names `y` for duplicate still wins, because duplicate is
+  matched first. The change errs on the harmless side: an old habit now
+  copies a line instead of creating a host.

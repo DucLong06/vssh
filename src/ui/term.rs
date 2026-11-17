@@ -1,5 +1,9 @@
 //! Glue between the vt100 emulator and the terminal we run in: key events to
-//! bytes for the remote PTY, and the emulated screen into a ratatui buffer.
+//! bytes for the remote PTY, the emulated screen into a ratatui buffer, and
+//! text out to the clipboard of whoever owns that terminal.
+
+use std::io::{stdout, Write};
+use std::process::{Command, Stdio};
 
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -88,6 +92,84 @@ fn color(c: vt100::Color) -> Color {
     }
 }
 
+/// Standard base64 with padding. Twelve lines beat a dependency.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().fold(0u32, |n, b| n << 8 | u32::from(*b)) << (8 * (3 - chunk.len()));
+        for i in 0..4 {
+            // A chunk of 1 or 2 bytes fills 2 or 3 characters; the rest is padding.
+            let sextet = ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char;
+            out.push(if i <= chunk.len() { sextet } else { '=' });
+        }
+    }
+    out
+}
+
+/// OSC 52: asks the terminal to put `text` on the system clipboard. The text
+/// travels as base64, so nothing in it can act as an escape sequence.
+fn osc52(text: &str) -> String {
+    format!("\x1b]52;c;{}\x07", base64(text.as_bytes()))
+}
+
+/// Puts `text` on the clipboard of the terminal vssh runs in, with no
+/// clipboard library: the OSC 52 escape (unless `escape` is off), and inside
+/// tmux also tmux's own buffer, because tmux drops an application's OSC 52
+/// unless it runs with `set-clipboard on`.
+pub fn copy(text: &str, escape: bool) {
+    if escape {
+        let mut out = stdout();
+        let _ = out.write_all(osc52(text).as_bytes());
+        let _ = out.flush();
+    }
+    if std::env::var_os("TMUX").is_none() {
+        return;
+    }
+    // `-w` (tmux 3.2 and later) also sends it on to the outer terminal.
+    for args in [&["load-buffer", "-w", "-"][..], &["load-buffer", "-"]] {
+        let tmux = Command::new("tmux")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        let Ok(mut tmux) = tmux else { return };
+        if let Some(mut stdin) = tmux.stdin.take() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        if tmux.wait().is_ok_and(|status| status.success()) {
+            return;
+        }
+    }
+}
+
+/// The output of the last command on screen: the lines between the prompt
+/// the cursor is on and the one before it. Prompts are recognised by being
+/// the same text; when the prompt changes between commands, or something is
+/// already typed at it, there is nothing to recognise and the answer is
+/// everything above the cursor.
+// shortcut: visible screen only, and a command line that wraps counts as
+// output; read shell integration marks (OSC 133) if that ever matters.
+pub fn last_output(screen: &vt100::Screen) -> String {
+    let (row, col) = screen.cursor_position();
+    let rows: Vec<String> = screen.rows(0, screen.size().1.get()).collect();
+    let above = &rows[..usize::from(row).min(rows.len())];
+    let prompt: String = rows
+        .get(usize::from(row))
+        .map_or("", |r| r.as_str())
+        .chars()
+        .take(col.into())
+        .collect();
+    let prompt = prompt.trim_end();
+    let before = above
+        .iter()
+        .rposition(|r| !prompt.is_empty() && r.starts_with(prompt));
+    let output = &above[before.map_or(0, |p| p + 1)..];
+    let lines: Vec<&str> = output.iter().map(|r| r.trim_end()).collect();
+    lines.join("\n").trim_matches('\n').to_string()
+}
+
 pub fn render(screen: &vt100::Screen, area: Rect, buf: &mut Buffer) {
     for row in 0..area.height {
         for col in 0..area.width {
@@ -161,6 +243,55 @@ mod tests {
             parser.callbacks().0,
             b"\x1b[?62;22c\x1b[>0;0;0c\x1b[0n\x1b[2;3R"
         );
+    }
+
+    #[test]
+    fn osc52_carries_the_text_as_base64() {
+        // RFC 4648 test vectors: every padding length.
+        for (plain, encoded) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("fooba", "Zm9vYmE="),
+            ("foobar", "Zm9vYmFy"),
+        ] {
+            assert_eq!(base64(plain.as_bytes()), encoded, "{plain}");
+        }
+        assert_eq!(base64(&[0xfb, 0xff, 0xfe]), "+//+");
+        assert_eq!(base64("xin chào".as_bytes()), "eGluIGNow6Bv");
+        assert_eq!(osc52("ssh web-01"), "\x1b]52;c;c3NoIHdlYi0wMQ==\x07");
+        // Whatever is copied, the sequence holds no control byte but its own frame.
+        let hostile = osc52("\x1b]52;c;evil\x07\x1b[2J");
+        let inner = &hostile[7..hostile.len() - 1];
+        assert!(inner
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b)));
+    }
+
+    #[test]
+    fn last_output_is_what_lies_between_two_prompts() {
+        let size = std::num::NonZeroU16::new(12).unwrap();
+        let screen = |bytes: &str| {
+            let mut parser = vt100::Parser::new(size, size.saturating_add(28), 0);
+            parser.process(bytes.as_bytes());
+            last_output(parser.screen())
+        };
+        let session = "web:~# ls\r\nold  news\r\nweb:~# df -h /\r\nFilesystem  Use%\r\n/dev/sda1   61%\r\n\r\nweb:~# ";
+        assert_eq!(screen(session), "Filesystem  Use%\n/dev/sda1   61%");
+        // First command of the session: nothing above but the output.
+        assert_eq!(
+            screen("web:~# uptime\r\n up 3 days\r\nweb:~# "),
+            " up 3 days"
+        );
+        // Something typed at the prompt, or a prompt that changes: everything above the cursor.
+        let typed = "web:~# ls\r\na  b\r\nweb:~# ech";
+        assert_eq!(screen(typed), "web:~# ls\na  b");
+        let clock = "10:01 $ ls\r\na  b\r\n10:02 $ ";
+        assert_eq!(screen(clock), "10:01 $ ls\na  b");
+        assert_eq!(screen(""), "");
+        assert_eq!(screen("web:~# "), "");
     }
 
     #[test]

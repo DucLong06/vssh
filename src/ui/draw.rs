@@ -837,6 +837,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                     hint("m", "mkdir", "tạo thư mục", true),
                     hint("r", "rename", "đổi tên", entry.is_some()),
                     hint("d", "delete", "xoá", entry.is_some()),
+                    hint("y", "copy path", "chép đường dẫn", entry.is_some()),
                 ],
                 vec![
                     hint("q", "close", "đóng", true),
@@ -897,6 +898,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                     hint(&key(k.snippets), "snippets", "snippet", host),
                     hint(&key(k.add), "add", "thêm", true),
                     hint(&key(k.edit), "edit", "sửa", host),
+                    hint(&key(k.copy), "copy ssh", "chép ssh", host),
                 ],
                 vec![
                     hint(&key(k.search), "search", "tìm", true),
@@ -1178,6 +1180,7 @@ fn leader_menu(app: &App) -> (&'static str, Vec<(String, &'static str, &'static 
                 entry("b", "broadcast", "phát tới mọi phiên"),
                 entry("l", "log session", "ghi log phiên"),
                 entry("s", "type a snippet", "gõ snippet"),
+                entry("y", "copy last output", "chép kết quả lệnh cuối"),
                 entry("d", "close pane", "đóng khung"),
                 entry("q", "host list", "danh sách máy chủ"),
                 entry("tab n", "next tab", "tab kế tiếp"),

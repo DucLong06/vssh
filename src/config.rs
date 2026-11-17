@@ -86,6 +86,9 @@ pub struct Config {
     /// Slide a tab in over three frames when switching to it. On by default;
     /// turn it off on a slow link, where three redraws are three round trips.
     pub transitions: bool,
+    /// Copy through the OSC 52 terminal escape. On by default; turn it off
+    /// for a terminal that prints the sequence instead of obeying it.
+    pub osc52: bool,
 }
 
 impl Default for Config {
@@ -101,6 +104,7 @@ impl Default for Config {
             status_stats: true,
             nerd_font: false,
             transitions: true,
+            osc52: true,
         }
     }
 }
@@ -178,6 +182,8 @@ pub struct Keys {
     pub edit: char,
     pub delete: char,
     pub duplicate: char,
+    /// Copy `ssh <alias>` to the clipboard.
+    pub copy: char,
     pub pin: char,
     pub mark: char,
     pub ping: char,
@@ -203,7 +209,9 @@ impl Default for Keys {
             add: 'a',
             edit: 'e',
             delete: 'd',
-            duplicate: 'y',
+            // Was `y` until `y` became copy; a config that says `y` still wins.
+            duplicate: 'Y',
+            copy: 'y',
             pin: 'p',
             mark: ' ',
             ping: 'r',
@@ -281,6 +289,8 @@ mod tests {
             (d.warn, d.bar, d.key)
         );
         assert_eq!(c.keys.connect, 'c');
+        // It names `y` for duplicate, from when that was the default: still so.
+        assert_eq!((c.keys.duplicate, Keys::default().duplicate), ('y', 'Y'));
     }
 
     #[test]
@@ -299,10 +309,10 @@ mod tests {
     #[test]
     fn status_bar_switches_default_to_on() {
         let none: Config = toml::from_str("").unwrap();
-        assert!(none.status_stats && none.transitions && !none.nerd_font);
-        let set = "status_stats = false\nnerd_font = true\ntransitions = false";
+        assert!(none.status_stats && none.transitions && none.osc52 && !none.nerd_font);
+        let set = "status_stats = false\nnerd_font = true\ntransitions = false\nosc52 = false";
         let set: Config = toml::from_str(set).unwrap();
-        assert!(!set.status_stats && !set.transitions && set.nerd_font);
+        assert!(!set.status_stats && !set.transitions && !set.osc52 && set.nerd_font);
     }
 
     #[test]

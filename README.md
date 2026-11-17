@@ -94,6 +94,15 @@ The bottom line shows the mode, the focused host and pane, then its tags, group 
 - **Rounded badges:** the mode, the latency and the `vssh` mark are pills with half-circle ends (`◖NORMAL◗`). With a Nerd Font, `nerd_font = true` uses its full-height Powerline caps instead; without such a font those would show as empty boxes, so it is off by default.
 - **Tab switches:** the tab you switch to slides in from the right over three frames (120 ms). Remote terminals are not resized while it moves. On a slow link three redraws are three round trips: `transitions = false` turns it off.
 
+## Copy to the clipboard
+
+vssh has no clipboard library. It asks the terminal it runs in to do the copy, with the OSC 52 escape, so it also works over SSH to the machine vssh runs on.
+
+- **Host list:** `y` copies `ssh <host>`.
+- **Session:** `Ctrl-a y` copies the output of the last command: the lines between the prompt you are at and the prompt before it. If the prompt is not the same text both times (a clock in it, or something already typed), everything above the cursor is copied instead. Only what is on screen counts. It is `Ctrl-a y` and not a bare `y`, because a bare `y` belongs to the shell.
+- **SFTP:** `y` copies the full path of the selected file.
+- **Terminal support:** most current terminals accept OSC 52 (some ask first or need it enabled). Inside tmux, vssh also hands the text to tmux itself (`tmux load-buffer -w`), since tmux ignores OSC 52 from programs unless `set-clipboard on`. `osc52 = false` stops the escape for a terminal that prints it instead of obeying it; the tmux buffer is still set.
+
 ## Quick peek
 
 `v` on the host list opens a small window with what the host says about itself: name, system (`uname -srm`), uptime, the three load averages, CPU, memory and root disk. No shell is opened: it is one command over a short connection, with the same host key check and login as a session (agent, keys, then the vault password).
@@ -172,7 +181,8 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `T` | connect to every host with a tag or group |
 | | `c` | quick connect; `Ctrl-s` in the form saves the host and its password |
 | | `/` | search (`#tag` for a tag or group); `Esc` clears |
-| | `a` `e` `d` `y` | add, edit, delete, duplicate host |
+| | `a` `e` `d` `Y` | add, edit, delete, duplicate host |
+| | `y` | copy `ssh <host>` to the clipboard |
 | | `p` | pin host |
 | | `f` / `n` | port forwards / snippets of the host |
 | | `r` | check which hosts are reachable |
@@ -190,6 +200,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Ctrl-a` `w` | window menu: `h` `j` `k` `l` focus, `s` `v` `g` `t` layout, `d` close |
 | | `Ctrl-a` `l` | log the session to a file, on / off |
 | | `Ctrl-a` `s` | type a snippet into the session |
+| | `Ctrl-a` `y` | copy the last command's output to the clipboard |
 | | `Ctrl-a` `d` or `x` | close the session |
 | | `Ctrl-a` `q` | back to the host list |
 | | `Ctrl-a` `Tab` / `p`, `1`-`9` | next / previous tab, go to tab |
@@ -199,9 +210,10 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Enter` / `h` | open directory / parent |
 | | `c` | copy file to the other pane |
 | | `m` `r` `d` `R` | mkdir, rename, delete, refresh |
+| | `y` | copy the path of the selected file to the clipboard |
 | | `q` / `Q` | close / quit |
 
-`Alt-b` and, while several panes are shown, `Alt-h/j/k/l` are taken by vssh and no longer reach the remote shell. Coming from an older version: `Ctrl-a h` (host list) is now `Ctrl-a q`, and `Ctrl-a k` / `j` (scroll) are now `Ctrl-a PgUp` / `PgDn`.
+`Alt-b` and, while several panes are shown, `Alt-h/j/k/l` are taken by vssh and no longer reach the remote shell. Coming from an older version: `Ctrl-a h` (host list) is now `Ctrl-a q`, `Ctrl-a k` / `j` (scroll) are now `Ctrl-a PgUp` / `PgDn`, and duplicate moved from `y` to `Y` when `y` became copy (a config that sets `duplicate = "y"` keeps it).
 
 A forward is typed like the `ssh` flags: `L 8080 localhost:80`, `R 9000 localhost:3000`, `D 1080`.
 
@@ -228,6 +240,7 @@ log_sessions = false    # log every session from the start
 status_stats = true     # load, memory and disk of the focused host in the status bar
 nerd_font = false       # true: Powerline round caps on the badges (needs a Nerd Font)
 transitions = true      # slide a tab in over three frames when switching to it
+osc52 = true            # copy through the OSC 52 terminal escape
 
 [exec]                  # login scripts: typed into the shell after login
 web-01 = "cd /srv/app && git status"
@@ -237,7 +250,7 @@ accent = "cyan"         # also: border, text, dim, selection, ok, error, warn, b
 
 [keys]                  # one character each; leader is pressed with Ctrl
 leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, peek, password, vault, help
+quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, peek, password, vault, help
 ```
 
 Entries you leave out keep their defaults, so a config written for an older version still works. The language can also be set per run with `vssh --lang vi` or `VSSH_LANG=vi`; forms and error messages stay in English.

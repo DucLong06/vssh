@@ -590,6 +590,38 @@ impl App {
         }
     }
 
+    /// Puts text on the clipboard of the terminal vssh runs in, and says so.
+    fn copy(&mut self, text: &str) {
+        let lang = self.cfg.lang;
+        if text.is_empty() {
+            return self.msg = lang.pick("nothing to copy", "không có gì để chép").into();
+        }
+        term::copy(text, self.cfg.osc52);
+        self.msg = match text.lines().count() {
+            1 => format!("{}: {text}", lang.pick("copied", "đã chép")),
+            n => format!(
+                "{} {n} {}",
+                lang.pick("copied", "đã chép"),
+                lang.pick("lines", "dòng")
+            ),
+        };
+    }
+
+    /// Copies from the active tab: the last command's output of a session,
+    /// the path of the selected file in SFTP.
+    fn copy_active(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        let text = match &self.tabs[i].kind {
+            Kind::Term { parser, .. } => term::last_output(parser.screen()),
+            Kind::Sftp(view) => view.selected().map_or(String::new(), |e| {
+                format!("{}/{}", view.dirs[view.side].trim_end_matches('/'), e.name)
+            }),
+        };
+        self.copy(&text);
+    }
+
     /// Number of sessions that would receive typed input right now.
     fn live_sessions(&self) -> usize {
         let live = |t: &&Tab| matches!(t.kind, Kind::Term { .. }) && !t.closed;
@@ -1170,6 +1202,7 @@ impl App {
             KeyCode::Char('w') => self.leader = Leader::Window,
             KeyCode::Char('l') => self.toggle_log(),
             KeyCode::Char('s') => self.pick_snippet(),
+            KeyCode::Char('y') => self.copy_active(),
             KeyCode::Tab | KeyCode::Char('n') => self.cycle(true),
             KeyCode::BackTab | KeyCode::Char('p') => self.cycle(false),
             KeyCode::Char('q') => self.active = 0,
@@ -1336,6 +1369,8 @@ impl App {
             self.db.set_meta(&copy, &meta)?;
             self.reload()?;
             self.msg = format!("created {copy}");
+        } else if c == keys.copy {
+            self.copy(&format!("ssh {alias}"));
         } else if c == keys.pin {
             let mut meta = self.meta.get(alias).cloned().unwrap_or_default();
             meta.pinned ^= true;
@@ -1470,6 +1505,7 @@ impl App {
             (KeyCode::Enter | KeyCode::Right | KeyCode::Char('l'), _) => view.enter(),
             (KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h'), _) => view.up(),
             (KeyCode::Char('R'), _) => view.refresh(),
+            (KeyCode::Char('y'), _) => return self.copy_active(),
             (KeyCode::Char('q'), _) => return self.close_pane(),
             (KeyCode::Char('Q'), _) => return self.ask_quit(),
             (KeyCode::Char('m'), _) => {
@@ -1604,6 +1640,7 @@ impl App {
              \x20              search #tag shows only hosts with that tag or group\n\
              \x20 {add}            add host          {edit}       edit host\n\
              \x20 {delete}            delete host       {duplicate}       duplicate host\n\
+             \x20 {copy}            copy `ssh <host>` to the clipboard (OSC 52)\n\
              \x20 {pin}            pin / unpin       {ping}       check reachability\n\
              \x20 {peek}            quick peek: uptime, load, memory, disk, without a session\n\
              \x20 {forwards}            port forwards     {snippets}       snippets\n\
@@ -1619,6 +1656,7 @@ impl App {
              \x20 leader b, Alt-b  broadcast: typing goes to every live session\n\
              \x20 leader l         log this session to a file (everything shown, as is)\n\
              \x20 leader s         type a snippet into the session\n\
+             \x20 leader y         copy the last command's output to the clipboard\n\
              \x20 leader d / x     close pane        leader q      back to the host list\n\
              \x20 leader Tab/n     next tab          leader p      previous tab\n\
              \x20 leader 1-9       go to tab         leader PgUp/PgDn  scroll (also Ctrl-u/d)\n\
@@ -1626,6 +1664,7 @@ impl App {
              SFTP\n\
              \x20 Tab switch pane   Enter/l open dir   h/Backspace parent\n\
              \x20 c copy to other pane   m mkdir   r rename   d delete\n\
+             \x20 y copy the path of the selected file to the clipboard\n\
              \x20 R refresh   q close   Q quit\n",
             tag = k.connect_tag,
             sftp = k.sftp,
@@ -1635,6 +1674,7 @@ impl App {
             edit = k.edit,
             delete = k.delete,
             duplicate = k.duplicate,
+            copy = k.copy,
             pin = k.pin,
             ping = k.ping,
             peek = k.peek,
@@ -1656,6 +1696,7 @@ impl App {
              \x20              tìm #tag chỉ hiện máy có thẻ hoặc nhóm đó\n\
              \x20 {add}            thêm máy          {edit}       sửa máy\n\
              \x20 {delete}            xoá máy           {duplicate}       nhân bản máy\n\
+             \x20 {copy}            chép `ssh <máy>` vào clipboard (OSC 52)\n\
              \x20 {pin}            ghim / bỏ ghim    {ping}       kiểm tra kết nối\n\
              \x20 {peek}            xem nhanh: uptime, tải, bộ nhớ, đĩa, không cần mở phiên\n\
              \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
@@ -1671,6 +1712,7 @@ impl App {
              \x20 leader b, Alt-b  phát: gõ một lần, gửi tới mọi phiên đang mở\n\
              \x20 leader l         ghi log phiên này ra file (mọi thứ hiện ra, nguyên văn)\n\
              \x20 leader s         gõ một snippet vào phiên\n\
+             \x20 leader y         chép kết quả của lệnh cuối vào clipboard\n\
              \x20 leader d / x     đóng khung        leader q      về danh sách máy chủ\n\
              \x20 leader Tab/n     tab kế tiếp       leader p      tab trước\n\
              \x20 leader 1-9       tới tab số        leader PgUp/PgDn  cuộn (hoặc Ctrl-u/d)\n\
@@ -1678,6 +1720,7 @@ impl App {
              SFTP\n\
              \x20 Tab đổi khung   Enter/l vào thư mục   h/Backspace thư mục cha\n\
              \x20 c chép sang khung kia   m tạo thư mục   r đổi tên   d xoá\n\
+             \x20 y chép đường dẫn của file đang chọn vào clipboard\n\
              \x20 R tải lại   q đóng   Q thoát\n",
             tag = k.connect_tag,
             sftp = k.sftp,
@@ -1687,6 +1730,7 @@ impl App {
             edit = k.edit,
             delete = k.delete,
             duplicate = k.duplicate,
+            copy = k.copy,
             pin = k.pin,
             ping = k.ping,
             peek = k.peek,
