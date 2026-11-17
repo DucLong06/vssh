@@ -6,9 +6,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use vssh::ssh::Target;
-use vssh::store::db::{Db, Meta, Snippet};
 use vssh::store::ssh_config::{Forward, SshConfig};
 use vssh::vault::Vault;
+use vssh_core::store::db::{Db, Meta, Snippet};
 
 /// A fresh, empty directory per test.
 fn temp(name: &str) -> PathBuf {
@@ -413,7 +413,7 @@ fn sql_metacharacters_are_stored_as_data() {
 
 #[test]
 fn db_module_builds_no_sql_from_strings() {
-    let source = include_str!("../src/store/db.rs");
+    let source = include_str!("../../vssh-core/src/store/db.rs");
     let code = source.split("#[cfg(test)]").next().unwrap();
     for builder in ["format!", "push_str", "concat!", "+ &", ".join("] {
         assert!(

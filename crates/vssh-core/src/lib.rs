@@ -5,3 +5,4 @@
 
 pub mod config;
 pub mod conn_err;
+pub mod store;
