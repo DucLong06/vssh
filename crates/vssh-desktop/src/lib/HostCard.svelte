@@ -32,7 +32,7 @@
   {...rest}
   aria-label={host.alias}
   data-state={kind}
-  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red {extra}"
+  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red aria-[current]:ring-1 aria-[current]:ring-blue {extra}"
 >
   {#if onconnect}
     <!-- Over the address, and only when the card is pointed at or has the
