@@ -39,6 +39,40 @@ record for those.
   tags; `Stats::compact` picks bars, then plain text, then fewer metrics.
   Outside the wide layout it returns nothing.
 
+### Rounded everything
+
+A terminal can only round a frame that is at least three rows high, so there
+are two tools:
+
+- `panel()` — the rounded border with one cell of padding. Every frame goes
+  through it: host list, details, forwards, snippets, session panes, SFTP
+  panes, which-key, help, confirm, snippet picker, forms.
+- `pill()` — for one-line bars, where there is no room for a border: the text
+  on a coloured band between two half circles (`◖ ◗`, or the Powerline caps
+  with `nerd_font = true`). The caps stand where the square badge had its
+  padding, so nothing moves and no width is lost. Used for the mode and the
+  latency in the status line and for the `vssh` mark in the header.
+
+The audit of every frame, and what changed:
+
+| Where | Before | Now |
+|-------|--------|-----|
+| Status line: mode, latency | square badges | pills; the caps take the colour of what is next to them |
+| Header: `vssh` mark | square badge | pill |
+| Tab bar: active tab | bold text only | a band in the selection colour, one cell of space either side |
+| Form fields (quick connect, add host, prompts) | bare text after the label | an input band per field, one cell of margin, cursor inside it |
+| Key hints | one cell of margin, `│` between groups | unchanged |
+| Details: section headers | accent text at the panel's one-cell margin | unchanged: a band here would read as a selected row |
+| Host list, details, forwards, snippets | `panel()` | unchanged |
+| Session panes | `panel()`, one free column between neighbours | unchanged |
+| SFTP panes | `panel()`, one free column between them | unchanged |
+| Search | part of the breadcrumb in the header, no frame | unchanged |
+| Which-key, help, confirm, snippet picker | `panel()` over a cleared area | unchanged |
+
+No double borders: side by side, frames keep one empty column between them.
+Stacked frames (portrait, the 2x2 grid) touch, bottom edge on top edge; a
+free row there would cost every pane a line of terminal.
+
 ### Limits
 
 - Every open session with `status_stats` on polls, not only the focused one,

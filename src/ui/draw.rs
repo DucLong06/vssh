@@ -97,6 +97,23 @@ fn panel<'a>(title: &str, focused: bool, th: &Theme) -> Block<'a> {
         .padding(Padding::horizontal(1))
 }
 
+/// A rounded badge for a one-line bar: `text` in the `badge` style between
+/// two half circles. `sides` is what lies left and right of it, so the caps
+/// blend into the bar. The caps stand where a square badge has its padding:
+/// a pill is exactly as wide as ` text `.
+fn pill(text: &str, badge: Style, sides: [Color; 2], nerd: bool) -> [Span<'static>; 3] {
+    let (left, right) = match nerd {
+        true => ("\u{e0b6}", "\u{e0b4}"),
+        false => ("◖", "◗"),
+    };
+    let cap = |bg| Style::new().fg(badge.bg.unwrap_or(Color::Reset)).bg(bg);
+    [
+        Span::styled(left, cap(sides[0])),
+        Span::styled(text.to_string(), badge),
+        Span::styled(right, cap(sides[1])),
+    ]
+}
+
 fn selection(th: &Theme) -> Style {
     Style::new().bg(th.selection).add_modifier(Modifier::BOLD)
 }
@@ -248,7 +265,8 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
     let th = &app.cfg.theme;
     f.render_widget(Block::new().style(Style::new().bg(th.bar)), area);
     let brand = Style::new().fg(Color::Black).bg(th.accent).bold();
-    let mut spans = vec![Span::styled(" vssh ", brand), Span::raw(" ")];
+    let mut spans = pill("vssh", brand, [th.bar; 2], app.cfg.nerd_font).to_vec();
+    spans.push(Span::raw(" "));
     let titles = std::iter::once(breadcrumb(app)).chain(app.tabs.iter().map(|t| {
         let kind = match t.kind {
             Kind::Sftp(_) => "sftp:",
@@ -271,11 +289,15 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
         spans.push(Span::styled("‹", Style::new().fg(th.dim)));
     }
     for (i, (number, title)) in tabs.into_iter().enumerate().skip(first) {
-        let (colour, text) = match i == app.active {
-            true => (th.accent, Style::new().fg(th.text).bold()),
-            false => (th.dim, Style::new().fg(th.dim)),
+        // The active tab is a band of its own, like the selected row of a list.
+        let (number_style, text) = match i == app.active {
+            true => (
+                Style::new().fg(th.accent).bg(th.selection).bold(),
+                Style::new().fg(th.text).bg(th.selection).bold(),
+            ),
+            false => (Style::new().fg(th.dim), Style::new().fg(th.dim)),
         };
-        spans.push(Span::styled(number, Style::new().fg(colour)));
+        spans.push(Span::styled(number, number_style));
         spans.push(Span::styled(title, text));
     }
     let used: usize = spans.iter().map(Span::width).sum();
@@ -958,6 +980,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     let badge = Style::new().fg(INK).bg(colour).bold();
     let section = Style::new().fg(th.text).bg(th.selection);
     let plain = Style::new().fg(th.dim).bg(th.bar);
+    let nerd = app.cfg.nerd_font;
     f.render_widget(Block::new().style(plain), area);
 
     // What the line is about: the focused tab, or the selected host.
@@ -996,7 +1019,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     if app.shape != Shape::Wide {
         // Portrait and small windows: mode, host, one tag. Recording and
         // broadcast stay, as marks: they change what typing does.
-        let mut left = vec![Span::styled(format!(" {name} "), badge)];
+        let mut left = pill(name, badge, [th.bar; 2], nerd).to_vec();
         if tab.is_some_and(|t| t.log.is_some()) {
             left.push(Span::styled(" ●", Style::new().fg(th.error).bg(th.bar)));
         }
@@ -1013,10 +1036,8 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         }
         return;
     }
-    let mut left = vec![
-        Span::styled(format!(" {name} "), badge),
-        Span::styled(format!(" {context} "), section),
-    ];
+    let mut left = pill(name, badge, [th.bar, th.selection], nerd).to_vec();
+    left.push(Span::styled(format!(" {context} "), section));
     if tab.is_some_and(|t| t.log.is_some()) {
         let rec = Style::new().fg(th.error).bg(th.bar).bold();
         left.push(Span::styled(" ● REC", rec));
@@ -1038,6 +1059,8 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
 
     let mut right = vec![];
     let mut tail = vec![];
+    // What the latency pill's left cap sits on: the group segment, if there is one.
+    let mut before = th.bar;
     if let Some(meta) = meta {
         let all: Vec<&str> = tags(meta).collect();
         if !all.is_empty() {
@@ -1045,6 +1068,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         }
         if !meta.grp.is_empty() {
             tail.push(Span::styled(format!(" {} ", meta.grp), section));
+            before = th.selection;
         }
     }
     let reach = match app
@@ -1056,7 +1080,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         Some(None) => lang.pick("down", "mất kết nối").to_string(),
         None => "—".to_string(),
     };
-    tail.push(Span::styled(format!(" {reach} "), badge));
+    tail.extend(pill(&reach, badge, [before, th.bar], nerd));
 
     // Server metrics, in what is free between the centred text and the tags:
     // they never push anything else off the line.
@@ -1230,8 +1254,10 @@ fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
             let label_w = form.fields.iter().map(|f| f.0.chars().count()).max();
             let label_w = label_w.unwrap_or(0) + 2;
             let area = centered(screen, 78, form.rows() as u16 + 5);
-            // Borders, padding and one cell for the cursor.
-            let room = usize::from(area.width).saturating_sub(label_w + 5);
+            // Borders, padding, and the margins of the input band: the right
+            // one is where the cursor stands after a value that fills it.
+            let room = usize::from(area.width).saturating_sub(label_w + 6);
+            let input = Style::new().bg(th.selection);
             let mut cursor = (area.x, area.y);
             let mut lines = vec![Line::default()];
             for (i, (label, value)) in form.fields.iter().enumerate() {
@@ -1247,12 +1273,12 @@ fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
                     false => Style::new().fg(th.dim),
                 };
                 if i == form.idx {
-                    let x = area.x + 2 + (label_w + shown.chars().count()) as u16;
+                    let x = area.x + 3 + (label_w + shown.chars().count()) as u16;
                     cursor = (x, area.y + 2 + i as u16);
                 }
                 lines.push(Line::from(vec![
                     Span::styled(format!("{label:<label_w$}"), style),
-                    Span::raw(shown),
+                    Span::styled(format!(" {shown:<room$} "), input),
                 ]));
             }
             if let Some(on) = form.save {
@@ -1330,6 +1356,18 @@ mod tests {
         assert_eq!(shorten("root@web-01.example.com", 12), "root@web-01…");
         assert_eq!(shorten("short", 12), "short");
         assert_eq!(shorten("héllo wörld", 5), "héll…");
+        // A pill is as wide as the square badge it replaces, in either font.
+        let badge = Style::new().fg(INK).bg(BLUE);
+        for nerd in [false, true] {
+            let spans = pill("NORMAL", badge, [Color::Black, Color::Red], nerd);
+            assert_eq!(
+                spans.iter().map(Span::width).sum::<usize>(),
+                " NORMAL ".len()
+            );
+            let caps = [&spans[0], &spans[2]].map(|s| (s.style.fg, s.style.bg));
+            assert_eq!(caps[0], (Some(BLUE), Some(Color::Black)));
+            assert_eq!(caps[1], (Some(BLUE), Some(Color::Red)));
+        }
         let small = Rect::new(0, 0, 20, 4);
         assert_eq!(centered(small, 76, 11), small);
         assert_eq!(

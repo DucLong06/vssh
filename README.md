@@ -91,6 +91,7 @@ The bottom line shows the mode, the focused host and pane, then its tags, group 
 - **On the host list**, resting on a host for a moment asks it once. Only a host you have connected to before (its key is in `known_hosts`) is asked, and only with your agent or key files: a vault password is never sent for this. A host with a session open uses that session's numbers.
 - **Little room:** the bars go first, then disk, then memory. Portrait and small windows keep to mode and host.
 - `status_stats = false` in the config turns all of it off.
+- **Rounded badges:** the mode, the latency and the `vssh` mark are pills with half-circle ends (`◖NORMAL◗`). With a Nerd Font, `nerd_font = true` uses its full-height Powerline caps instead; without such a font those would show as empty boxes, so it is off by default.
 
 ## Session logs and login scripts
 
@@ -200,6 +201,7 @@ lang = "en"             # "vi" for Vietnamese key hints, menus and help
 ping_on_start = false   # check every host at launch
 log_sessions = false    # log every session from the start
 status_stats = true     # load, memory and disk of the focused host in the status bar
+nerd_font = false       # true: Powerline round caps on the badges (needs a Nerd Font)
 
 [exec]                  # login scripts: typed into the shell after login
 web-01 = "cd /srv/app && git status"

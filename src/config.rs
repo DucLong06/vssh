@@ -79,6 +79,10 @@ pub struct Config {
     /// Load, memory and disk of the focused host in the status line. On by
     /// default; off, no session opens a second channel to ask for them.
     pub status_stats: bool,
+    /// Round the badge ends with the Powerline half circles of a Nerd Font
+    /// instead of the plain Unicode ones. Off by default: without such a
+    /// font they show as empty boxes.
+    pub nerd_font: bool,
 }
 
 impl Default for Config {
@@ -92,6 +96,7 @@ impl Default for Config {
             exec: HashMap::new(),
             ping_on_start: false,
             status_stats: true,
+            nerd_font: false,
         }
     }
 }
@@ -287,9 +292,9 @@ mod tests {
     #[test]
     fn status_bar_switches_default_to_on() {
         let none: Config = toml::from_str("").unwrap();
-        assert!(none.status_stats);
-        let off: Config = toml::from_str("status_stats = false").unwrap();
-        assert!(!off.status_stats);
+        assert!(none.status_stats && !none.nerd_font);
+        let set: Config = toml::from_str("status_stats = false\nnerd_font = true").unwrap();
+        assert!(!set.status_stats && set.nerd_font);
     }
 
     #[test]

@@ -90,6 +90,7 @@ Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi
 - **Ở danh sách máy chủ**, dừng con trỏ trên một máy trong giây lát thì máy đó được hỏi một lần. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`), và chỉ dùng agent hoặc file khoá: mật khẩu trong kho không bao giờ được gửi cho việc này. Máy đang có phiên mở thì dùng số liệu của phiên đó.
 - **Khi thiếu chỗ:** bỏ thanh nhỏ trước, rồi tới đĩa, rồi bộ nhớ. Màn hình dọc và cửa sổ nhỏ chỉ giữ chế độ và máy chủ.
 - `status_stats = false` trong file cấu hình sẽ tắt toàn bộ.
+- **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
 
 ## Ghi log phiên và script đăng nhập
 
@@ -199,6 +200,7 @@ lang = "vi"             # "vi": gợi ý phím, menu và trợ giúp bằng ti�
 ping_on_start = false   # kiểm tra mọi máy chủ khi khởi động
 log_sessions = false    # ghi log mọi phiên ngay từ đầu
 status_stats = true     # tải, bộ nhớ và đĩa của máy đang chọn trên thanh trạng thái
+nerd_font = false       # true: đầu bo Powerline cho các nhãn (cần Nerd Font)
 
 [exec]                  # script đăng nhập: được gõ vào shell sau khi đăng nhập
 web-01 = "cd /srv/app && git status"
