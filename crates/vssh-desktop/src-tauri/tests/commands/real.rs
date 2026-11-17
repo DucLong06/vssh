@@ -51,7 +51,11 @@ fn real(name: &str) -> (PathBuf, Target, String) {
 #[ignore = "reconfigures the sshd it is pointed at: see the top of this file"]
 fn a_failed_key_setup_restores_a_real_sshd() {
     let (home, target, password) = real("real-restore");
-    let (app, window) = open(Backend::new(home.join("config"), home.join("data"), Core));
+    let (app, window) = open(Backend::new(
+        home.join("config"),
+        home.join("data"),
+        Core::default(),
+    ));
     call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
     let steps = listen(&app, "key-setup-step");
     let answers = listen(&app, "batch-progress");
@@ -84,7 +88,7 @@ fn a_failed_key_setup_restores_a_real_sshd() {
     no_keys.keys.clear();
     let secret = Some(Zeroizing::new(password));
     until("the password opens the host", || {
-        block_on(Core.connect(no_keys.clone(), secret.clone())).is_ok()
+        block_on(Core::default().connect(no_keys.clone(), secret.clone())).is_ok()
     });
     let same = "cmp /etc/ssh/sshd_config /etc/ssh/sshd_config.vssh.bak && echo same";
     let batch = json!({ "hosts": ["box"], "command": same });
@@ -96,7 +100,11 @@ fn a_failed_key_setup_restores_a_real_sshd() {
 #[ignore = "reconfigures the sshd it is pointed at: see the top of this file"]
 fn the_commands_work_on_a_real_sshd() {
     let (home, target, password) = real("real");
-    let (app, window) = open(Backend::new(home.join("config"), home.join("data"), Core));
+    let (app, window) = open(Backend::new(
+        home.join("config"),
+        home.join("data"),
+        Core::default(),
+    ));
     let ok =
         |cmd: &str, args: Value| call(&window, cmd, args).unwrap_or_else(|e| panic!("{cmd}: {e}"));
 
@@ -183,9 +191,11 @@ fn the_commands_work_on_a_real_sshd() {
     let mut no_keys = target.clone();
     no_keys.keys.clear();
     let secret = Some(Zeroizing::new(password));
-    let refused = block_on(Core.connect(no_keys, secret)).err().unwrap();
+    let refused = block_on(Core::default().connect(no_keys, secret))
+        .err()
+        .unwrap();
     assert_eq!(serde_json::to_value(refused.class).unwrap(), "auth");
-    block_on(Core.key_login(target, key.as_str().unwrap().into())).unwrap();
+    block_on(Core::default().key_login(target, key.as_str().unwrap().into())).unwrap();
     ok("get_host_stats", json!({ "alias": "box" }));
     // Run again it finds everything in place and leaves one line of each.
     ok("ssh_key_setup", json!({ "host": "box" }));

@@ -1,11 +1,16 @@
 @import "tailwindcss";
 
 /* TokyoNight Night, the terminal app's palette (docs/img/shots.py): the 16
-   ANSI colours by name, plus the two bands the TUI theme adds. Nothing else
-   is a colour here, so a class cannot leave the palette. */
-@theme {
+   ANSI colours by name, plus the two bands the TUI theme adds, the theme's
+   panel for cards, and its orange and teal for tag pills. Nothing else is a
+   colour here, so a class cannot leave the palette. `static`: the pills take
+   their colour from the variable, which no class names. */
+@theme static {
   --color-*: initial;
   --color-bg: #1a1b26;
+  --color-panel: #1f2335;
+  --color-orange: #ff9e64;
+  --color-teal: #73daca;
   --color-fg: #c0caf5;
   --color-black: #15161e;
   --color-red: #f7768e;
@@ -38,7 +43,11 @@ body {
   font-size: 13px;
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-blue);
-  outline-offset: -2px;
+/* In the base layer, so a class can move the ring: a card wears it outside
+   its border, which is the colour of its state. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: -2px;
+  }
 }

@@ -1,0 +1,38 @@
+[
+  {
+    "class": "dns",
+    "fail": { "kind": "dns", "host": "db.internal.example.com" },
+    "chain": ["cannot resolve db.internal.example.com", "failed to lookup address information: Name or service not known"]
+  },
+  {
+    "class": "timeout",
+    "fail": { "kind": "timeout", "addr": "10.0.0.5:2222", "secs": 10 },
+    "chain": ["10.0.0.5:2222 did not answer within 10s"]
+  },
+  {
+    "class": "refused",
+    "fail": { "kind": "refused", "addr": "10.0.0.5:2222" },
+    "chain": ["connection refused by 10.0.0.5:2222", "Connection refused (os error 111)"]
+  },
+  {
+    "class": "unreachable",
+    "fail": { "kind": "unreachable", "addr": "10.0.0.5:2222" },
+    "chain": ["cannot reach 10.0.0.5:2222", "No route to host (os error 113)"]
+  },
+  {
+    "class": "auth",
+    "fail": { "kind": "auth", "user": "deploy", "host": "10.0.0.5", "keys": 2, "password": false },
+    "chain": ["authentication failed for deploy@10.0.0.5"]
+  },
+  {
+    "class": "host_key",
+    "fail": { "kind": "host_key", "host": "10.0.0.5", "fingerprint": "SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8", "line": 7, "file": "/home/me/.ssh/known_hosts" },
+    "chain": ["HOST KEY MISMATCH for 10.0.0.5"]
+  },
+  {
+    "class": "jump",
+    "fail": { "kind": "jump", "hop": "bastion", "cause": { "kind": "refused", "addr": "192.0.2.1:22" } },
+    "chain": ["jump host bastion failed", "connection refused by 192.0.2.1:22", "Connection refused (os error 111)"]
+  },
+  { "class": "other", "fail": null, "chain": ["the peek ended without an answer"] }
+]

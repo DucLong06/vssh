@@ -142,9 +142,11 @@ impl Fail {
         let t = |en: String, vi: String| if lang == Lang::Vi { vi } else { en };
         let below = under.join(": ");
         match self {
+            // Without the resolver's own words: they say no more, they are
+            // English in either language, and the chain has them.
             Self::Dns { host } => t(
-                format!("Cannot resolve {host}: {below}"),
-                format!("Không phân giải được tên {host}: {below}"),
+                format!("Cannot resolve {host}"),
+                format!("Không phân giải được tên {host}"),
             ),
             Self::Timeout { addr, secs } => t(
                 format!("Connection timed out after {secs}s ({addr})"),
@@ -331,8 +333,14 @@ mod tests {
         let err = os(ErrorKind::Other, lookup).context(Fail::Dns {
             host: "db.nope.invalid".into(),
         });
-        let dns = format!("Cannot resolve db.nope.invalid: {lookup}");
-        assert_eq!(en(&err), (Class::Dns, dns));
+        assert_eq!(
+            en(&err),
+            (Class::Dns, "Cannot resolve db.nope.invalid".into())
+        );
+        assert_eq!(
+            classify(&err, Lang::Vi).message,
+            "Không phân giải được tên db.nope.invalid"
+        );
         assert_eq!(
             classify(&err, Lang::En).chain,
             format!("cannot resolve db.nope.invalid: {lookup}")

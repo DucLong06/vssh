@@ -8,5 +8,10 @@ export default defineConfig({
   // Tauri prints its own logs to the same terminal and expects this port.
   clearScreen: false,
   server: { port: 1420, strictPort: true },
-  test: { environment: 'jsdom', setupFiles: ['./src/test-setup.ts'] },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.ts'],
+    // jsdom cannot draw a terminal: the tests get one that only remembers.
+    alias: [{ find: /^@xterm\/(xterm|addon-fit|addon-unicode11)$/, replacement: '/src/lib/fixtures/xterm.ts' }],
+  },
 })

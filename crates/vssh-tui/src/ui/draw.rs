@@ -20,7 +20,7 @@ use super::{batch_lines, clean, fwd_key, term, App, Focus, Kind, Leader, Popup, 
 use crate::theme::Theme;
 use vssh_core::config::Lang;
 use vssh_core::ssh::SessionCmd;
-use vssh_core::stats::Level;
+use vssh_core::stats::{uptime, Level};
 use vssh_core::store::db::Meta;
 
 /// Stable colour per group or tag name. 256-colour pastels, so they look the
@@ -1372,11 +1372,12 @@ fn peek_lines(app: &App, alias: &str) -> Vec<Line<'static>> {
         Line::from(vec![Span::styled(format!("{label:<10}"), dim), value])
     };
     let text = |v: &Option<String>| v.as_ref().map(|v| Span::raw(clean(v)));
+    let up = peek.uptime.as_deref().map(|up| uptime(up, lang));
     let mut lines = vec![
         Line::default(),
         row(lang.pick("Host", "Tên máy"), text(&peek.host)),
         row(lang.pick("System", "Hệ thống"), text(&peek.os)),
-        row(lang.pick("Uptime", "Đã chạy"), text(&peek.uptime)),
+        row(lang.pick("Uptime", "Đã chạy"), text(&up)),
         row(lang.pick("Load", "Tải"), text(&peek.load)),
     ];
     let mem = lang.pick("MEM", "RAM");

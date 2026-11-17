@@ -70,11 +70,40 @@ export type ConnError = { class: ErrorClass; fail: Fail | null; chain: string[] 
 /** A failure put into words. */
 export type Shown = { class: ErrorClass; label: string; message: string; chain: string }
 
+/** What `pty-state:<id>` says about a session's shell. */
+export type PtyState =
+  | { state: 'up' }
+  /** The command in the foreground; `null` at the prompt. */
+  | { state: 'busy'; command: string | null }
+  | { state: 'closed'; error: ConnError | null }
+
 export const api = {
   listHosts: () => invoke<Host[]>('list_hosts'),
-  getHostStats: (alias: string) => invoke<Peek>('get_host_stats', { alias }),
-  /** `[user@]host[:port]`; resolves to the id of the new session. */
+  /** `passive`: the dashboard asking on its own; `null` where it may not. */
+  getHostStats: (alias: string, passive = false) => invoke<Peek | null>('get_host_stats', { alias, passive }),
+  /** TCP connect time in ms, `null` if down; rejects for a host behind a jump host. */
+  pingHost: (alias: string) => invoke<number | null>('ping_host', { alias }),
+  /** Resolves to the id of a new session, which connects when it is started. */
+  sessionOpen: (alias: string) => invoke<number>('session_open', { alias }),
+  /** `[user@]host[:port]`; resolves to the id of a new session. */
   quickConnect: (host: string) => invoke<number>('quick_connect', { host }),
+  /**
+   * Connects the session and runs its shell on a PTY of this size; again,
+   * to reconnect. From then on `pty-data:<id>` carries its output as bytes
+   * and `pty-state:<id>` a `PtyState`: listen before calling this.
+   */
+  sessionStart: (id: number, cols: number, rows: number) => invoke<void>('session_start', { id, cols, rows }),
+  sessionWrite: (id: number, data: string) => invoke<void>('session_write', { id, data }),
+  sessionResize: (id: number, cols: number, rows: number) => invoke<void>('session_resize', { id, cols, rows }),
+  sessionClose: (id: number) => invoke<void>('session_close', { id }),
+  /**
+   * A person's yes to the host key that stopped the session (a `host_key`
+   * failure names it), good for its next start; `forever` puts it on record.
+   */
+  sessionTrust: (id: number, host: string, fingerprint: string, forever: boolean) =>
+    invoke<void>('session_trust', { id, host, fingerprint, forever }),
+  /** The clipboard plugin's command: `navigator.clipboard` wants a user gesture, which an OSC 52 from a host is not. */
+  copy: (text: string) => invoke<void>('plugin:clipboard-manager|write_text', { text }),
   listSnippets: () => invoke<Snippet[]>('list_snippets'),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),

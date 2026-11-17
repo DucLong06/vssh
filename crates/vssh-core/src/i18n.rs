@@ -1,7 +1,8 @@
 //! The words a window shows, both languages side by side, so a string cannot
 //! be added in one of them only. The desktop app reads this table as JSON
 //! (`crates/vssh-desktop/src/lib/strings.json`, held equal to it by a test).
-//! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh.
+//! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh,
+//! chưa kiểm tra, mất kết nối. `{n}` in a text is a number the window puts in.
 
 use crate::config::Lang;
 
@@ -19,17 +20,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("no_tags", "no tags", "chưa có thẻ"),
     ("pinned", "pinned", "đã ghim"),
-    ("no_sessions", "No sessions yet", "Chưa có phiên nào"),
-    (
-        "no_sessions_hint",
-        "Search your hosts, or connect to a new one.",
-        "Tìm trong các máy chủ, hoặc kết nối tới một máy mới.",
-    ),
-    (
-        "session_note",
-        "Opened, with no terminal yet.",
-        "Đã mở, chưa có terminal.",
-    ),
     ("palette", "Command palette", "Bảng lệnh"),
     ("search", "Search hosts and actions", "Tìm máy chủ và lệnh"),
     (
@@ -51,6 +41,55 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("connect", "Connect", "Kết nối"),
     ("cancel", "Cancel", "Huỷ"),
     ("language", "Language", "Ngôn ngữ"),
+    // The dashboard. A host's states are the TUI's words for them.
+    ("not_checked", "not checked", "chưa kiểm tra"),
+    ("down", "down", "mất kết nối"),
+    ("asking", "asking", "đang hỏi"),
+    ("mem", "MEM", "RAM"),
+    ("search_hosts", "Search hosts, #tag", "Tìm máy chủ, #thẻ"),
+    ("group_by_tag", "Group by tag", "Nhóm theo thẻ"),
+    ("sort", "Sort", "Sắp xếp"),
+    ("sort_order", "My order", "Thứ tự của tôi"),
+    ("sort_name", "Name", "Tên"),
+    ("sort_latency", "Latency", "Độ trễ"),
+    // The quick peek: the rows and the keys of the TUI's.
+    ("quick_peek", "Quick peek", "Xem nhanh"),
+    ("connection", "CONNECTION", "KẾT NỐI"),
+    ("reachable", "reachable", "kết nối được"),
+    ("unreachable", "unreachable", "không kết nối được"),
+    ("hostname", "Host", "Tên máy"),
+    ("system", "System", "Hệ thống"),
+    ("uptime", "Uptime", "Đã chạy"),
+    ("load", "Load", "Tải"),
+    ("disk", "Disk /", "Đĩa /"),
+    ("refresh", "refresh", "làm mới"),
+    ("try_again", "try again", "thử lại"),
+    ("secs_ago", "{n}s ago", "{n} giây trước"),
+    // The terminal tabs. The leader's keys are the TUI's.
+    ("connecting", "connecting", "đang kết nối"),
+    ("connected", "connected", "đã kết nối"),
+    ("disconnected", "disconnected", "mất kết nối"),
+    ("reconnect", "Reconnect", "Kết nối lại"),
+    ("running", "running", "đang chạy"),
+    ("selected", "selected", "đã chọn"),
+    // Broadcast, in the TUI's word for it.
+    ("broadcast", "broadcast", "phát"),
+    ("broadcasting", "Broadcasting: {n}", "Đang phát: {n}"),
+    // A host key that is not the one on record.
+    ("fingerprint", "Fingerprint", "Dấu vân tay"),
+    ("on_record", "On record", "Đang lưu"),
+    (
+        "host_key_warning",
+        "Someone may be listening in, or the host was reinstalled. Accept only if you know why its key changed.",
+        "Có thể có kẻ nghe lén, hoặc máy chủ vừa được cài lại. Chỉ chấp nhận nếu bạn biết vì sao khoá đổi.",
+    ),
+    ("accept_once", "Accept once", "Chấp nhận một lần"),
+    ("trust", "Trust", "Tin cậy"),
+    (
+        "leader_menu",
+        "0-9 tab · Tab next · y copy output · b broadcast · x close",
+        "0-9 tab · Tab kế tiếp · y chép kết quả · b phát · x đóng",
+    ),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

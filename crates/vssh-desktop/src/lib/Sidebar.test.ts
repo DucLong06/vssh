@@ -10,10 +10,9 @@ const hosts: Host[] = fixture
 const props = (over = {}) => ({ hosts, selected: null, onselect: vi.fn(), ...over })
 const rows = () => within(screen.getByRole('list', { name: 'Hosts' })).getAllByRole('button')
 
-test('no hosts: says so, and how to get one', () => {
+test('no hosts: nothing listed; the dashboard is where it says what to do', () => {
   render(Sidebar, props({ hosts: [] }))
-  expect(screen.getByText('No hosts yet.')).toBeInTheDocument()
-  expect(screen.getByText(/connect once without saving/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Hosts 0' })).toBeInTheDocument()
   expect(screen.queryByRole('list', { name: 'Hosts' })).not.toBeInTheDocument()
   expect(screen.getByText('no tags')).toBeInTheDocument()
 })
@@ -71,11 +70,25 @@ test('a click selects a host, and the selected one is marked', async () => {
   expect(onselect).toHaveBeenCalledExactlyOnceWith('db-primary')
 })
 
-test('a list that could not be read shows why instead of "no hosts"', () => {
-  const error = { class: 'other' as const, label: 'ERROR', message: 'cannot read config', chain: '' }
-  render(Sidebar, props({ hosts: [], error }))
-  expect(screen.getByRole('alert')).toHaveTextContent('ERROR cannot read config')
-  expect(screen.queryByText('No hosts yet.')).not.toBeInTheDocument()
+test('open sessions are listed with their state; a click goes to the tab', async () => {
+  const user = userEvent.setup()
+  const onsession = vi.fn()
+  const sessions = [
+    { id: 1, title: 'web-01', state: 'up', busy: null },
+    { id: 4, title: 'deploy@10.0.0.9', state: 'closed', busy: null },
+  ]
+  const { rerender } = render(Sidebar, props({ sessions, active: 4, onsession }))
+  expect(screen.getByRole('heading', { name: 'Sessions 2' })).toBeInTheDocument()
+  const [first, second] = within(screen.getByRole('list', { name: 'Sessions' })).getAllByRole('button')
+  expect(first).toHaveAccessibleName('connected web-01')
+  expect(second).toHaveAccessibleName('disconnected deploy@10.0.0.9')
+  expect(second).toHaveAttribute('aria-current', 'true')
+  expect(first).not.toHaveAttribute('aria-current')
+  await user.click(first)
+  expect(onsession).toHaveBeenCalledWith(1)
+  // With none open there is nothing to list, and no heading for it.
+  await rerender(props({ sessions: [] }))
+  expect(screen.queryByRole('heading', { name: /Sessions/ })).not.toBeInTheDocument()
 })
 
 test('in Vietnamese the words are the TUI\'s', () => {
@@ -83,5 +96,23 @@ test('in Vietnamese the words are the TUI\'s', () => {
   render(Sidebar, props({ hosts: [] }))
   expect(screen.getByRole('heading', { name: 'Máy chủ 0' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Thẻ 0' })).toBeInTheDocument()
-  expect(screen.getByText('Chưa có máy chủ nào.')).toBeInTheDocument()
+  expect(screen.getByText('chưa có thẻ')).toBeInTheDocument()
+})
+
+test('the tag chosen is the caller\'s to use: the dashboard filters by it too', async () => {
+  const user = userEvent.setup()
+  let tag: string | null = null
+  render(Sidebar, {
+    ...props(),
+    get tag() {
+      return tag
+    },
+    set tag(value) {
+      tag = value
+    },
+  })
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(tag).toBe('db')
+  await user.click(screen.getByRole('button', { name: '#db 1' }))
+  expect(tag).toBeNull()
 })
