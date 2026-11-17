@@ -219,7 +219,9 @@ impl Stats {
         };
         let mut parts = vec![];
         if let Some(cpu) = self.cpu {
-            let value = format!("{}{}%", gauge(cpu), cpu.min(999));
+            // Load per core runs past 100; as a percentage that reads as a
+            // bug. The queue itself is the quick peek's load row.
+            let value = format!("{}{}%", gauge(cpu), cpu.min(100));
             parts.push(("CPU".to_string(), value, level(cpu, 50, 80)));
         }
         if let Some((used, total)) = self.mem {
@@ -382,7 +384,8 @@ mod tests {
             disk: Some(85),
         };
         let parts = stats.parts("MEM", false);
-        assert_eq!(text(&parts), "CPU 250% · MEM 0.4/0.5G · / 85%");
+        // A queue of 2.5 per core is shown as a full CPU, and is still critical.
+        assert_eq!(text(&parts), "CPU 100% · MEM 0.4/0.5G · / 85%");
         let levels: Vec<Level> = parts.iter().map(|p| p.2).collect();
         assert_eq!(levels, [Level::Crit, Level::Crit, Level::Warn]);
         assert_eq!((bar(0), bar(50), bar(100), bar(250)), ('▁', '▄', '█', '█'));

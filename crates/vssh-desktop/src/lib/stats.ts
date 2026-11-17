@@ -20,7 +20,8 @@ export function parts(stats: Stats, mem: string): Part[] {
   const out: Part[] = []
   const add = (label: string, value: string, pct: number, warn: number, crit: number) =>
     out.push({ label, value, pct: Math.min(pct, 100), level: pct > crit ? 'crit' : pct > warn ? 'warn' : 'ok' })
-  if (stats.cpu !== null) add('CPU', `${Math.min(stats.cpu, 999)}%`, stats.cpu, 50, 80)
+  // Load per core runs past 100; as a percentage that reads as a bug.
+  if (stats.cpu !== null) add('CPU', `${Math.min(stats.cpu, 100)}%`, stats.cpu, 50, 80)
   if (stats.mem) {
     const [used, total] = stats.mem
     // A small machine keeps the decimal: 0.5G, not 0G or 1G.

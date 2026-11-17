@@ -9,7 +9,8 @@ test('the figures are worded as the TUI status line words them', () => {
   // The brief's own example, and the core's test of `Stats::parts`.
   expect(compact(parts(peek.stats, 'MEM'))).toBe('CPU 23% · MEM 4.2/16G · / 61%')
   const small = parts({ cpu: 250, mem: [460_000, 512_000], disk: 85 }, 'RAM')
-  expect(compact(small)).toBe('CPU 250% · RAM 0.4/0.5G · / 85%')
+  // A queue of 2.5 per core is shown as a full CPU, and is still critical.
+  expect(compact(small)).toBe('CPU 100% · RAM 0.4/0.5G · / 85%')
   expect(small.map((part) => part.level)).toEqual(['crit', 'crit', 'warn'])
   // A bar is never longer than its track.
   expect(small.map((part) => part.pct)).toEqual([100, 89, 85])

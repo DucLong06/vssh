@@ -48,7 +48,7 @@ test('CPU at 0%: an empty bar, still a healthy card', () => {
   expect(el).toHaveAttribute('data-state', 'ok')
 })
 
-test('CPU at 100%: a full red bar and a sick card; past 100 the bar stays in its track', () => {
+test('CPU at 100%: a full red bar and a sick card; past 100 the figure and the bar stay at 100', () => {
   const el = card(stats(100, [15_000_000, 16_000_000], 95))
   expect(meter('CPU')).toHaveAttribute('aria-valuenow', '100')
   expect(meter('CPU')).toHaveAttribute('data-level', 'crit')
@@ -60,7 +60,8 @@ test('CPU at 100%: a full red bar and a sick card; past 100 the bar stays in its
 
   render(HostCard, { host: bare, info: stats(250, null, null) })
   const queue = screen.getByRole('article', { name: 'bare' })
-  expect(queue).toHaveTextContent('CPU 250%')
+  expect(queue).toHaveTextContent('CPU 100%')
+  expect(queue).toHaveAttribute('data-state', 'crit')
   expect(within(queue).getByRole('meter', { name: 'CPU' })).toHaveAttribute('aria-valuenow', '100')
 })
 
