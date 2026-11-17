@@ -13,6 +13,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::ssh::Client;
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Entry {
     pub name: String,
     pub is_dir: bool,
@@ -30,6 +31,7 @@ pub enum Cmd {
     Delete(String, bool),
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Reply {
     /// Canonical remote directory and its contents.
     Listing(String, Vec<Entry>),

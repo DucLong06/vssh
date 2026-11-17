@@ -17,5 +17,13 @@ tokio.workspace = true
 toml.workspace = true
 zeroize.workspace = true
 
+[dev-dependencies]
+serde_json = "1"
+
+# Serialize/Deserialize on the types a desktop shell sends to its window.
+# Off for the TUI, which sends nothing anywhere.
+[features]
+serde = []
+
 [lints]
 workspace = true

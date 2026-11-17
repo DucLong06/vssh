@@ -7,13 +7,13 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use zeroize::Zeroizing;
 
-use crate::conn_err::Fail;
+use crate::conn_err::{ConnError, Fail};
 use crate::sftp;
 use crate::ssh::{self, forward, Login, SessionCmd, Target, Via};
 use crate::stats::{self, Peek, Stats};
@@ -25,34 +25,34 @@ pub use tokio::sync::mpsc::{
     unbounded_channel as channel, UnboundedReceiver as Receiver, UnboundedSender as Sender,
 };
 
-/// Everything background work can report.
+/// Everything background work can report. Its failures are [`ConnError`]s:
+/// already classified, and data a desktop shell can send to its window.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Event {
     /// Output of a shell session.
     Data(u64, Vec<u8>),
     /// A session's connection ended: cleanly, or with the error that ended it.
-    Closed(u64, Option<Error>),
+    Closed(u64, Option<ConnError>),
     /// A session could not authenticate; ask for a password and retry.
-    AuthFailed(u64, Error),
+    AuthFailed(u64, ConnError),
     Sftp(u64, sftp::Reply),
     /// Host alias and TCP connect time in ms, `None` if unreachable.
     Ping(String, Option<u128>),
     /// Forward key; `Ok(true)` = now listening, anything else = it ended.
-    Forward(String, Result<bool>),
+    Forward(String, Result<bool, ConnError>),
     /// One host's answer in a batch: batch id, host alias, command output.
-    Batch(u64, String, Result<String>),
+    Batch(u64, String, Result<String, ConnError>),
     /// Session title or host alias and its metrics; `None` = it stopped answering.
     Stats(String, Option<Stats>),
     /// Host alias and the answer to a quick peek.
-    Peek(String, Result<Peek>),
+    Peek(String, Result<Peek, ConnError>),
 }
 
 impl Event {
     fn ended(id: u64, res: Result<()>) -> Self {
-        match res {
+        match res.map_err(ConnError::from) {
             Ok(()) => Self::Closed(id, None),
-            Err(e) if matches!(e.downcast_ref(), Some(Fail::Auth { .. })) => {
-                Self::AuthFailed(id, e)
-            }
+            Err(e) if matches!(e.fail, Some(Fail::Auth { .. })) => Self::AuthFailed(id, e),
             Err(e) => Self::Closed(id, Some(e)),
         }
     }
@@ -202,7 +202,7 @@ pub fn peek(alias: String, target: Result<Target>, password: Password, sink: imp
             let out = timeout(Duration::from_secs(10), asking).await??;
             anyhow::Ok(stats::parse_peek(&out))
         };
-        sink.send(Event::Peek(alias, res.await));
+        sink.send(Event::Peek(alias, res.await.map_err(ConnError::from)));
     });
 }
 
@@ -219,7 +219,8 @@ pub fn forward(
         let pw = password.as_ref().map(|p| p.as_str());
         let ready = || sink.send(Event::Forward(key.clone(), Ok(true)));
         let res = forward::run(&target, pw, fwd, ready).await;
-        sink.send(Event::Forward(key.clone(), res.map(|()| false)));
+        let res = res.map(|()| false).map_err(ConnError::from);
+        sink.send(Event::Forward(key.clone(), res));
     })
 }
 
@@ -238,6 +239,6 @@ pub fn batch(
             let h = ssh::connect(&target?, pw, None).await?;
             ssh::exec(&h, &command).await
         };
-        sink.send(Event::Batch(id, host, res.await));
+        sink.send(Event::Batch(id, host, res.await.map_err(ConnError::from)));
     })
 }
