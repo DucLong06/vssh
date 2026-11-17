@@ -5,7 +5,7 @@ use std::{fs, io};
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::sftp::{list_local, Cmd, Entry, Reply};
+use vssh_core::sftp::{list_local, Cmd, Entry, Reply};
 
 pub const LOCAL: usize = 0;
 pub const REMOTE: usize = 1;
