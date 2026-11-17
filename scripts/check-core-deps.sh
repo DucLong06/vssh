@@ -18,5 +18,13 @@ if grep -rnE "\b($BAD)::|extern crate ($BAD)" crates/vssh-core --include='*.rs';
     fail=1
 fi
 
+# The other side of the line: the TUI asks vssh_core::task for background
+# work and never drives the async runtime itself.
+direct=$(cargo tree -p vssh --depth 1 --edges normal,build,dev --prefix none)
+if echo "$direct" | grep -E "^tokio[ -]"; then
+    echo "FAIL: the TUI depends on tokio directly (above); go through vssh_core::task"
+    fail=1
+fi
+
 [ "$fail" = 0 ] && echo "core deps: ok"
 exit "$fail"

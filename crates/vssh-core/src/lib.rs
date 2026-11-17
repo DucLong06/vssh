@@ -10,4 +10,5 @@ pub mod sftp;
 pub mod ssh;
 pub mod stats;
 pub mod store;
+pub mod task;
 pub mod vault;
