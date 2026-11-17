@@ -19,6 +19,14 @@
     info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
   )
   const reached = $derived(typeof info?.ms === 'number')
+  // An offline card dims what is about the host, not its name or the line that says why.
+  const dim = $derived(kind === 'down' ? 'opacity-60' : '')
+  const [green, yellow, red] = ['green', 'yellow', 'red'].map((name) => `var(--color-${name})`)
+  const fill = {
+    ok: green,
+    warn: `linear-gradient(to right, ${green}, ${yellow})`,
+    crit: `linear-gradient(to right, ${green}, ${yellow}, ${red})`,
+  }
   const tone = { ok: 'text-green', warn: 'text-yellow', crit: 'text-red' }
 </script>
 
@@ -26,7 +34,7 @@
   {...rest}
   aria-label={host.alias}
   data-state={kind}
-  class="group relative h-full rounded-2xl border border-edge bg-panel p-3 data-[state=crit]:border-red data-[state=down]:border-red/50 {extra}"
+  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red data-[state=down]:border-red/50 {extra}"
 >
   {#if onconnect}
     <!-- Over the address, and only when the card is pointed at or has the
@@ -39,43 +47,40 @@
       {t('connect')}
     </button>
   {/if}
-  <!-- An offline card dims, but not the line that says why. -->
-  <div class={kind === 'down' ? 'opacity-55' : ''}>
-    <header class="flex items-center gap-1.5">
-      <span
-        aria-hidden="true"
-        class={kind === 'down' || kind === 'crit' ? 'text-red' : kind === 'ok' || reached ? 'text-green' : 'text-dim'}
-      >
-        {kind === 'asking' || (kind === 'unchecked' && !reached) ? '○' : '●'}
-      </span>
-      <h3 class="truncate font-bold">{host.alias}</h3>
-      {#if host.meta.pinned}
-        <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
-      {/if}
-      <span
-        class="ml-auto shrink-0 rounded-full bg-bar px-2 {info?.ms === null ? 'text-red' : info?.ms === undefined ? 'text-dim' : 'text-green'}"
-      >
-        {latency}
-      </span>
-    </header>
-    {#if address(host)}
-      <p class="truncate pl-4 text-white">{address(host)}</p>
+  <header class="flex items-center gap-1.5">
+    <span
+      aria-hidden="true"
+      class={kind === 'down' || kind === 'crit' ? 'text-red' : kind === 'ok' || reached ? 'text-green' : 'text-dim'}
+    >
+      {kind === 'asking' || (kind === 'unchecked' && !reached) ? '○' : '●'}
+    </span>
+    <h3 class="truncate font-bold">{host.alias}</h3>
+    {#if host.meta.pinned}
+      <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
     {/if}
-    {#if tagsOf(host).length}
-      <ul aria-label={t('tags')} class="flex flex-wrap gap-1 pt-2 pl-4">
-        {#each tagsOf(host) as tag (tag)}
-          <li
-            class="rounded-full border px-2 text-xs leading-5"
-            style="color: {chip(tag)}; border-color: color-mix(in srgb, {chip(tag)} 40%, transparent); background: color-mix(in srgb, {chip(tag)} 12%, transparent)"
-          >{tag}</li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
+    <span
+      class="ml-auto shrink-0 rounded-full bg-bar px-2 {info?.ms === null ? 'text-red' : info?.ms === undefined ? 'text-dim' : kind === 'down' ? 'text-white' : 'text-green'}"
+    >
+      {latency}
+    </span>
+  </header>
+  {#if address(host)}
+    <p class="truncate pl-4 text-white {dim}">{address(host)}</p>
+  {/if}
+  {#if tagsOf(host).length}
+    <ul aria-label={t('tags')} class="flex flex-wrap gap-1 pt-2 pl-4 {dim}">
+      {#each tagsOf(host) as tag (tag)}
+        <li
+          class="rounded-full border px-2 text-xs leading-5"
+          style="color: {chip(tag)}; border-color: color-mix(in srgb, {chip(tag)} 40%, transparent); background: color-mix(in srgb, {chip(tag)} 12%, transparent)"
+        >{tag}</li>
+      {/each}
+    </ul>
+  {/if}
 
   <div class="pt-3">
     {#if info?.shown}
-      <p title={info.shown.chain} class="line-clamp-2 break-words">
+      <p title={info.shown.chain} class="line-clamp-3 break-words">
         <strong class="text-red">✗ {info.shown.label}</strong>
         <span class="text-white">{info.shown.message}</span>
       </p>
@@ -99,11 +104,8 @@
               class="mt-1 h-2 overflow-hidden rounded-full bg-bar"
             >
               {#if part}
-                <!-- Green up to the warning mark, yellow at the critical one, red at the end:
-                     the gradient spans the track, the bar shows as much of it as it is long. -->
-                <div
-                  class="h-full rounded-full"
-                  style="width: {part.pct}%; background: linear-gradient(to right, var(--color-green) {part.warn}%, var(--color-yellow) {part.crit}%, var(--color-red)) 0 / {part.pct ? 10000 / part.pct : 100}% 100%"
+                <!-- Green, into yellow past the warning mark, into red past the critical one. -->
+                <div class="h-full rounded-full" style="width: {part.pct}%; background: {fill[part.level]}"
                 ></div>
               {/if}
             </div>

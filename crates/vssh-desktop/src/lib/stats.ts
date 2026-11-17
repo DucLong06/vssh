@@ -11,9 +11,6 @@ export type Part = {
   /** How full the bar is: 0 to 100. */
   pct: number
   level: Level
-  /** Above these the figure is a warning, and critical. */
-  warn: number
-  crit: number
 }
 
 const GIB = 1024 * 1024
@@ -22,7 +19,7 @@ const GIB = 1024 * 1024
 export function parts(stats: Stats, mem: string): Part[] {
   const out: Part[] = []
   const add = (label: string, value: string, pct: number, warn: number, crit: number) =>
-    out.push({ label, value, pct: Math.min(pct, 100), level: pct > crit ? 'crit' : pct > warn ? 'warn' : 'ok', warn, crit })
+    out.push({ label, value, pct: Math.min(pct, 100), level: pct > crit ? 'crit' : pct > warn ? 'warn' : 'ok' })
   if (stats.cpu !== null) add('CPU', `${Math.min(stats.cpu, 999)}%`, stats.cpu, 50, 80)
   if (stats.mem) {
     const [used, total] = stats.mem

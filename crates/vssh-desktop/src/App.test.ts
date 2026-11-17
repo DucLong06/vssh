@@ -8,7 +8,9 @@ import hosts from './lib/fixtures/hosts.json'
 import peek from './lib/fixtures/peek.json'
 import refused from './lib/fixtures/refused.json'
 import shown from './lib/fixtures/shown.json'
+import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
+import strings from './lib/strings.json'
 
 type Args = Record<string, unknown>
 const snippets = [{ id: 1, host: '', name: 'up', command: 'uptime' }]
@@ -219,4 +221,90 @@ test('the language toggle changes every word and is remembered', async () => {
   expect(document.documentElement.lang).toBe('vi')
   await user.click(screen.getByRole('button', { name: 'Ngôn ngữ: VI' }))
   expect(screen.getByRole('heading', { name: 'Hosts 4' })).toBeInTheDocument()
+})
+
+// --- M4: Vietnamese, with nothing left in English ---------------------------
+
+/** Everything a person can read or have read to them: text, and the attributes that carry words. */
+function words(): string {
+  const said = [document.body.textContent ?? '']
+  for (const el of document.body.querySelectorAll('*')) {
+    for (const name of ['aria-label', 'placeholder', 'title', 'alt']) said.push(el.getAttribute(name) ?? '')
+  }
+  return said.join('\n')
+}
+
+/** The English strings of the table that show up in `text`, as whole words. */
+function english(text: string): string[] {
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  return Object.entries(strings.en)
+    .filter(([key, en]) => en !== strings.vi[key as keyof typeof strings.vi])
+    .filter(([, en]) => {
+      // `{n}` stands for a number the window puts in.
+      const pattern = escape(en).replace('\\{n\\}', '\\d+')
+      return new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'u').test(text)
+    })
+    .map(([key]) => key)
+}
+
+test('the check itself: it finds English where there is some', () => {
+  expect(english('Máy chủ 4 · Sort')).toEqual(['sort'])
+  expect(english('CPU 23% 4s ago')).toEqual(['secs_ago'])
+  expect(english('không có gì: Hostname, sorted, downtime')).toEqual([])
+})
+
+test('in Vietnamese no English string is left anywhere: cards in every state, the peek, the dialogs', async () => {
+  setLang('vi')
+  const user = shell({
+    // One host of each kind: well, down, not checked, and still being asked.
+    get_host_stats: ({ alias }) => {
+      if (alias === 'web-02') throw refused
+      if (alias === 'db-primary') return null
+      return alias === 'bare' ? new Promise(() => {}) : peek
+    },
+    ping_host: ({ alias }) => (alias === 'web-02' ? null : 12),
+  })
+  await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent('BỊ TỪ CHỐI'))
+  expect(await card('web-01')).toHaveTextContent('RAM 4.2/16G')
+  expect(await card('db-primary')).toHaveTextContent('chưa kiểm tra')
+  expect(await card('bare')).toHaveTextContent('đang hỏi bare…')
+  expect(english(words())).toEqual([])
+
+  // A session, and the quick peek of a host that answered and of one that is down.
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
+  await screen.findByRole('list', { name: 'Phiên' })
+  ;(await card('web-01')).focus()
+  await user.keyboard('v')
+  expect(screen.getByRole('dialog', { name: 'Xem nhanh: web-01' })).toHaveTextContent('Đã chạy')
+  expect(english(words())).toEqual([])
+  ;(await card('web-02')).focus()
+  await user.keyboard('v')
+  expect(await screen.findByRole('dialog', { name: 'Xem nhanh: web-02' })).toHaveTextContent('thử lại')
+  expect(english(words())).toEqual([])
+  await user.keyboard('{Escape}')
+
+  // A search that finds nothing, the palette, the quick-connect form.
+  await user.keyboard('/zzz')
+  expect(screen.getByText('Không có máy chủ nào khớp.')).toBeInTheDocument()
+  expect(english(words())).toEqual([])
+  await user.keyboard('{Escape}{Control>}k{/Control}')
+  expect(screen.getByRole('dialog', { name: 'Bảng lệnh' })).toBeInTheDocument()
+  expect(english(words())).toEqual([])
+  await user.type(palette(), 'qc{Enter}')
+  expect(screen.getByRole('dialog', { name: 'Kết nối nhanh' })).toBeInTheDocument()
+  expect(english(words())).toEqual([])
+})
+
+test('with no hosts, in Vietnamese, the empty dashboard is Vietnamese too', async () => {
+  setLang('vi')
+  shell({ list_hosts: () => [], list_snippets: () => [] })
+  expect(await screen.findByRole('heading', { name: 'Chưa có máy chủ nào.' })).toBeInTheDocument()
+  expect(english(words())).toEqual([])
+})
+
+test('every string of the table is one the window uses', async () => {
+  const sources = import.meta.glob(['./**/*.svelte', '!./**/*.test.ts'], { query: '?raw', import: 'default', eager: true })
+  const code = Object.values(sources).join('\n')
+  const unused = Object.keys(strings.en).filter((key) => !code.includes(`t('${key}')`))
+  expect(unused).toEqual([])
 })

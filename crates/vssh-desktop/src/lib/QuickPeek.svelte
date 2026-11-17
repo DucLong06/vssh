@@ -63,7 +63,7 @@
   bind:this={box}
   role="dialog"
   aria-label="{t('quick_peek')}: {host.alias}"
-  class="absolute top-full right-0 left-0 z-10 mt-1 cursor-default rounded-xl border border-edge bg-black p-3 shadow-lg shadow-black/60"
+  class="absolute top-full right-0 left-0 z-10 mt-1 cursor-default rounded-xl border border-blue/50 bg-black p-3 shadow-2xl shadow-black"
 >
   <p class="flex justify-between gap-2">
     <strong class="truncate text-magenta">{t('quick_peek')}: {host.alias}</strong>

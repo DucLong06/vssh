@@ -118,6 +118,8 @@ shot() {
 }
 step() { echo "ok: $1"; }
 accepted() { grep -c 'Accepted publickey' "$home/sshd/log" || true; }
+# The colour of one pixel of a screenshot, as rrggbb.
+pixel() { ffmpeg -loglevel error -i "$1" -vf "crop=1:1:$2:$3" -f rawvideo -pix_fmt rgb24 - | od -An -tx1 | tr -d ' \n'; }
 
 # No GPU on a virtual display. No agent: only the throwaway key is offered.
 env -u SSH_AUTH_SOCK HOME="$home" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/debug/vssh-desktop &
@@ -169,6 +171,12 @@ step "groups and tags written to the database behind the window's back"
 sleep 13
 shot docs/img/desktop-d2.png
 
+# TokyoNight Night is what is on screen: the window's background in the
+# gutter left of the cards, and the panel inside the first card.
+night="$(pixel docs/img/desktop-d2.png 264 300) $(pixel docs/img/desktop-d2.png 640 140)"
+[ "$night" = "1a1b26 1f2335" ] || { echo "FAIL: background and card are $night, not 1a1b26 1f2335"; exit 1; }
+step "the Night theme: background #1a1b26, cards #1f2335"
+
 # One connection per host that lets us in, however many rounds were asked.
 logins=$(accepted)
 [ "$logins" -eq 3 ] || { echo "FAIL: $logins logins after three rounds, expected 3 (one per host)"; cat "$home/sshd/log"; exit 1; }
@@ -197,8 +205,8 @@ shot docs/img/desktop-d2-peek.vi.png
 xdotool key --window "$win" Escape
 language
 
-# And by resting the pointer on a card.
-xdotool mousemove --window "$win" 880 310
+# And by resting the pointer on a card: db-replica, which is down.
+xdotool mousemove --window "$win" 880 140
 sleep 1
 shot target/smoke/hover.png
 xdotool mousemove --window "$win" 600 20

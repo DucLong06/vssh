@@ -199,7 +199,7 @@
         type="button"
         aria-pressed={grouped}
         onclick={() => (grouped = !grouped)}
-        class="{control} cursor-pointer hover:bg-selection aria-pressed:border-blue aria-pressed:text-blue"
+        class="{control} cursor-pointer hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
       >
         {t('group_by_tag')}
       </button>
@@ -273,7 +273,7 @@
                   dragging = null
                 }}
                 ondragend={() => (dragging = null)}
-                class="cursor-grab aria-[current]:border-blue"
+                class="cursor-grab"
               />
               {#if peeking?.alias === host.alias}
                 <QuickPeek {host} info={live[host.alias]} />
