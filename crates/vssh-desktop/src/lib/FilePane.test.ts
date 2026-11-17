@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
-import { expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import listing from '../../src-tauri/tests/fixtures/files.json'
 import type { Entry, Shown } from './api'
 import errors from './fixtures/errors.json'
@@ -20,6 +20,7 @@ function pane(props: Partial<Parameters<typeof render<typeof FilePane>>[1] & obj
 }
 const rows = () => screen.getAllByRole('row').slice(1)
 const names = () => rows().map((row) => within(row).getAllByRole('gridcell')[0].textContent?.trim())
+afterEach(() => vi.restoreAllMocks())
 const current = () => rows().find((row) => row.getAttribute('aria-selected') === 'true')
 
 test('a directory: a row per entry with its name, size and when it changed; directories are told apart', () => {
@@ -48,6 +49,27 @@ test('the path is a row of crumbs: a click on one goes there', async () => {
   expect(within(path).getAllByRole('button').map((crumb) => crumb.textContent?.trim())).toEqual(['/', 'var', 'log'])
   await user.click(within(path).getByRole('button', { name: 'var' }))
   expect(oncd).toHaveBeenCalledWith('/var')
+})
+
+test('a path too long for its pane starts at the first name that fits whole, behind an ellipsis', () => {
+  // jsdom lays nothing out: crumbs of 450 in all, 100 apart, in a pane with room for 200.
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(450)
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(200)
+  vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
+    return [...this.parentElement!.querySelectorAll('button')].indexOf(this as HTMLButtonElement) * 100
+  })
+  pane({ path: '/var/log/nginx/sites' })
+  const crumbs = within(screen.getByRole('navigation', { name: 'Path' })).getByRole('button', { name: 'sites' }).parentElement!
+  // 250 have no room, and the ellipsis wants some: `log` at 200 would be cut, `nginx` at 300 is whole.
+  expect(crumbs.style.marginLeft).toBe('-300px')
+  expect(screen.getByText('…')).toBeInTheDocument()
+})
+
+test('a path that fits is shown whole, with no ellipsis', () => {
+  pane()
+  const crumbs = within(screen.getByRole('navigation', { name: 'Path' })).getByRole('button', { name: 'log' }).parentElement!
+  expect(crumbs.style.marginLeft).toBe('0px')
+  expect(screen.queryByText('…')).toBeNull()
 })
 
 test('an empty directory says so', () => {

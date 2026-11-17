@@ -20,9 +20,31 @@
     onconnect: (alias: string) => void
     /** Opens a host's files. */
     onfiles?: (alias: string) => void
+    /** Opens a host's port forwards. */
+    onforwards?: (alias: string) => void
+    /** `s`: the snippets. */
+    onsnippets?: () => void
+    /** `x`: a command for the marked hosts. */
+    onbatch?: () => void
     onpalette: () => void
+    /** The cards chosen to act on together, as Space marks hosts in the TUI. */
+    marked?: string[]
   }
-  let { hosts, error = null, tag = null, selected = null, hidden = false, onselect, onconnect, onfiles, onpalette }: Props = $props()
+  let {
+    hosts,
+    error = null,
+    tag = null,
+    selected = null,
+    hidden = false,
+    onselect,
+    onconnect,
+    onfiles,
+    onforwards,
+    onsnippets,
+    onbatch,
+    onpalette,
+    marked = $bindable([]),
+  }: Props = $props()
 
   /** How long the pointer rests on a card before its quick peek opens, and how long an answer is good for. */
   const REST = 600
@@ -34,8 +56,6 @@
   let query = $state('')
   /** The user's own order: aliases, as they were last dragged. */
   let order = $state<string[]>(saved())
-  /** The cards chosen to connect to together, as Space marks hosts in the TUI. */
-  let marked = $state<string[]>([])
   /** The card being dragged. */
   let dragging: string | null = null
   /** The card whose quick peek is open, and whether the pointer opened it. */
@@ -94,6 +114,9 @@
   const card = (alias: string) =>
     [...(grid?.querySelectorAll('article') ?? [])].find((el) => el.getAttribute('aria-label') === alias)
 
+  /** For a host chosen again while it is the selected one: nothing changed for the effect below to hear of. */
+  export const focus = (alias: string) => card(alias)?.focus()
+
   // A host chosen elsewhere (the palette, the sidebar) is brought into view.
   $effect(() => {
     // Also when the dashboard comes back to the front.
@@ -141,6 +164,10 @@
       peek(alias)
     } else if (e.key === 'f') {
       onfiles?.(alias)
+    } else if (e.key === 'L') {
+      // Stopped here: the dialog has the focus before the key is done, and the key is not for it.
+      e.preventDefault()
+      onforwards?.(alias)
     } else if (step) {
       // Drag and drop for the keyboard: one place along, among the cards on screen.
       e.preventDefault()
@@ -162,6 +189,13 @@
     if (e.key === '/') {
       e.preventDefault()
       search?.focus()
+    } else if (e.key === 's') {
+      e.preventDefault()
+      onsnippets?.()
+    } else if (e.key === 'x') {
+      // Or the command line that opens would start with an x.
+      e.preventDefault()
+      onbatch?.()
     } else if (peeking && e.key === 'Escape') {
       peeking = null
     } else if (peeking && e.key === 'r') {
@@ -233,6 +267,14 @@
         >
           {t('connect')} {marked.length}
         </button>
+        <button
+          type="button"
+          aria-keyshortcuts="x"
+          onclick={() => onbatch?.()}
+          class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+        >
+          {t('run')} {marked.length}
+        </button>
       {/if}
       <!-- Radio buttons, drawn as one control: a native select opens the
            toolkit's own light menu over the dark window. -->
@@ -283,9 +325,10 @@
                 marked={marked.includes(host.alias)}
                 onconnect={() => onconnect(host.alias)}
                 onfiles={onfiles && (() => onfiles(host.alias))}
+                onforwards={onforwards && (() => onforwards(host.alias))}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Space v f Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v f Shift+L Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null

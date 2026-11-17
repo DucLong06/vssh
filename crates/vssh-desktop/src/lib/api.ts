@@ -53,7 +53,30 @@ export type Entry = {
   mtime: number
 }
 
+/** `host` empty: for every host. */
 export type Snippet = { id: number; host: string; name: string; command: string }
+
+/** One host's answer in a batch: what the command printed, or why it could not be run. */
+export type Answered = { id: number; host: string; output: string | null; error: ConnError | null }
+
+/**
+ * A port forward of a host: a line of its block in the ssh config. `L` and
+ * `D` listen on `port` of this machine, `R` on the host's; `host:hport` is
+ * where it leads (nothing for `D`). `value` is the line itself, the
+ * forward's name for the commands.
+ */
+export type Forward = {
+  kind: 'L' | 'R' | 'D'
+  bind: string
+  port: number
+  host: string
+  hport: number
+  value: string
+  state: 'off' | 'starting' | 'on'
+}
+
+/** What `forward-state` carries: a forward listens (`on`), or has ended by itself (`off`, with why). */
+export type ForwardState = Pick<Forward, 'kind' | 'value'> & { host: string; state: 'on' | 'off'; error: ConnError | null }
 
 export type ErrorClass =
   | 'dns'
@@ -62,6 +85,7 @@ export type ErrorClass =
   | 'unreachable'
   | 'auth'
   | 'host_key'
+  | 'port_in_use'
   | 'jump'
   | 'other'
 
@@ -72,6 +96,7 @@ export type Fail =
   | { kind: 'unreachable'; addr: string }
   | { kind: 'auth'; user: string; host: string; keys: number; password: boolean }
   | { kind: 'host_key'; host: string; fingerprint: string; line: number; file: string }
+  | { kind: 'port_in_use'; addr: string }
   | { kind: 'jump'; hop: string; cause: Fail | null }
 
 /** What a command rejects with: a failure in no language yet. */
@@ -136,7 +161,32 @@ export const api = {
     invoke<void>('sftp_download', { host, remote, local, id }),
   /** Stops a transfer, which then rejects; what was written so far stays. */
   sftpCancel: (id: string) => invoke<boolean>('sftp_cancel', { id }),
+  /** Those for every host first (`host` empty), then by host and name. */
   listSnippets: () => invoke<Snippet[]>('list_snippets'),
+  /** Rejects for a snippet without a name or a command, or for a host that is not in the config. */
+  snippetsCreate: (name: string, command: string, host: string) =>
+    invoke<Snippet>('snippets_create', { name, command, host }),
+  snippetsUpdate: (id: number, name: string, command: string, host: string) =>
+    invoke<Snippet>('snippets_update', { id, name, command, host }),
+  snippetsDelete: (id: number) => invoke<void>('snippets_delete', { id }),
+  /**
+   * One command on every host named, `{{name}}` in it replaced by
+   * `params.name`. Resolves at once to the batch's id; each host then answers
+   * with an `Answered` on `batch-progress`, maybe before the id is here:
+   * listen first.
+   */
+  snippetRun: (hosts: string[], command: string, params: Record<string, string>) =>
+    invoke<number>('snippet_run', { hosts, command, params }),
+  forwardsList: (host: string) => invoke<Forward[]>('forwards_list', { host }),
+  /** Into the host's block, not started. Rejects with `port_in_use` if the host has a forward on that port. */
+  forwardAdd: (host: string, kind: Forward['kind'], localPort: number, remote: string | null) =>
+    invoke<Forward>('forward_add', { host, kind, localPort, remote }),
+  /** Starts a forward, or stops it if it runs: true if it is now starting. `forward-state` says when it listens. */
+  forwardToggle: (host: string, kind: Forward['kind'], value: string) =>
+    invoke<boolean>('forward_toggle', { host, kind, value }),
+  /** Stops it if it runs, and takes it out of the config. */
+  forwardKill: (host: string, kind: Forward['kind'], value: string) =>
+    invoke<void>('forward_kill', { host, kind, value }),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),
 }

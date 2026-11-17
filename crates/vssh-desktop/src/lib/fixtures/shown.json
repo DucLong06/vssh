@@ -47,6 +47,12 @@
       "class": "other",
       "label": "ERROR",
       "message": "the peek ended without an answer"
+    },
+    {
+      "chain": "127.0.0.1:8080 is already in use: Address already in use (os error 98)",
+      "class": "port_in_use",
+      "label": "PORT IN USE",
+      "message": "Port 127.0.0.1:8080 is already in use — stop what listens there, or pick another port"
     }
   ],
   "vi": [
@@ -97,6 +103,12 @@
       "class": "other",
       "label": "LỖI",
       "message": "the peek ended without an answer"
+    },
+    {
+      "chain": "127.0.0.1:8080 is already in use: Address already in use (os error 98)",
+      "class": "port_in_use",
+      "label": "CỔNG ĐANG BẬN",
+      "message": "Cổng 127.0.0.1:8080 đang có chương trình khác dùng — dừng nó, hoặc chọn cổng khác"
     }
   ]
 }

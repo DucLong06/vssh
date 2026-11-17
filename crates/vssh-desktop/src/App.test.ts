@@ -6,6 +6,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
 import listing from '../src-tauri/tests/fixtures/files.json'
 import errors from './lib/fixtures/errors.json'
+import forwards from './lib/fixtures/forwards.json'
 import hosts from './lib/fixtures/hosts.json'
 import peek from './lib/fixtures/peek.json'
 import refused from './lib/fixtures/refused.json'
@@ -499,6 +500,10 @@ test('a host chosen in the palette is the selected one', async () => {
   expect(status()).toHaveTextContent('Enter Connect · Space select · v Quick peek')
   await user.click(screen.getByRole('button', { name: 'Language: EN' }))
   expect(status()).toHaveTextContent('Enter Kết nối · Space chọn · v Xem nhanh')
+  // Chosen again from where the focus went (the button): the card has it back, for its keys.
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'db{Enter}')
+  await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
 })
 
 test('the selected host is scrolled back into view when the sessions take room from the sidebar\'s list', async () => {
@@ -681,7 +686,9 @@ test('f on a card, or its Files button, opens the host\'s files in a tab of thei
   expect(asked('sftp_list')).toEqual([{ host: 'web-01', path: '/home/deploy' }])
   // The keys are the file view's, and the status bar says which.
   expect(screen.getByRole('grid', { name: 'local' })).toHaveFocus()
-  expect(status()).toHaveTextContent('Space select · c copy · / filter')
+  expect(status()).toHaveTextContent('Space select · c Copy · / Filter · . Hidden files · right-click more')
+  // The keys stand out, as on the dashboard: two of them are punctuation.
+  expect([...status().querySelectorAll('kbd')].map((key) => key.textContent)).toEqual(['Space', 'c', '/', '.'])
   expect(status()).not.toHaveTextContent('Ctrl-A')
   // It is no session: nothing was logged in to for a shell.
   expect(asked('session_open')).toHaveLength(0)
@@ -721,9 +728,140 @@ test('a file view next to a terminal: its tab comes after the sessions, in Vietn
   expect(await tab(/2 Files web-01/)).toHaveAttribute('aria-selected', 'true')
   setLang('vi')
   expect(await tab(/2 Tệp web-01/)).toBeInTheDocument()
-  expect(status()).toHaveTextContent('Space chọn · c sao chép · / lọc')
+  expect(status()).toHaveTextContent('Space chọn · c Sao chép · / Lọc · . Tệp ẩn · chuột phải thao tác khác')
   await user.keyboard(`${leader}0`)
   expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toBeInTheDocument()
   ;(await card('web-01')).focus()
   await vi.waitFor(() => expect(status()).toHaveTextContent('f Tệp'))
+})
+
+// --- D5: snippets, batches, forwards -----------------------------------------
+
+test('s on the dashboard, or the palette\'s Snippets, opens the snippets; one added there is counted in the status bar', async () => {
+  let list = snippets
+  const user = shell({
+    list_snippets: () => list,
+    snippets_create: (args) => {
+      const made = { id: 2, ...args } as (typeof snippets)[0]
+      list = [...list, made]
+      return made
+    },
+  })
+  await card('web-01')
+  await user.keyboard('s')
+  const dialog = await screen.findByRole('dialog', { name: 'Snippets' })
+  expect(within(dialog).getByRole('listitem')).toHaveTextContent('up all hosts uptime')
+  await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+  // A letter typed into the form is a letter: no key of the dashboard's.
+  await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'disks')
+  await user.type(within(dialog).getByRole('textbox', { name: 'Command' }), 'df -h /')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await vi.waitFor(() => expect(status()).toHaveTextContent('Snippets 2'))
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'snip{Enter}')
+  expect(await screen.findByRole('dialog', { name: 'Snippets' })).toBeInTheDocument()
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // And for the pointer, their count in the status bar.
+  await user.click(within(status()).getByRole('button', { name: 'Snippets 2' }))
+  expect(await screen.findByRole('dialog', { name: 'Snippets' })).toBeInTheDocument()
+  setLang('vi')
+  await vi.waitFor(() => expect(status()).toHaveTextContent('Đoạn lệnh 2'))
+})
+
+test('a snippet is run on the hosts marked on the dashboard, and each one\'s answer comes in a dialog of its own', async () => {
+  const user = shell({ snippet_run: () => 1 })
+  ;(await card('db-primary')).focus()
+  await user.keyboard(' ')
+  ;(await card('web-01')).focus()
+  await user.keyboard(' s')
+  const dialog = await screen.findByRole('dialog', { name: 'Snippets' })
+  await user.click(within(dialog).getByRole('button', { name: 'Run up' }))
+  expect(within(dialog).getByRole('checkbox', { name: 'web-01' })).toBeChecked()
+  expect(within(dialog).getByRole('checkbox', { name: 'db-primary' })).toBeChecked()
+  expect(within(dialog).getByRole('checkbox', { name: 'web-02' })).not.toBeChecked()
+  await user.click(within(dialog).getByRole('button', { name: 'Run' }))
+
+  const batch = await screen.findByRole('dialog', { name: 'Run on 2 host(s)' })
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  await vi.waitFor(() =>
+    expect(asked('snippet_run')).toEqual([{ hosts: ['web-01', 'db-primary'], command: 'uptime', params: {} }]),
+  )
+  await emit('batch-progress', { id: 1, host: 'web-01', output: 'up 3 days\n', error: null })
+  await emit('batch-progress', { id: 1, host: 'db-primary', output: null, error: refused })
+  await vi.waitFor(() => expect(batch).toHaveTextContent('up 3 days'))
+  await vi.waitFor(() => expect(within(batch).getByRole('alert')).toHaveTextContent('✗ REFUSED'))
+})
+
+test('with nothing marked, a snippet is for the selected host', async () => {
+  const user = shell()
+  ;(await card('web-02')).focus()
+  await user.keyboard('s')
+  const dialog = await screen.findByRole('dialog', { name: 'Snippets' })
+  await user.click(within(dialog).getByRole('button', { name: 'Run up' }))
+  expect(within(dialog).getByRole('checkbox', { name: 'web-02' })).toBeChecked()
+  expect(within(dialog).getByRole('checkbox', { name: 'web-01' })).not.toBeChecked()
+})
+
+test('x on the dashboard: a command for the marked hosts, or the selected one; the marks stay for the next', async () => {
+  const user = shell({ snippet_run: () => 1 })
+  await card('web-01')
+  // With no host there is nobody to run on.
+  await user.keyboard('x')
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  ;(await card('web-02')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('x Run'))
+  await user.keyboard('x')
+  const one = await screen.findByRole('dialog', { name: 'Run on 1 host(s)' })
+  // An x typed into the line is a letter.
+  await user.type(within(one).getByRole('textbox', { name: 'Command' }), 'xargs --version{Enter}')
+  await vi.waitFor(() =>
+    expect(asked('snippet_run')).toEqual([{ hosts: ['web-02'], command: 'xargs --version', params: {} }]),
+  )
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  ;(await card('db-primary')).focus()
+  await user.keyboard(' ')
+  ;(await card('web-01')).focus()
+  await user.keyboard(' x')
+  const two = await screen.findByRole('dialog', { name: 'Run on 2 host(s)' })
+  await user.type(within(two).getByRole('textbox', { name: 'Command' }), 'uptime{Enter}')
+  await vi.waitFor(() => expect(asked('snippet_run')[1]).toEqual({ hosts: ['web-01', 'db-primary'], command: 'uptime', params: {} }))
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // For the pointer, next to Connect; in Vietnamese, the TUI's words.
+  expect(await card('web-01')).toHaveAttribute('data-marked')
+  await user.click(screen.getByRole('button', { name: 'Run 2' }))
+  expect(await screen.findByRole('dialog', { name: 'Run on 2 host(s)' })).toBeInTheDocument()
+  setLang('vi')
+  expect(await screen.findByRole('dialog', { name: 'Chạy trên 2 máy' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Chép tất cả', hidden: true })).toBeInTheDocument()
+})
+
+test('L on a card, or its Forwards button, opens the host\'s port forwards', async () => {
+  const user = shell({ forwards_list: () => forwards, forward_toggle: () => true })
+  ;(await card('web-02')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('L Forwards'))
+  await user.keyboard('L')
+  const dialog = await screen.findByRole('dialog', { name: 'Forwards web-02' })
+  expect(asked('forwards_list')).toEqual([{ host: 'web-02' }])
+  const web = await within(dialog).findByRole('switch', { name: 'L 8080 localhost:80' })
+  await user.click(web)
+  expect(asked('forward_toggle')).toEqual([{ host: 'web-02', kind: 'L', value: '8080 localhost:80' }])
+  await emit('forward-state', { host: 'web-02', kind: 'L', value: '8080 localhost:80', state: 'on', error: null })
+  await vi.waitFor(() => expect(web).toHaveTextContent('● On'))
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Forwards' }))
+  expect(await screen.findByRole('dialog', { name: 'Forwards web-01' })).toBeInTheDocument()
+  setLang('vi')
+  expect(await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })).toBeInTheDocument()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('L Chuyển tiếp'))
 })

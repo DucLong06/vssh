@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use serde_json::{json, Value};
 use vssh_core::conn_err::Fail;
 
-use super::{call, failed, home, listen, next, other, until, window, Fake};
+use super::{call, failed, held, home, listen, next, other, until, window, Fake};
 
 fn row(kind: &str, port: u16, to: (&str, u16), value: &str, state: &str) -> Value {
     json!({
@@ -60,6 +60,8 @@ fn a_forward_is_added_started_stopped_and_removed() {
          RemoteForward 9000 localhost:3000\n"
     ));
     assert_eq!(list(), Ok(json!([web, back, socks])));
+    // What the window's own tests render as a host's forwards.
+    held("fixtures/forwards.json", &list().unwrap());
 
     // On: asked of the host the config names, and said to be listening.
     assert_eq!(

@@ -9,9 +9,10 @@
     hosts: Host[]
     onhost: (alias: string) => void
     onquick: () => void
+    onsnippets: () => void
     onclose: () => void
   }
-  let { hosts, onhost, onquick, onclose }: Props = $props()
+  let { hosts, onhost, onquick, onsnippets, onclose }: Props = $props()
 
   type Item = { key: string; label: string; detail: string; action: boolean; run: () => void }
 
@@ -23,13 +24,11 @@
     scores.reduce((a, b) => (a === null ? b : b === null ? a : Math.min(a, b)), null)
 
   const items = $derived.by(() => {
-    const quick: Item = {
-      key: 'quick-connect',
-      label: t('quick_connect'),
-      detail: 'user@host[:port]',
-      action: true,
-      run: onquick,
-    }
+    // `en`: an action's name whatever language its label is in ("qc" finds the first).
+    const actions = [
+      { key: 'quick-connect', label: t('quick_connect'), detail: 'user@host[:port]', en: 'quick connect', run: onquick },
+      { key: 'snippets', label: t('snippets'), detail: 's', en: 'snippets', run: onsnippets },
+    ].map(({ en, ...item }) => ({ item: { ...item, action: true }, en }))
     const rows = hosts.map((host) => {
       const detail = address(host)
       const item = { key: host.alias, label: host.alias, detail, action: false, run: () => onhost(host.alias) }
@@ -38,10 +37,9 @@
       const rest = best(...[detail, ...tagsOf(host)].map((field) => fuzzy(query, field)))
       return { item, score: best(fuzzy(query, host.alias), rest === null ? null : rest + 100) }
     })
-    if (!query.trim()) return [quick, ...rows.map((row) => row.item)]
-    // "qc" is the action's short name whatever language its label is in.
-    const action = { item: quick, score: best(fuzzy(query, quick.label), fuzzy(query, 'quick connect')) }
-    return [...rows, action]
+    if (!query.trim()) return [...actions, ...rows].map((row) => row.item)
+    const found = actions.map(({ item, en }) => ({ item, score: best(fuzzy(query, item.label), fuzzy(query, en)) }))
+    return [...rows, ...found]
       .filter((row) => row.score !== null)
       .sort((a, b) => a.score! - b.score!)
       .map((row) => row.item)

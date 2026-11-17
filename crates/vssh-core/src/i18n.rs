@@ -2,7 +2,7 @@
 //! be added in one of them only. The desktop app reads this table as JSON
 //! (`crates/vssh-desktop/src/lib/strings.json`, held equal to it by a test).
 //! The Vietnamese terms are the TUI's: máy chủ, thẻ, phiên, kết nối nhanh,
-//! chưa kiểm tra, mất kết nối. `{n}` in a text is a number the window puts in,
+//! chưa kiểm tra, mất kết nối, đoạn lệnh. `{n}` in a text is a number the window puts in,
 //! `{name}` a file's name.
 
 use crate::config::Lang;
@@ -11,7 +11,7 @@ use crate::config::Lang;
 pub const STRINGS: &[(&str, &str, &str)] = &[
     ("hosts", "Hosts", "Máy chủ"),
     ("tags", "Tags", "Thẻ"),
-    ("snippets", "Snippets", "Snippet"),
+    ("snippets", "Snippets", "Đoạn lệnh"),
     ("sessions", "Sessions", "Phiên"),
     ("no_hosts", "No hosts yet.", "Chưa có máy chủ nào."),
     (
@@ -121,11 +121,45 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("transfers", "Transfers", "Truyền tệp"),
     ("waiting", "waiting", "đang chờ"),
+    // The end of the file view's hint; its keys are words of the rows above.
     (
-        "files_keys",
-        "Space select · c copy · / filter · . hidden files · right-click more",
-        "Space chọn · c sao chép · / lọc · . tệp ẩn · chuột phải: thêm",
+        "right_click_more",
+        "right-click more",
+        "chuột phải thao tác khác",
     ),
+    // `{done}` and `{total}` are sizes, `{name}` whose side the part is on.
+    (
+        "cancelled_left",
+        "cancelled · {done} of {total} left on {name}",
+        "đã huỷ · còn {done} / {total} trên {name}",
+    ),
+    // Snippets and batches. "Run on" is the title of the TUI's batch prompt.
+    ("run_on", "Run on {n} host(s)", "Chạy trên {n} máy"),
+    ("command", "Command", "Lệnh"),
+    ("run", "Run", "Chạy"),
+    ("add", "Add", "Thêm"),
+    ("edit", "Edit", "Sửa"),
+    ("save", "Save", "Lưu"),
+    ("all_hosts", "all hosts", "mọi máy chủ"),
+    ("no_snippets", "No snippets yet.", "Chưa có đoạn lệnh nào."),
+    // `{name}` is a parameter of a snippet: what stands between its `{{ }}`.
+    ("param_hint", "value for {name}", "giá trị cho {name}"),
+    ("no_output", "(no output)", "(không có kết quả)"),
+    ("scroll", "scroll", "cuộn"),
+    ("copy_all", "Copy all", "Chép tất cả"),
+    // The TUI's word for what Ctrl-A y did.
+    ("copied", "copied", "đã chép"),
+    // A host's port forwards, in the TUI's word for them.
+    ("forwards", "Forwards", "Chuyển tiếp"),
+    ("no_forwards", "No forwards yet.", "Chưa có chuyển tiếp nào."),
+    ("kind", "Kind", "Loại"),
+    ("local_port", "Local port", "Cổng cục bộ"),
+    ("remote", "Remote", "Đích"),
+    ("status", "Status", "Trạng thái"),
+    ("on", "On", "Bật"),
+    ("off", "Off", "Tắt"),
+    ("starting", "starting", "đang bật"),
+    ("try_port", "Try port {n}", "Thử cổng {n}"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

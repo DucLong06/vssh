@@ -41,7 +41,7 @@
 
   /** One file on its way: `up` to the host, else down from it. Both paths are in full. */
   type Copy = { up: boolean; name: string; local: string; remote: string }
-  type Job = Copy & Failed & { id: string; done: number; total: number; bps: number; state: 'waiting' | 'running' | 'failed' }
+  type Job = Copy & Failed & { id: string; done: number; total: number; bps: number; state: 'waiting' | 'running' | 'failed' | 'cancelled' }
   let transfers = $state<Job[]>([])
   let running = 0
   /** Set when the view goes: what still runs is stopped and reports to nobody. */
@@ -173,8 +173,8 @@
       else await api.sftpDownload(host, job.remote, job.local, job.id)
       drop(job)
     } catch (error) {
-      // A cancelled transfer is taken off the list by then, and is no failure.
-      if (transfers.includes(job)) Object.assign(job, { state: 'failed', error })
+      // A cancelled transfer is no failure, on the list or off it.
+      if (transfers.includes(job) && (job as Job).state !== 'cancelled') Object.assign(job, { state: 'failed', error })
     } finally {
       unlisten()
       running--
@@ -186,10 +186,11 @@
     }
   }
 
-  /** Stops a transfer that runs, and takes its line off the list, as it does for one that waits or has failed. */
+  /** Stops a transfer that runs. Its line stays if a part of the file is over there: that is no whole file. */
   function cancel(job: Job) {
     if (job.state === 'running') void api.sftpCancel(job.id)
-    drop(job)
+    if (job.state === 'running' && job.done) job.state = 'cancelled'
+    else drop(job)
   }
 
   const name = $derived(typed.trim())
@@ -384,11 +385,20 @@
               {job.up ? '↑' : '↓'}
             </span>
             <span class="w-48 shrink-0 truncate" title={job.up ? job.remote : job.local}>{job.name}</span>
-            {#if job.state === 'failed'}
-              <p role="alert" title={job.why?.chain} class="min-w-0 flex-1 truncate">
-                <strong class="text-red">✗ {job.why?.label}</strong>
-                <span class="text-white">{job.why?.message}</span>
-              </p>
+            {#if job.state === 'failed' || job.state === 'cancelled'}
+              {#if job.state === 'failed'}
+                <p role="alert" title={job.why?.chain} class="min-w-0 flex-1 truncate">
+                  <strong class="text-red">✗ {job.why?.label}</strong>
+                  <span class="text-white">{job.why?.message}</span>
+                </p>
+              {:else}
+                <p class="min-w-0 flex-1 truncate text-yellow">
+                  {t('cancelled_left')
+                    .replace('{done}', human(job.done))
+                    .replace('{total}', human(job.total))
+                    .replace('{name}', job.up ? host : t('local'))}
+                </p>
+              {/if}
               <button
                 type="button"
                 aria-label="{t('close')} {job.name}"
@@ -419,7 +429,7 @@
                 type="button"
                 aria-label="{t('cancel')} {job.name}"
                 onclick={() => cancel(job)}
-                class="shrink-0 cursor-pointer rounded-md border border-edge px-2 text-red hover:bg-selection"
+                class="shrink-0 cursor-pointer rounded-md border border-edge px-2 text-white hover:bg-selection hover:text-red"
               >
                 {t('cancel')}
               </button>

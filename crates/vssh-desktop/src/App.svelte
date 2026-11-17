@@ -1,14 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick as rendered } from 'svelte'
   import { api, explain, type ConnError, type Host, type PtyState, type Shown, type Snippet } from './lib/api'
   import Dashboard from './lib/Dashboard.svelte'
   import Failure from './lib/Failure.svelte'
   import Files from './lib/Files.svelte'
+  import Forwards from './lib/Forwards.svelte'
   import { i18n, t } from './lib/i18n.svelte'
   import { poll, relabel } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
   import Sidebar from './lib/Sidebar.svelte'
+  import Batch from './lib/Batch.svelte'
+  import Snippets from './lib/Snippets.svelte'
   import Statusbar from './lib/Statusbar.svelte'
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
@@ -37,7 +40,16 @@
   let selected = $state<string | null>(null)
   /** The tag the sidebar narrowed the hosts to. */
   let tag = $state<string | null>(null)
-  let modal = $state<'palette' | 'quick' | null>(null)
+  /** The hosts marked on the dashboard. */
+  let marked = $state<string[]>([])
+  /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
+  const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
+  let dashboard = $state<Dashboard>()
+  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | null>(null)
+  /** The host whose forwards are open. */
+  let forwarding = $state('')
+  /** The command the batch dialog runs, and where. */
+  let job = $state<{ hosts: Host[]; command: string; params: Record<string, string> }>()
   /** Why the hosts could not be read. */
   let failed = $state<Shown | null>(null)
 
@@ -249,6 +261,7 @@
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
     <Dashboard
+      bind:this={dashboard}
       {hosts}
       {tag}
       {selected}
@@ -257,7 +270,18 @@
       onselect={(alias) => (selected = alias)}
       onconnect={open}
       onfiles={browse}
+      onforwards={(alias) => {
+        forwarding = alias
+        modal = 'forwards'
+      }}
+      onsnippets={() => (modal = 'snippets')}
+      onbatch={() => {
+        if (!picked.length) return
+        job = { hosts: picked, command: '', params: {} }
+        modal = 'batch'
+      }}
       onpalette={() => (modal = 'palette')}
+      bind:marked
     />
     {#each sessions as session (session.id)}
       <Terminal
@@ -286,6 +310,7 @@
     files={active !== null && !front}
     broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
+    onsnippets={() => (modal = 'snippets')}
     onpalette={() => (modal = 'palette')}
   />
 </div>
@@ -310,10 +335,28 @@
       selected = alias
       active = null
       modal = null
+      // Also when it was the selected one already; once the palette is gone, which held the focus.
+      void rendered().then(() => dashboard?.focus(alias))
     }}
     onquick={() => (modal = 'quick')}
+    onsnippets={() => (modal = 'snippets')}
     onclose={() => (modal = null)}
   />
 {:else if modal === 'quick'}
   <QuickConnect onconnect={connect} onclose={() => (modal = null)} />
+{:else if modal === 'snippets'}
+  <Snippets
+    bind:snippets
+    {hosts}
+    picked={picked.map((host) => host.alias)}
+    onrun={(names, command, params) => {
+      job = { hosts: hosts.filter((host) => names.includes(host.alias)), command, params }
+      modal = 'batch'
+    }}
+    onclose={() => (modal = null)}
+  />
+{:else if modal === 'batch' && job}
+  <Batch {...job} onclose={() => (modal = null)} />
+{:else if modal === 'forwards'}
+  <Forwards host={forwarding} onclose={() => (modal = null)} />
 {/if}

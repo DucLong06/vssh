@@ -16,6 +16,7 @@
     leader?: boolean
     /** How many tabs are broadcasting. */
     broadcasting?: number
+    onsnippets: () => void
     onpalette: () => void
   }
   let {
@@ -27,16 +28,21 @@
     files = false,
     leader = false,
     broadcasting = 0,
+    onsnippets,
     onpalette,
   }: Props = $props()
 
   const button = 'cursor-pointer rounded px-1.5 hover:bg-selection'
 </script>
 
-<footer class="col-span-2 flex items-center gap-4 border-t border-edge bg-bar px-3 py-1 text-white">
-  <span>{t('hosts')} <span class="text-fg">{hosts}</span></span>
-  <span>{t('snippets')} <span class="text-fg">{snippets}</span></span>
-  <span>{t('sessions')} <span class="text-fg">{sessions}</span></span>
+<!-- One line: what has no room is the selected host's address, which its card has too. -->
+<footer class="col-span-2 flex items-center gap-4 border-t border-edge bg-bar px-3 py-1 whitespace-nowrap text-white">
+  <span class="shrink-0">{t('hosts')} <span class="text-fg">{hosts}</span></span>
+  <!-- The way to them for the pointer; `s` on the dashboard is the key. -->
+  <button type="button" onclick={onsnippets} aria-keyshortcuts="s" class="{button} -mx-1.5 shrink-0">
+    {t('snippets')} <span class="text-fg">{snippets}</span>
+  </button>
+  <span class="shrink-0">{t('sessions')} <span class="text-fg">{sessions}</span></span>
   {#if broadcasting}
     <strong class="shrink-0 text-yellow">{t('broadcasting').replace('{n}', String(broadcasting))}</strong>
   {/if}
@@ -47,7 +53,17 @@
       {t('leader_menu')}
     </span>
   {:else if files}
-    <span role="status" class="truncate">{t('files_keys')}</span>
+    <span role="status" class="truncate">
+      <kbd class="text-magenta">Space</kbd>
+      {t('select')} ·
+      <kbd class="text-magenta">c</kbd>
+      {t('copy')} ·
+      <kbd class="text-magenta">/</kbd>
+      {t('filter')} ·
+      <kbd class="text-magenta">.</kbd>
+      {t('hidden_files')} ·
+      {t('right_click_more')}
+    </span>
   {:else if selected}
     <span class="truncate"><span class="text-cyan">{selected.alias}</span> {address(selected)}</span>
     <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
@@ -59,17 +75,21 @@
       <kbd class="text-magenta">v</kbd>
       {t('quick_peek')} ·
       <kbd class="text-magenta">f</kbd>
-      {t('files')}
+      {t('files')} ·
+      <kbd class="text-magenta">x</kbd>
+      {t('run')} ·
+      <kbd class="text-magenta">L</kbd>
+      {t('forwards')}
     </span>
   {/if}
-  <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto text-magenta">
+  <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto shrink-0 text-magenta">
     Ctrl-K
   </button>
   <button
     type="button"
     onclick={() => setLang(i18n.lang === 'en' ? 'vi' : 'en')}
     aria-label="{t('language')}: {i18n.lang.toUpperCase()}"
-    class="{button} text-fg"
+    class="{button} shrink-0 text-fg"
   >
     {i18n.lang.toUpperCase()}
   </button>
