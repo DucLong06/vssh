@@ -169,6 +169,8 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 
 `Enter` keeps the filter, `Esc` clears it. Groups and tags are stored in vssh's own database, not in the ssh config.
 
+**Tag drawer.** `w` opens a drawer on the right with every tag and group as a coloured pill and the number of hosts it lists, most used first. `1`-`9` filter the host list by that tag (the same as typing `/#tag`, so the number is exactly how many hosts you get); `j`/`k` and `Enter` pick one further down. `0` clears the filter, `/` narrows the drawer itself by typing, `w` or `q` closes it and keeps the filter, `Esc` closes it and clears the filter.
+
 ## Keys
 
 `?` shows this list inside vssh.
@@ -187,6 +189,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `y` | copy `ssh <host>` to the clipboard |
 | | `p` | pin host |
 | | `f` / `n` | port forwards / snippets of the host |
+| | `w` | tag drawer: `1`-`9` filter by a tag, `0` or `Esc` clear, `/` search the tags |
 | | `r` | check which hosts are reachable |
 | | `v` | quick peek: uptime, load, memory and disk of the host, without a session |
 | | `P` / `V` | store a password in the vault / unlock or lock the vault |
@@ -251,7 +254,7 @@ web-01 = "cd /srv/app && git status"
 accent = "cyan"         # also: border, text, dim, selection, ok, error, warn, bar, key
 
 [keys]                  # one character each; leader is pressed with Ctrl
-leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets,
+leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets, tags,
 quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
 ```
 

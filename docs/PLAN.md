@@ -179,3 +179,15 @@ free row there would cost every pane a line of terminal.
   asked. A host that is running, silent or failed still gets a line.
 - **Per-host errors** are `conn_err` reports, the same wording as everywhere.
 - No cap on parallel connections yet (marked in the code).
+
+## Tag drawer (brief 9, M4)
+
+- **A focus, not a popup.** `Focus::Tags` puts the drawer where the details
+  are (the right side; the whole body in a small window), like the forwards
+  and snippets panels. The host list stays visible and filters live.
+- **One meaning of "has this tag".** Picking a tag sets the search to
+  `#tag`. `tag_counts` counts with the same `has_tag` the search uses, so the
+  number next to a tag is the length of the list it gives, prefix match and
+  all (`web` counts a host tagged `webapp`).
+- **Esc clears and closes**, as the brief says; `w` and `q` close and keep
+  the filter, so there is a way out that changes nothing.

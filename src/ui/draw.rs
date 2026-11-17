@@ -267,6 +267,9 @@ fn breadcrumb(app: &App) -> String {
     if let (Some(panel), Some(alias)) = (panel, app.alias()) {
         crumbs.extend([alias, panel.to_string()]);
     }
+    if app.focus == Focus::Tags {
+        crumbs.push(lang.pick("tags", "thẻ").to_string());
+    }
     if app.focus == Focus::Search {
         crumbs.push(format!("/{}▏", app.filter));
     } else if !app.filter.is_empty() {
@@ -467,7 +470,7 @@ fn address(app: &App, alias: &str) -> String {
 /// with one-line rows, details below. Small windows: one panel at a time,
 /// with the details (or forwards / snippets) taking the place of the list.
 fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
-    let side_up = app.info || matches!(app.focus, Focus::Forwards | Focus::Snippets);
+    let side_up = app.info || matches!(app.focus, Focus::Forwards | Focus::Snippets | Focus::Tags);
     let (list_area, side_area) = match app.shape {
         Shape::Wide => {
             let split = [Constraint::Percentage(44), Constraint::Min(24)];
@@ -516,6 +519,10 @@ fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
     }
 
     let Some(right) = side_area else { return };
+    // The drawer does not depend on a selected host: a tag may list none.
+    if app.focus == Focus::Tags {
+        return tag_drawer(app, f, right);
+    }
     let Some(alias) = app.alias() else {
         let k = &app.cfg.keys;
         let hint = match app.filter.is_empty() {
@@ -534,6 +541,59 @@ fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
         Focus::Snippets => snippets(app, &alias, f, right),
         _ => details(app, &alias, f, right),
     }
+}
+
+/// The tag drawer: every tag and group as a pill in its colour, with the
+/// number of hosts it lists. The first nine have their digit in front; the
+/// tag the list is filtered by is marked.
+fn tag_drawer(app: &App, f: &mut Frame, area: Rect) {
+    let th = &app.cfg.theme;
+    let lang = app.cfg.lang;
+    let dim = Style::new().fg(th.dim);
+    let active = app.filter.strip_prefix('#').unwrap_or("\0");
+    let items = app
+        .drawer_tags()
+        .into_iter()
+        .enumerate()
+        .map(|(i, (tag, count))| {
+            let digit = match i {
+                0..9 => format!("{} ", i + 1),
+                _ => "  ".to_string(),
+            };
+            let mark = if tag.eq_ignore_ascii_case(active) {
+                "● "
+            } else {
+                "  "
+            };
+            let badge = Style::new().fg(Color::Black).bg(chip(&tag));
+            let mut spans = vec![
+                Span::styled(digit, Style::new().fg(th.key).bold()),
+                Span::styled(mark, Style::new().fg(th.accent)),
+            ];
+            spans.extend(pill(&tag, badge, [Color::Reset; 2], app.cfg.nerd_font));
+            spans.push(Span::styled(format!(" {count}"), dim));
+            Line::from(spans)
+        });
+    let mut items: Vec<Line> = items.collect();
+    if items.is_empty() {
+        let none = lang.pick(
+            "no tags: add them with e on a host",
+            "chưa có thẻ: nhấn e trên một máy để thêm",
+        );
+        items.push(Line::styled(none, dim));
+    }
+    let (query, typing) = &app.tag_query;
+    let mut title = format!("{} {}", lang.pick("Tags", "Thẻ"), items.len());
+    if *typing {
+        title.push_str(&format!("  /{query}▏"));
+    } else if !query.is_empty() {
+        title.push_str(&format!("  /{query}"));
+    }
+    let list = List::new(items)
+        .block(panel(&title, true, th))
+        .highlight_style(selection(th));
+    let mut state = ListState::default().with_selected(Some(app.sub_sel));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
@@ -851,6 +911,18 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
             hint("enter", "keep", "giữ", true),
             hint("esc", "clear", "xoá", true),
         ]],
+        (None, Focus::Tags) => vec![
+            vec![
+                hint("1-9", "filter by tag", "lọc theo thẻ", true),
+                hint("enter", "pick", "chọn", true),
+                hint("0", "clear", "bỏ lọc", !app.filter.is_empty()),
+            ],
+            vec![
+                hint("/", "search tags", "tìm thẻ", true),
+                hint("esc", "clear and close", "bỏ lọc và đóng", true),
+                hint(&key(k.tags), "close", "đóng", true),
+            ],
+        ],
         (None, focus @ (Focus::Forwards | Focus::Snippets)) => {
             let alias = app.alias().unwrap_or_default();
             let (any, action) = match focus {
@@ -897,6 +969,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                 vec![
                     hint(&key(k.forwards), "forwards", "chuyển cổng", host),
                     hint(&key(k.snippets), "snippets", "snippet", host),
+                    hint(&key(k.tags), "tags", "thẻ", true),
                     hint(&key(k.add), "add", "thêm", true),
                     hint(&key(k.edit), "edit", "sửa", host),
                     hint(&key(k.copy), "copy ssh", "chép ssh", host),

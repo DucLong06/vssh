@@ -168,6 +168,8 @@ Nhấn `e` trên một máy chủ rồi điền **Group** (một tên, ví dụ 
 
 `Enter` giữ bộ lọc, `Esc` xoá bộ lọc. Nhóm và thẻ nằm trong cơ sở dữ liệu riêng của vssh, không nằm trong ssh config.
 
+**Ngăn thẻ.** `w` mở một ngăn bên phải liệt kê mọi thẻ và nhóm dưới dạng nhãn màu, kèm số máy chủ mà thẻ đó liệt kê, thẻ dùng nhiều đứng trước. `1`-`9` lọc danh sách máy theo thẻ đó (giống hệt gõ `/#thẻ`, nên con số chính là số máy bạn nhận được); `j`/`k` rồi `Enter` để chọn thẻ ở phía dưới. `0` bỏ lọc, `/` thu hẹp chính ngăn thẻ bằng cách gõ, `w` hoặc `q` đóng ngăn và giữ bộ lọc, `Esc` đóng ngăn và bỏ lọc.
+
 ## Phím tắt
 
 Nhấn `?` trong vssh để xem danh sách này.
@@ -186,6 +188,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `y` | chép `ssh <máy>` vào clipboard |
 | | `p` | ghim máy chủ |
 | | `f` / `n` | chuyển tiếp cổng / snippet của máy chủ |
+| | `w` | ngăn thẻ: `1`-`9` lọc theo thẻ, `0` hoặc `Esc` bỏ lọc, `/` tìm trong các thẻ |
 | | `r` | kiểm tra máy chủ nào kết nối được |
 | | `v` | xem nhanh: uptime, tải, bộ nhớ và đĩa của máy, không cần mở phiên |
 | | `P` / `V` | lưu mật khẩu vào kho / mở hoặc khoá kho |
@@ -250,7 +253,7 @@ web-01 = "cd /srv/app && git status"
 accent = "cyan"         # còn có: border, text, dim, selection, ok, error, warn, bar, key
 
 [keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
-leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets,
+leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets, tags,
 quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
 ```
 

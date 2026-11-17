@@ -178,6 +178,8 @@ pub struct Keys {
     pub info: char,
     pub forwards: char,
     pub snippets: char,
+    /// Open the tag drawer: every tag and group with its host count.
+    pub tags: char,
     pub add: char,
     pub edit: char,
     pub delete: char,
@@ -208,6 +210,7 @@ impl Default for Keys {
             info: 'i',
             forwards: 'f',
             snippets: 'n',
+            tags: 'w',
             add: 'a',
             edit: 'e',
             delete: 'd',

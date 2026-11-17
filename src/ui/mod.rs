@@ -241,6 +241,8 @@ enum Focus {
     Search,
     Forwards,
     Snippets,
+    /// The tag drawer.
+    Tags,
 }
 
 pub struct App {
@@ -257,8 +259,10 @@ pub struct App {
     list: ListState,
     filter: String,
     focus: Focus,
-    /// Selection inside the forwards / snippets panel.
+    /// Selection inside the forwards / snippets panel or the tag drawer.
     sub_sel: usize,
+    /// What narrows the tag drawer, and whether it is being typed.
+    tag_query: (String, bool),
     marked: BTreeSet<String>,
     reach: HashMap<String, Option<u128>>,
     /// Why the last connection to a host failed, until one succeeds.
@@ -328,6 +332,32 @@ fn has_tag(meta: &Meta, query: &str) -> bool {
         .split([' ', ','])
         .chain([meta.grp.as_str()])
         .any(|t| !t.is_empty() && t.to_lowercase().starts_with(&query))
+}
+
+/// Every tag and group of these hosts with the number of hosts `#name`
+/// shows: the same prefix match as the search box, so the count in the
+/// drawer is the length of the list you get. Most used first, then by name;
+/// names that differ only in case are one entry, in the first spelling seen.
+fn tag_counts(hosts: &[String], meta: &HashMap<String, Meta>) -> Vec<(String, usize)> {
+    let metas: Vec<&Meta> = hosts.iter().filter_map(|h| meta.get(h)).collect();
+    let mut names: Vec<&str> = vec![];
+    for m in &metas {
+        for name in m.tags.split([' ', ',']).chain([m.grp.as_str()]) {
+            if !name.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                names.push(name);
+            }
+        }
+    }
+    let count = |name: &str| metas.iter().filter(|m| has_tag(m, name)).count();
+    let mut counts: Vec<(String, usize)> = names
+        .into_iter()
+        .map(|name| (name.to_string(), count(name)))
+        .collect();
+    counts.sort_by(|(a, na), (b, nb)| {
+        nb.cmp(na)
+            .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
+    });
+    counts
 }
 
 /// Opens the log file of a session: `<dir>/<alias>-<stamp>.log`, private to
@@ -435,6 +465,7 @@ impl App {
             filter: String::new(),
             focus: Focus::List,
             sub_sel: 0,
+            tag_query: (String::new(), false),
             marked: BTreeSet::new(),
             reach: HashMap::new(),
             fails: HashMap::new(),
@@ -539,6 +570,58 @@ impl App {
                 values.into_iter().map(|v| (*kind, v.to_string()))
             })
             .collect()
+    }
+
+    /// What the tag drawer lists: every tag with its count, narrowed by the
+    /// drawer's own search.
+    fn drawer_tags(&self) -> Vec<(String, usize)> {
+        let query = self.tag_query.0.to_lowercase();
+        let mut tags = tag_counts(&self.sshc.hosts(), &self.meta);
+        tags.retain(|(name, _)| name.to_lowercase().contains(&query));
+        tags
+    }
+
+    /// Keys of the tag drawer. Picking a tag is the search `#tag`.
+    fn tags_key(&mut self, k: KeyEvent) {
+        let tags = self.drawer_tags();
+        let (query, typing) = &mut self.tag_query;
+        let pick = match k.code {
+            // While the drawer's search is typed every key belongs to it.
+            KeyCode::Esc if *typing => {
+                query.clear();
+                *typing = false;
+                return self.sub_sel = 0;
+            }
+            KeyCode::Enter if *typing => return *typing = false,
+            KeyCode::Backspace | KeyCode::Char(_) if *typing => {
+                match k.code {
+                    KeyCode::Char(c) => query.push(c),
+                    _ => drop(query.pop()),
+                }
+                return self.sub_sel = 0;
+            }
+            KeyCode::Char('/') => return *typing = true,
+            KeyCode::Down | KeyCode::Char('j') => {
+                return self.sub_sel = (self.sub_sel + 1).min(tags.len().saturating_sub(1));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                return self.sub_sel = self.sub_sel.saturating_sub(1)
+            }
+            KeyCode::Char(c @ '1'..='9') => tags.get(c as usize - '1' as usize),
+            KeyCode::Enter => tags.get(self.sub_sel),
+            KeyCode::Char('0') => None,
+            // Esc clears the filter on its way out; the other ways out keep it.
+            KeyCode::Esc => {
+                self.focus = Focus::List;
+                None
+            }
+            KeyCode::Left | KeyCode::Char('q' | 'h') => return self.focus = Focus::List,
+            KeyCode::Char(c) if c == self.cfg.keys.tags => return self.focus = Focus::List,
+            _ => return,
+        };
+        self.filter = pick.map(|(tag, _)| format!("#{tag}")).unwrap_or_default();
+        self.sel = 0;
+        self.refilter();
     }
 
     /// Global snippets plus the ones bound to this host.
@@ -1324,6 +1407,7 @@ impl App {
         match self.focus {
             Focus::Search => return self.search_key(k),
             Focus::Forwards | Focus::Snippets => return self.panel_key(k),
+            Focus::Tags => return self.tags_key(k),
             Focus::List => {}
         }
         let keys = &self.cfg.keys;
@@ -1388,6 +1472,10 @@ impl App {
                 self.form(title, fields, false, After::ConnectTag);
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
+            KeyCode::Char(c) if c == keys.tags => {
+                (self.focus, self.sub_sel) = (Focus::Tags, 0);
+                self.tag_query = (String::new(), false);
+            }
             KeyCode::Char(c) if c == keys.ping => self.ping_all(),
             KeyCode::Char(c) if c == keys.peek => {
                 if let Some(alias) = self.alias() {
@@ -1727,6 +1815,7 @@ impl App {
              \x20 {peek}            quick peek: uptime, load, memory, disk, without a session\n\
              \x20 {batch}            run one command on every marked host (/ filters the results)\n\
              \x20 {forwards}            port forwards     {snippets}       snippets\n\
+             \x20 {tags}            tag drawer: 1-9 filter by a tag, 0 or Esc clear, / search tags\n\
              \x20 {password}            store password    {vault}       unlock / lock vault\n\
              \x20 {quit}            quit              Q       quit (from SFTP too)\n\n\
              FORWARDS / SNIPPETS PANEL\n\
@@ -1764,6 +1853,7 @@ impl App {
             batch = k.batch,
             forwards = k.forwards,
             snippets = k.snippets,
+            tags = k.tags,
             password = k.password,
             vault = k.vault,
             quit = k.quit,
@@ -1785,6 +1875,7 @@ impl App {
              \x20 {peek}            xem nhanh: uptime, tải, bộ nhớ, đĩa, không cần mở phiên\n\
              \x20 {batch}            chạy một lệnh trên mọi máy đã đánh dấu (/ để lọc kết quả)\n\
              \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
+             \x20 {tags}            ngăn thẻ: 1-9 lọc theo thẻ, 0 hoặc Esc bỏ lọc, / tìm thẻ\n\
              \x20 {password}            lưu mật khẩu      {vault}       mở / khoá kho mật khẩu\n\
              \x20 {quit}            thoát             Q       thoát (cả từ SFTP)\n\n\
              KHUNG CHUYỂN TIẾP CỔNG / SNIPPET\n\
@@ -1822,6 +1913,7 @@ impl App {
             batch = k.batch,
             forwards = k.forwards,
             snippets = k.snippets,
+            tags = k.tags,
             password = k.password,
             vault = k.vault,
             quit = k.quit,
@@ -2383,6 +2475,53 @@ mod tests {
             then: After::QuickConnect,
         };
         assert_eq!((form(None).rows(), form(Some(false)).rows()), (2, 3));
+    }
+
+    #[test]
+    fn tag_drawer_counts_what_the_filter_would_show() {
+        let meta = |grp: &str, tags: &str| Meta {
+            grp: grp.into(),
+            tags: tags.into(),
+            ..Meta::default()
+        };
+        let all: HashMap<String, Meta> = [
+            ("web-01", meta("prod", "web eu")),
+            ("web-02", meta("prod", "Web, us")),
+            ("web-03", meta("staging", "webapp")),
+            ("db-01", meta("prod", "db")),
+            ("bare", meta("", "")),
+            ("gone", meta("prod", "web")),
+        ]
+        .into_iter()
+        .map(|(alias, meta)| (alias.to_string(), meta))
+        .collect();
+        // `gone` has metadata but is no longer a host: it does not count.
+        let hosts: Vec<String> = ["web-01", "web-02", "web-03", "db-01", "bare", "nometa"]
+            .map(String::from)
+            .into();
+        let counts = tag_counts(&hosts, &all);
+        let shown: Vec<(&str, usize)> = counts.iter().map(|(t, n)| (t.as_str(), *n)).collect();
+        // `web` also counts `webapp`: `#web` shows that host too. `Web` is the same tag.
+        assert_eq!(
+            shown,
+            [
+                ("prod", 3),
+                ("web", 3),
+                ("db", 1),
+                ("eu", 1),
+                ("staging", 1),
+                ("us", 1),
+                ("webapp", 1)
+            ]
+        );
+        // Each count is exactly the number of hosts the search `#tag` lists.
+        for (tag, count) in &counts {
+            let listed = hosts
+                .iter()
+                .filter(|h| all.get(*h).is_some_and(|m| has_tag(m, tag)));
+            assert_eq!(listed.count(), *count, "{tag}");
+        }
+        assert!(tag_counts(&[], &all).is_empty());
     }
 
     #[test]
