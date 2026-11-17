@@ -95,12 +95,12 @@
 </script>
 
 <!-- Dark in both themes, as the terminal in it is; in Day the theme's border is around it. -->
-<div role="tabpanel" aria-label={label} hidden={!active} class="relative min-h-0 flex-1 bg-term p-2 day:border day:border-edge">
+<div role="tabpanel" aria-label={label} hidden={!active} class="relative min-h-0 flex-1 bg-term px-4 py-3 day:border day:border-edge">
   <div bind:this={box} class="h-full"></div>
   {#if closed}
     <p
       role="status"
-      class="absolute top-2 right-4 z-10 flex max-w-[80%] items-center gap-2 rounded-md border border-red bg-black px-2 py-1"
+      class="absolute top-3 right-4 z-10 flex max-w-[80%] items-center gap-3 rounded-xl border border-red bg-panel py-1.5 pr-1.5 pl-3 text-[13px] shadow-card"
     >
       <span class="shrink-0 text-red">● {t('disconnected')}</span>
       {#if why}
@@ -109,7 +109,7 @@
       <button
         type="button"
         onclick={onreconnect}
-        class="shrink-0 cursor-pointer rounded border border-edge px-2 text-magenta hover:bg-selection"
+        class="shrink-0 cursor-pointer rounded-lg border border-edge px-3 py-0.5 font-medium text-fg hover:bg-selection"
       >
         {t('reconnect')}
       </button>

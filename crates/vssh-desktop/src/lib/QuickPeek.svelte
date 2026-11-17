@@ -5,8 +5,9 @@
   import { parts, uptime } from './stats'
   import { addr, fake, streamer } from './streamer.svelte'
 
-  // The TUI's quick peek, as a popover under a card: what the host said
-  // about itself the last time it was asked, and how long ago that was.
+  // The TUI's quick peek, as a panel that slides out from under its card:
+  // what the host said about itself the last time it was asked, and how long
+  // ago that was.
   type Props = { host: Host; info?: Live }
   let { host, info }: Props = $props()
 
@@ -64,39 +65,43 @@
   bind:this={box}
   role="dialog"
   aria-label="{t('quick_peek')}: {host.alias}"
-  class="absolute top-full right-0 left-0 z-10 mt-1 cursor-default rounded-xl border border-blue/50 bg-black p-3 shadow-2xl shadow-black"
+  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-[13px] shadow-card motion-reduce:animate-none"
 >
-  <p class="flex justify-between gap-2">
-    <strong class="truncate text-magenta">{t('quick_peek')}: {host.alias}</strong>
-    <span class="shrink-0 text-dim">{age}</span>
+  <p class="flex items-baseline justify-between gap-2">
+    <strong class="truncate text-sm font-semibold text-ink">{t('quick_peek')}: {host.alias}</strong>
+    <span class="shrink-0 text-xs text-dim">{age}</span>
   </p>
 
-  <h4 class="pt-2 text-xs text-cyan">{t('connection')}</h4>
-  {#if addr(host)}
-    <p class="truncate">{addr(host)}</p>
-  {/if}
-  <p class={reach.tone}><span aria-hidden="true">{reach.dot}</span> {reach.text}</p>
+  <div class="mt-3 rounded-xl bg-bg px-3 py-2">
+    <h4 class="text-[11px] font-semibold tracking-widest text-dim">{t('connection')}</h4>
+    {#if addr(host)}
+      <p class="truncate font-mono text-xs">{addr(host)}</p>
+    {/if}
+    <p class={reach.tone}><span aria-hidden="true" class="text-[10px]">{reach.dot}</span> {reach.text}</p>
+  </div>
 
   {#if info?.shown}
-    <p class="pt-2 break-words">
-      <strong class="text-red">✗ {info.shown.label}</strong>
-      {info.shown.message}
-    </p>
-    <p class="pt-1 text-xs break-words text-white">{info.shown.chain}</p>
+    <div class="mt-2 rounded-xl border border-dashed border-red/40 bg-bg px-3 py-2">
+      <p class="break-words">
+        <strong class="font-semibold text-red">✗ {info.shown.label}</strong>
+        {info.shown.message}
+      </p>
+      <p class="pt-1 font-mono text-xs break-words text-white">{info.shown.chain}</p>
+    </div>
   {:else if info?.peek}
-    <dl class="grid grid-cols-[auto_1fr] gap-x-4 pt-2">
+    <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 px-3 pt-3">
       {#each rows as [label, value, colour] (label)}
-        <dt class="text-white">{label}</dt>
+        <dt class="text-dim">{label}</dt>
         <dd class="truncate {value === undefined ? 'text-dim' : (colour ?? '')}">{value ?? '—'}</dd>
       {/each}
     </dl>
   {:else if info?.peek === null && !info.asking}
-    <p class="pt-2 text-white">{t('not_checked')}</p>
+    <p class="px-3 pt-3 text-white">{t('not_checked')}</p>
   {:else}
-    <p class="pt-2 text-white">{t('asking')} {host.alias}…</p>
+    <p class="px-3 pt-3 text-white">{t('asking')} {host.alias}…</p>
   {/if}
 
-  <p class="pt-2 text-white">
+  <p class="mt-3 border-t border-edge px-3 pt-3 text-xs text-white">
     <kbd class="text-magenta">r</kbd>
     {info?.shown ? t('try_again') : t('refresh')} ·
     <kbd class="text-magenta">esc</kbd>

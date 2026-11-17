@@ -20,16 +20,17 @@
   import KeySetup from './lib/KeySetup.svelte'
   import { fromTarget } from './lib/hosts'
   import { i18n, t } from './lib/i18n.svelte'
-  import { poll, relabel } from './lib/live.svelte'
+  import { down, live, poll, relabel, up } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
-  import Sidebar from './lib/Sidebar.svelte'
+  import Sidebar, { type Nav } from './lib/Sidebar.svelte'
   import Batch from './lib/Batch.svelte'
   import Snippets from './lib/Snippets.svelte'
   import Statusbar from './lib/Statusbar.svelte'
   import { learn, streamer, target } from './lib/streamer.svelte'
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
+  import Topbar from './lib/Topbar.svelte'
   import Vault from './lib/Vault.svelte'
 
   /** How often the hosts are asked for their figures, and every how many rounds pinged. */
@@ -140,6 +141,34 @@
   /** What a session is called on screen: a host's alias, or what a quick connect was typed as, which is an address. */
   const named = (title: string) => (hosts.some((host) => host.alias === title) ? title : target(title))
   const listed = $derived(streamer.on ? sessions.map((session) => ({ ...session, title: named(session.title) })) : sessions)
+
+  /** The head of the view in front: what it is called, and a line about it. */
+  const head = $derived.by(() => {
+    if (front) {
+      // What a quick connect was typed as is an address: letter by letter.
+      const said = { connecting: t('connecting'), up: t('connected'), closed: t('disconnected') }[front.state]
+      return { title: named(front.title), sub: front.busy ? `${said} · ${t('running')} ${front.busy}` : said, mono: front.quick }
+    }
+    const view = files.find((view) => view.id === active)
+    if (view) return { title: t('files'), sub: view.host }
+    const lost = hosts.filter((host) => down(live[host.alias])).length
+    const met = hosts.filter((host) => up(live[host.alias])).length
+    return { title: t('status'), sub: `${hosts.length} ${t('hosts')} · ${met} ${t('reachable')} · ${lost} ${t('down')}` }
+  })
+
+  /** What the rail asks for: a view, or the dialog of what has no view of its own. */
+  function go(to: Nav) {
+    if (to === 'dashboard' || to === 'hosts') active = null
+    // The list of hosts is the dashboard's: there, at its search.
+    if (to === 'hosts') void rendered().then(() => dashboard?.seek())
+    else if (to === 'sessions') active = sessions.at(-1)?.id ?? active
+    else if (to === 'files' && selected) browse(selected)
+    else if (to === 'snippets') modal = 'snippets'
+    else if (to === 'forwards' && selected) {
+      forwarding = selected
+      modal = 'forwards'
+    }
+  }
 
   function step(by: number) {
     active = tabs[(tabs.indexOf(active) + by + tabs.length) % tabs.length]
@@ -309,7 +338,7 @@
 
 <svelte:window onkeydowncapture={onkeydown} />
 
-<div class="grid h-full grid-cols-[16rem_1fr] grid-rows-[1fr_auto]">
+<div class="grid h-full grid-cols-[244px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
   <Sidebar
     {hosts}
     {selected}
@@ -320,12 +349,24 @@
     onsession={(id) => (active = id)}
     {vault}
     onvault={() => (modal = 'vault')}
+    current={active === null ? 'dashboard' : front ? 'sessions' : 'files'}
+    snippets={snippets.length}
+    onnav={go}
   />
 
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
-  <main class="flex min-h-0 min-w-0 flex-col">
+  <main class="flex min-h-0 min-w-0 flex-col bg-page">
+    <Topbar {...head} onpalette={() => (modal = 'palette')} />
+    <!-- A terminal or a file view is one frame with the tabs for its head; the dashboard is the page itself. -->
+    <div
+      data-framed={active !== null || undefined}
+      class="group/frame flex min-h-0 flex-1 flex-col data-[framed]:mx-8 data-[framed]:mt-5 data-[framed]:mb-6 data-[framed]:overflow-hidden data-[framed]:rounded-xl data-[framed]:border data-[framed]:border-edge data-[framed]:shadow-card"
+    >
     {#if sessions.length || files.length}
-      <Tabs sessions={listed} {files} {active} onpick={(id) => (active = id)} onclose={close} />
+      <!-- Over the dashboard the tabs are a strip of their own in the header's band. -->
+      <div class={active === null ? 'bg-bg px-8 pb-4 *:rounded-xl *:border' : ''}>
+        <Tabs sessions={listed} {files} {active} onpick={(id) => (active = id)} onclose={close} />
+      </div>
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
     <Dashboard
@@ -373,6 +414,7 @@
     {#each files as view (view.id)}
       <Files host={view.host} active={view.id === active} />
     {/each}
+    </div>
   </main>
 
   <Statusbar
@@ -385,7 +427,6 @@
     broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
     onsnippets={() => (modal = 'snippets')}
-    onpalette={() => (modal = 'palette')}
     onsave={front?.quick ? () => edit(undefined, front) : undefined}
   />
 </div>

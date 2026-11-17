@@ -75,12 +75,12 @@
     act()
   }
 
-  const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 hover:bg-selection'
-  const small = 'cursor-pointer rounded-md border border-edge px-2 hover:bg-selection'
-  const primary = `${button} border-blue bg-selection text-blue disabled:opacity-60`
-  const field = 'mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim'
+  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
+  const small = 'cursor-pointer rounded-lg border border-edge px-2.5 py-0.5 text-[13px] font-medium hover:bg-selection'
+  const primary = `${button} border-blue bg-blue! font-semibold text-page hover:brightness-110 disabled:opacity-60`
+  const field = 'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim'
   const chip =
-    'cursor-pointer rounded-md border border-edge px-2 py-0.5 text-white hover:bg-selection has-focus-visible:outline-2 has-focus-visible:outline-blue'
+    'cursor-pointer rounded-lg border border-edge px-2 py-0.5 text-white hover:bg-selection has-focus-visible:outline-2 has-focus-visible:outline-blue'
 </script>
 
 {#snippet refused()}
@@ -95,24 +95,24 @@
 <Modal label={t('snippets')} {onclose}>
   <div bind:this={root}>
     {#if view.kind === 'list'}
-      <div class="grid gap-3 p-4">
+      <div class="grid gap-4 p-6">
         <p class="flex items-center">
-          <span class="text-cyan">{t('snippets')}</span>
+          <span class="text-base font-semibold text-ink">{t('snippets')}</span>
           <button type="button" onclick={() => edit()} class="{small} ml-auto text-blue">{t('add')}</button>
         </p>
         {#if snippets.length}
           <!-- A column, not a grid: a row is as wide as the dialog and its command is cut to fit. -->
           <ul aria-label={t('snippets')} class="flex max-h-[50vh] flex-col gap-1 overflow-y-auto">
             {#each snippets as snippet (snippet.id)}
-              <li class="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-selection/50">
+              <li class="flex items-center gap-2 rounded-xl bg-bg px-3 py-2 hover:bg-selection">
                 <div class="min-w-0 flex-1">
                   <p class="flex items-baseline gap-2">
-                    <strong class="truncate">{snippet.name}</strong>
+                    <strong class="truncate font-semibold text-ink">{snippet.name}</strong>
                     <span class="shrink-0 {snippet.host ? 'text-cyan' : 'text-white'}">
                       {snippet.host || t('all_hosts')}
                     </span>
                   </p>
-                  <p title={snippet.command} class="truncate text-white">{snippet.command}</p>
+                  <p title={snippet.command} class="truncate font-mono text-xs text-white">{snippet.command}</p>
                 </div>
                 <button
                   type="button"
@@ -149,16 +149,16 @@
     {:else if view.kind === 'edit'}
       {@const id = view.id}
       <form
-        class="grid gap-3 p-4"
+        class="grid gap-4 p-6"
         onsubmit={submit(
           () => void change(id ? api.snippetsUpdate(id, name, command, scope) : api.snippetsCreate(name, command, scope)),
         )}
       >
-        <label class="text-white">
+        <label class="text-[13px] text-white">
           {t('sort_name')}
           <input bind:value={name} required autocomplete="off" autocapitalize="off" spellcheck="false" class={field} />
         </label>
-        <label class="text-white">
+        <label class="text-[13px] text-white">
           {t('command')}
           <input
             bind:value={command}
@@ -167,7 +167,7 @@
             autocapitalize="off"
             spellcheck="false"
             placeholder={'systemctl restart {{unit}}'}
-            class={field}
+            class="{field} font-mono text-[13px]"
           />
         </label>
         <!-- Radio buttons drawn as chips: a native select opens the toolkit's own light menu. -->
@@ -187,7 +187,7 @@
       </form>
     {:else if view.kind === 'rm'}
       {@const snippet = view.snippet}
-      <form class="grid gap-3 p-4" onsubmit={submit(() => void change(api.snippetsDelete(snippet.id)))}>
+      <form class="grid gap-4 p-6" onsubmit={submit(() => void change(api.snippetsDelete(snippet.id)))}>
         <p class="break-words">{t('delete_ask').replace('{name}', snippet.name)}</p>
         {@render refused()}
         <div class="flex justify-end gap-2">
@@ -201,13 +201,13 @@
       <!-- In the order the hosts have, not the one they were ticked in. -->
       {@const going = names.filter((alias) => ticked.includes(alias))}
       {@const title = t('run_on').replace('{n}', String(going.length))}
-      <form class="grid gap-3 p-4" onsubmit={submit(() => onrun(going, snippet.command, { ...values }))}>
+      <form class="grid gap-4 p-6" onsubmit={submit(() => onrun(going, snippet.command, { ...values }))}>
         <p>
-          <strong class="text-cyan">{snippet.name}</strong>
-          <span class="break-words text-white">{snippet.command}</span>
+          <strong class="text-base font-semibold text-ink">{snippet.name}</strong>
+          <span class="font-mono text-[13px] break-words text-white">{snippet.command}</span>
         </p>
         {#each params(snippet.command) as param (param)}
-          <label class="text-white">
+          <label class="text-[13px] text-white">
             {param}
             <input
               bind:value={values[param]}

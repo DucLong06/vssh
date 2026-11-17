@@ -1482,3 +1482,69 @@ test('hosts that cannot be read, in Vietnamese: the reason and nothing in Englis
   expect(await screen.findByRole('alert')).toHaveTextContent('BỊ TỪ CHỐI')
   expect(stray()).toEqual([])
 })
+
+// --- D9: the rail and the top bar ---------------------------------------------
+
+/** The rail is the first navigation of the window; a file pane's path is one too. */
+const rail = (name: string | RegExp) => within(screen.getAllByRole('navigation')[0]).getByRole('button', { name })
+/** The top bar: the header of the page, which a card's own header is not. */
+const head = () => screen.getByRole('heading', { level: 1 }).closest('header')!
+
+test('the rail goes where the keys go: a session, the dashboard and its search, the selected host\'s files and forwards, the snippets', async () => {
+  const user = shell({ forwards_list: () => forwards })
+  // Nothing is selected and nothing is open: there is nowhere for these to go.
+  await card('web-01')
+  for (const name of ['Sessions', 'Files', 'Forwards']) expect(rail(name), name).toBeDisabled()
+  expect(rail('Status')).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('heading', { level: 1, name: 'Status' })).toBeInTheDocument()
+
+  ;(await card('web-02')).focus()
+  await user.keyboard('{Enter}')
+  await tab(/web-02/)
+  // The terminal is in front: the head of the page is its host, and the rail says where one is.
+  expect(screen.getByRole('heading', { level: 1, name: 'web-02' })).toBeInTheDocument()
+  expect(rail('Sessions 1')).toHaveAttribute('aria-current', 'page')
+  await user.click(rail('Status'))
+  expect(await card('web-02')).toBeVisible()
+  expect(rail('Status')).toHaveAttribute('aria-current', 'page')
+  await user.click(rail('Sessions 1'))
+  expect(await tab(/web-02/)).toHaveAttribute('aria-selected', 'true')
+  expect(screen.queryByRole('article')).not.toBeInTheDocument()
+
+  // Hosts: the dashboard, at its search.
+  await user.click(rail('Hosts 4'))
+  await vi.waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search hosts, #tag' })).toHaveFocus())
+
+  await user.click(rail('Files'))
+  expect(await tab(/Files web-02/)).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('heading', { level: 1, name: 'Files' })).toBeInTheDocument()
+  expect(rail('Files')).toHaveAttribute('aria-current', 'page')
+  expect(asked('sftp_realpath')).toEqual([{ host: 'web-02', path: '' }])
+
+  await user.click(rail('Forwards'))
+  expect(await screen.findByRole('dialog', { name: 'Forwards web-02' })).toBeInTheDocument()
+  await shut()
+  await user.click(rail(/Snippets/))
+  expect(await screen.findByRole('dialog', { name: 'Snippets' })).toBeInTheDocument()
+})
+
+test('the top bar: the search opens the palette, and the line under Status counts who answers', async () => {
+  const user = shell({
+    get_host_stats: ({ alias }) => {
+      if (alias === 'web-02') throw refused
+      return peek
+    },
+  })
+  await vi.waitFor(() => expect(head()).toHaveTextContent('4 Hosts · 3 reachable · 1 down'))
+  await user.click(within(head()).getByRole('button', { name: 'Command palette' }))
+  expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
+})
+
+test('the rail and the top bar in Vietnamese: no word of theirs is left in English', async () => {
+  setLang('vi')
+  shell()
+  await card('web-01')
+  for (const name of ['Trạng thái', 'Máy chủ 4', 'Phiên', 'Tệp', /Đoạn lệnh/, 'Chuyển tiếp', 'Kho']) expect(rail(name)).toBeInTheDocument()
+  await vi.waitFor(() => expect(head()).toHaveTextContent('4 Máy chủ · 4 kết nối được · 0 mất kết nối'))
+  expect(stray()).toEqual([])
+})

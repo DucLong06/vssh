@@ -2,10 +2,14 @@
   import type { Host, VaultState } from './api'
   import { chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
+  import Icon, { type IconName } from './Icon.svelte'
   import SessionDot from './SessionDot.svelte'
-  import { addr, setStreamer, streamer } from './streamer.svelte'
+  import { addr } from './streamer.svelte'
   import type { Tab } from './Tabs.svelte'
   import { setTheme, theme } from './theme.svelte'
+
+  /** Where the rail leads: the three views, and the dialogs that have no view of their own. */
+  export type Nav = 'dashboard' | 'hosts' | 'sessions' | 'files' | 'snippets' | 'forwards'
 
   type Props = {
     hosts: Host[]
@@ -20,6 +24,10 @@
     /** What the vault is, and the way to it. */
     vault?: VaultState
     onvault?: () => void
+    /** The view in front, how many snippets there are, and what a click on the rail asks for. */
+    current?: Nav
+    snippets?: number
+    onnav?: (to: Nav) => void
   }
   let {
     hosts,
@@ -31,6 +39,9 @@
     onsession,
     vault = 'none',
     onvault,
+    current,
+    snippets,
+    onnav,
   }: Props = $props()
 
   let list = $state<HTMLElement>()
@@ -45,30 +56,54 @@
     if (selected) list?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' })
   })
 
-  const heading = 'flex justify-between px-3 pt-3 pb-1 text-cyan'
-  const toggle = 'cursor-pointer px-2 text-white hover:bg-bar hover:text-fg'
+  const nav =
+    'flex w-full cursor-pointer items-center gap-3 rounded-[10px] px-3 py-1.5 text-left font-medium text-white transition-colors hover:bg-panel hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent aria-[current]:bg-selection aria-[current]:text-ink aria-[current]:inset-ring aria-[current]:inset-ring-edge [&[aria-current]>svg]:text-blue'
+  const count = 'ml-auto rounded-full bg-page px-2 text-xs font-normal text-dim not-italic'
+  const row = 'w-full cursor-pointer rounded-lg py-1 pr-2 pl-[42px] text-left hover:bg-panel aria-[current]:bg-selection'
 </script>
 
-<nav aria-label={t('hosts')} class="flex min-h-0 flex-col border-r border-edge bg-black">
-  <h2 class={heading}>{t('hosts')} <span class="text-white">{shown.length}</span></h2>
+<!-- One row of the rail: an icon, a name, and a number where there is one to say. -->
+{#snippet item(to: Nav, icon: IconName, label: string, n?: number, off = false)}
+  <button type="button" onclick={() => onnav?.(to)} disabled={off} aria-current={current === to ? 'page' : undefined} class={nav}>
+    <Icon name={icon} />
+    {label}
+    {#if n !== undefined}<em class={count}>{n}</em>{/if}
+  </button>
+{/snippet}
+
+<nav aria-label={t('hosts')} class="flex min-h-0 flex-col gap-0.5 border-r border-edge bg-bg px-3 pt-4 pb-3">
+  <!-- The name is the same in every language: drawn, not said. -->
+  <div aria-hidden="true" class="flex items-center gap-3 px-2 pb-4">
+    <span
+      class="grid size-9 place-items-center rounded-xl bg-linear-to-br from-blue to-magenta font-mono text-sm font-bold text-page shadow-lg shadow-blue/30"
+    >
+      &gt;_
+    </span>
+    <span class="text-base font-semibold tracking-tight text-ink after:content-['vssh']"></span>
+  </div>
+
+  {@render item('dashboard', 'grid', t('status'))}
+  <h2>{@render item('hosts', 'server', t('hosts'), shown.length)}</h2>
   {#if hosts.length}
-    <ul bind:this={list} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto">
+    <!-- As tall as its hosts, and no taller than there is room: what follows it follows it. -->
+    <ul bind:this={list} aria-label={t('hosts')} class="min-h-12 overflow-y-auto">
       {#each shown as host (host.alias)}
         <li>
           <button
             type="button"
             aria-current={host.alias === selected ? 'true' : undefined}
             onclick={() => onselect(host.alias)}
-            class="block w-full cursor-pointer px-3 py-1 text-left hover:bg-bar aria-[current]:bg-selection"
+            class="{row} flex items-baseline gap-2"
           >
-            <span class="flex gap-1.5">
+            <!-- One line a host: its name, and as much of its address as there is room for. -->
+            <span class="flex max-w-[65%] shrink-0 gap-1.5 text-[13px]">
               {#if host.meta.pinned}
                 <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
               {/if}
               <span class="truncate">{host.alias}</span>
             </span>
             {#if addr(host)}
-              <span class="block truncate text-white">{addr(host)}</span>
+              <span class="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-dim">{addr(host)}</span>
             {/if}
           </button>
         </li>
@@ -76,16 +111,17 @@
     </ul>
   {/if}
 
+  <!-- With none open there is nothing to go to, and no heading for a list that is not there. -->
   {#if sessions.length}
-    <h2 class="{heading} border-t border-edge">{t('sessions')} <span class="text-white">{sessions.length}</span></h2>
-    <ul aria-label={t('sessions')} class="max-h-40 shrink-0 overflow-y-auto pb-1">
+    <h2>{@render item('sessions', 'term', t('sessions'), sessions.length)}</h2>
+    <ul aria-label={t('sessions')} class="max-h-28 shrink-0 overflow-y-auto">
       {#each sessions as session (session.id)}
         <li>
           <button
             type="button"
             aria-current={session.id === active ? 'true' : undefined}
             onclick={() => onsession?.(session.id)}
-            class="flex w-full cursor-pointer gap-1.5 px-3 py-1 text-left hover:bg-bar aria-[current]:bg-selection"
+            class="{row} flex gap-1.5 text-[13px]"
           >
             <SessionDot {session} />
             <span class="truncate">{session.title}</span>
@@ -93,78 +129,57 @@
         </li>
       {/each}
     </ul>
+  {:else}
+    {@render item('sessions', 'term', t('sessions'), undefined, true)}
+  {/if}
+  <!-- A host's files and its forwards: the selected host's. -->
+  {@render item('files', 'folder', t('files'), undefined, !selected)}
+  {@render item('snippets', 'code', t('snippets'), snippets)}
+  {@render item('forwards', 'fwd', t('forwards'), undefined, !selected)}
+  {#if onvault}
+    <button type="button" onclick={onvault} class={nav}>
+      <Icon name="lock" class={vault === 'unlocked' ? 'text-green' : ''} />
+      {t('vault')}
+      {#if vault !== 'none'}
+        <em class="{count} {vault === 'unlocked' ? 'text-green' : 'text-yellow'}">
+          {vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
+        </em>
+      {/if}
+    </button>
   {/if}
 
-  <h2 class="{heading} mt-auto border-t border-edge">{t('tags')} <span class="text-white">{tags.length}</span></h2>
+  <h2 class="mt-auto flex justify-between px-3 pt-4 pb-1 text-[11px] font-semibold tracking-widest text-dim uppercase">
+    {t('tags')} <span>{tags.length}</span>
+  </h2>
   {#if tags.length === 0}
-    <p class="px-3 pb-3 text-white">{t('no_tags')}</p>
+    <p class="px-3 pb-2 text-[13px] text-white">{t('no_tags')}</p>
   {:else}
-    <ul aria-label={t('tags')} class="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto px-3 pb-3">
-      {#each tags as [name, count] (name)}
+    <ul aria-label={t('tags')} class="flex max-h-24 shrink-0 flex-wrap gap-1.5 overflow-y-auto px-3 pb-2">
+      {#each tags as [name, n] (name)}
         <li>
           <button
             type="button"
             aria-pressed={tag === name}
             onclick={() => (tag = tag === name ? null : name)}
             style="color: {chip(name)}"
-            class="cursor-pointer rounded-full border border-edge px-2 py-0.5 aria-pressed:border-current aria-pressed:bg-selection"
+            class="cursor-pointer rounded-full border border-edge px-2 text-xs leading-5 hover:bg-panel aria-pressed:border-current aria-pressed:bg-selection"
           >
-            #{name} <span class="text-white">{count}</span>
+            #{name} <span class="text-white">{n}</span>
           </button>
         </li>
       {/each}
     </ul>
   {/if}
 
-  <!-- The vault, and how the window looks: streamer mode and the theme. Here, where there is room in every language. -->
-  <div class="flex border-t border-edge">
-    {#if onvault}
-      <button
-        type="button"
-        onclick={onvault}
-        class="flex min-w-0 flex-1 cursor-pointer justify-between gap-2 px-3 py-2 text-left text-cyan hover:bg-bar"
-      >
-        {t('vault')}
-        {#if vault !== 'none'}
-          <span class={vault === 'unlocked' ? 'text-green' : 'text-yellow'}>
-            {vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
-          </span>
-        {/if}
-      </button>
-    {/if}
-    <!-- An eye, struck through while the addresses on screen are made up. -->
-    <button
-      type="button"
-      onclick={() => setStreamer(!streamer.on)}
-      aria-pressed={streamer.on}
-      aria-label={t('streamer_mode')}
-      title={t('streamer_mode')}
-      class="{toggle} ml-auto py-2 aria-pressed:text-magenta"
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-none stroke-current stroke-2">
-        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
-        <circle cx="12" cy="12" r="3" />
-        {#if streamer.on}
-          <path d="M4 4l16 16" />
-        {/if}
-      </svg>
-    </button>
-    <!-- A moon for Night, a sun for Day. -->
-    <button
-      type="button"
-      onclick={() => setTheme(theme.name === 'night' ? 'day' : 'night')}
-      aria-label="{t('theme')}: {theme.name === 'night' ? t('theme_night') : t('theme_day')}"
-      title={t('theme')}
-      class="{toggle} py-2"
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-none stroke-current stroke-2">
-        {#if theme.name === 'night'}
-          <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
-        {:else}
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
-        {/if}
-      </svg>
-    </button>
-  </div>
+  <!-- A moon for Night, a sun for Day. -->
+  <button
+    type="button"
+    onclick={() => setTheme(theme.name === 'night' ? 'day' : 'night')}
+    aria-label="{t('theme')}: {theme.name === 'night' ? t('theme_night') : t('theme_day')}"
+    class="{nav} mt-1 border-t border-edge pt-2.5"
+  >
+    <Icon name={theme.name === 'night' ? 'moon' : 'sun'} />
+    {t('theme')}
+    <em class={count}>{theme.name === 'night' ? t('theme_night') : t('theme_day')}</em>
+  </button>
 </nav>

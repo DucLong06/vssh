@@ -1,3 +1,4 @@
+import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
 import { fireEvent, render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -6,7 +7,7 @@ import Dashboard from './Dashboard.svelte'
 import errors from './fixtures/errors.json'
 import fixture from './fixtures/hosts.json'
 import peekFixture from './fixtures/peek.json'
-import { forget, live } from './live.svelte'
+import { forget, live, trail } from './live.svelte'
 
 const hosts = fixture as Host[]
 const peek = peekFixture as unknown as Peek
@@ -327,4 +328,52 @@ test('the controls beside the search are one group: short of room they take a se
   // Both wrap: the bar puts the group on a row of its own, the group breaks only where even that is too narrow.
   expect(search.parentElement).toHaveClass('flex', 'flex-wrap', 'sticky', 'bg-bg')
   expect(group).toHaveClass('flex', 'flex-wrap')
+})
+
+// --- D9: the concept's dashboard ------------------------------------------------
+
+test('the cards are in one column, two past 800 px of window, three past 1200', () => {
+  render(Dashboard, props())
+  for (const list of screen.getAllByRole('list').filter((list) => list.querySelector('article'))) {
+    expect(list).toHaveClass('grid', 'grid-cols-1', 'min-[801px]:grid-cols-2', 'min-[1201px]:grid-cols-3')
+  }
+})
+
+test('the figures over the cards: how many answer, the hosts\' CPU and memory as one line each, and who is down', () => {
+  live['web-01'] = { ms: 12, peek }
+  live['web-02'] = { ms: 12, peek: cpu(95) }
+  live['db-primary'] = { ms: null, error: errors[2] as ConnError }
+  trail['web-01'] = { cpu: [10, 20], mem: [40] }
+  trail['web-02'] = { cpu: [90], mem: [] }
+  const { container } = render(Dashboard, props())
+  const strip = container.querySelector('[aria-hidden=true].grid-cols-4')!
+  const tiles = [...strip.children].map((tile) => tile.textContent?.replace(/\s+/g, ' ').trim())
+  // Two answer (one of them past a critical mark), of four; the mean of the newest round is (20 + 90) / 2.
+  expect(tiles).toEqual(['reachable 2 / 4', 'CPU 55%', 'MEM 40%', 'down 1 db-primary'])
+  // A segment for every host, in the colour of its state.
+  expect([...strip.querySelectorAll('i')].map((part) => part.className.match(/bg-green|bg-red|inset-ring-red|bg-bar/)?.[0])).toEqual(['bg-green', 'bg-red', 'inset-ring-red', 'bg-bar'])
+  // The older round has one host's figure only: that is its mean.
+  expect(strip.querySelector('.text-blue path[stroke]')).toHaveAttribute('d', 'M0,27.2 C60,27.2 60,14.6 120,14.6')
+})
+
+test('before anything is known the figures are dashes, not noughts', () => {
+  const { container } = render(Dashboard, props())
+  const strip = container.querySelector('[aria-hidden=true].grid-cols-4')!
+  expect(strip).toHaveTextContent('reachable 0 / 4 CPU — MEM — down 0')
+  expect(strip.querySelectorAll('path')).toHaveLength(0)
+})
+
+test('Try again on a card that is down asks its host, as a person asking', async () => {
+  const user = userEvent.setup()
+  const asked: unknown[] = []
+  mockIPC((cmd, args) => {
+    if (cmd === 'get_host_stats') asked.push(args)
+    return cmd === 'get_host_stats' ? peek : null
+  })
+  live['web-02'] = { ms: null, error: errors[2] as ConnError, shown: { class: 'refused', label: 'REFUSED', message: 'no', chain: 'no' } }
+  render(Dashboard, props())
+  await user.click(within(screen.getByRole('article', { name: 'web-02' })).getByRole('button', { name: 'try again' }))
+  expect(asked).toEqual([{ alias: 'web-02', passive: false }])
+  await vi.waitFor(() => expect(screen.getByRole('article', { name: 'web-02' })).toHaveAttribute('data-state', 'ok'))
+  clearMocks()
 })

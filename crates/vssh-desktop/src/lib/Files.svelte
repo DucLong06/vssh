@@ -291,8 +291,8 @@
     act(side, entry!)
   }
 
-  const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 hover:bg-selection'
-  const arrow = 'cursor-pointer rounded-md border border-edge bg-panel px-2 py-1 text-magenta hover:bg-selection'
+  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
+  const arrow = 'cursor-pointer rounded-[10px] border border-edge bg-panel px-2.5 py-1.5 text-blue hover:border-dim/50 hover:bg-selection'
   const item = 'w-full cursor-pointer rounded-lg px-3 py-1 text-left hover:bg-selection focus-visible:bg-selection'
 </script>
 
@@ -328,9 +328,9 @@
   />
 {/snippet}
 
-<div role="tabpanel" aria-label="{t('files')} {host}" hidden={!active} class="min-h-0 flex-1 bg-bg p-3">
-  <div class="flex h-full flex-col gap-2">
-    <div class="flex min-h-0 flex-1 gap-2">
+<div role="tabpanel" aria-label="{t('files')} {host}" hidden={!active} class="min-h-0 flex-1 bg-bg p-3 text-[13px]">
+  <div class="flex h-full flex-col gap-3">
+    <div class="flex min-h-0 flex-1 gap-3">
       {@render pane('local')}
       <div class="flex flex-col justify-center gap-2">
         <button
@@ -380,7 +380,7 @@
       <ul aria-label={t('transfers')} class="grid max-h-40 shrink-0 gap-1 overflow-y-auto">
         {#each transfers as job (job.id)}
           {@const pct = job.total ? Math.floor((job.done * 100) / job.total) : 0}
-          <li class="flex items-center gap-3 rounded-xl border border-edge bg-panel px-3 py-1">
+          <li class="flex items-center gap-3 rounded-xl border border-edge bg-panel px-3 py-1.5">
             <span role="img" aria-label={job.up ? t('upload') : t('download')} class="text-cyan">
               {job.up ? '↑' : '↓'}
             </span>
@@ -418,18 +418,18 @@
               >
                 <div class="h-full rounded-full bg-blue" style="width: {pct}%"></div>
               </div>
-              <span class="w-10 shrink-0 text-right">{pct}%</span>
-              <span class="w-20 shrink-0 text-right text-white">
+              <span class="w-10 shrink-0 text-right font-semibold text-ink tabular-nums">{pct}%</span>
+              <span class="w-20 shrink-0 text-right text-white tabular-nums">
                 {job.state === 'waiting' ? t('waiting') : `${human(Math.round(job.bps))}/s`}
               </span>
-              <span class="w-14 shrink-0 text-right text-white">
+              <span class="w-14 shrink-0 text-right text-white tabular-nums">
                 {job.bps ? eta((job.total - job.done) / job.bps) : '—'}
               </span>
               <button
                 type="button"
                 aria-label="{t('cancel')} {job.name}"
                 onclick={() => cancel(job)}
-                class="shrink-0 cursor-pointer rounded-md border border-edge px-2 text-white hover:bg-selection hover:text-red"
+                class="shrink-0 cursor-pointer rounded-lg border border-edge px-2 text-white hover:bg-selection hover:text-red"
               >
                 {t('cancel')}
               </button>
@@ -450,7 +450,7 @@
     aria-label={entry?.name ?? t('files')}
     onkeydown={menukey}
     style="left: {Math.min(menu.x, innerWidth - 176)}px; top: {Math.min(menu.y, innerHeight - 152)}px"
-    class="fixed z-30 min-w-40 rounded-xl border border-edge bg-black p-1 shadow-2xl"
+    class="fixed z-30 min-w-40 rounded-xl border border-edge bg-panel p-1 shadow-card"
   >
     {#if entry && !entry.is_dir}
       <li role="none">
@@ -493,14 +493,14 @@
   {@const q = ask}
   <Modal label={verb ?? ''} onclose={() => (ask = null)}>
     <form
-      class="grid gap-3 p-4"
+      class="grid gap-4 p-6"
       onsubmit={(e) => {
         e.preventDefault()
         void answer()
       }}
     >
       {#if q.kind === 'mkdir' || q.kind === 'rename'}
-        <label class="text-white">
+        <label class="text-[13px] text-white">
           {t('sort_name')}
           <input
             bind:this={field}
@@ -508,7 +508,7 @@
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
-            class="mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg"
+            class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg"
           />
         </label>
         {#if taken}
@@ -524,7 +524,7 @@
         <button
           type="submit"
           disabled={idle}
-          class="{button} disabled:opacity-60 {q.kind === 'rm' ? 'border-red text-red' : 'border-blue bg-selection text-blue'}"
+          class="{button} disabled:opacity-60 {q.kind === 'rm' ? 'border-red text-red' : 'border-blue bg-blue! font-semibold text-page hover:brightness-110'}"
         >
           {verb}
         </button>

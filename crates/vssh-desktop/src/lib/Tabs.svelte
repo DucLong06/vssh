@@ -22,22 +22,23 @@
   }
   let { sessions, files = [], active, onpick, onclose }: Props = $props()
 
-  // The TUI's tab: a pill with a rounded top, filled when it is in front.
+  // The concept's tab: a pill, filled with the terminal's ground when it is in front.
   // Broadcast takes the colours, so the tab in front is also bold, and only it has the full border.
   const pill =
-    'flex shrink-0 items-center rounded-t-lg border border-b-0 border-transparent text-white hover:text-fg has-[[aria-selected=true]]:border-edge has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-bold has-[[aria-selected=true]]:text-fg data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!'
-  const tab = 'flex cursor-pointer items-center gap-1.5 py-1 pl-3'
-  const cross = 'cursor-pointer rounded px-1.5 text-dim hover:bg-selection hover:text-fg'
+    'flex h-8 shrink-0 items-center rounded-[9px] border border-transparent text-[13px] text-dim hover:text-fg has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-semibold has-[[aria-selected=true]]:text-ink data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!'
+  const tab = 'flex h-full cursor-pointer items-center gap-2 rounded-[9px] pl-3.5'
+  const cross = 'mx-1 cursor-pointer rounded-md px-1.5 text-dim hover:bg-selection hover:text-fg'
+  const digit = 'font-mono text-xs text-magenta'
 </script>
 
 <div
   role="tablist"
   aria-label={t('sessions')}
-  class="flex items-end gap-1 overflow-x-auto border-b border-edge bg-black px-2 pt-1.5"
+  class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-edge bg-panel px-2.5 py-2"
 >
   <span class={pill}>
-    <button type="button" role="tab" aria-selected={active === null} onclick={() => onpick(null)} class="{tab} pr-3">
-      <span class="text-magenta">0</span>
+    <button type="button" role="tab" aria-selected={active === null} onclick={() => onpick(null)} class="{tab} pr-3.5">
+      <span class={digit}>0</span>
       {t('hosts')}
     </button>
   </span>
@@ -51,11 +52,11 @@
         class="{tab} pr-1"
       >
         <SessionDot {session} />
-        <span class="text-magenta">{at + 1}</span>
+        <span class={digit}>{at + 1}</span>
         {session.title}
         {#if session.busy}
           <!-- Closing is at once, as in the TUI: this is the warning there is. -->
-          <span class="rounded-full bg-bar px-1.5 text-xs text-white">{t('running')} {session.busy}</span>
+          <span class="rounded-full bg-bar px-2 text-xs font-normal text-white">{t('running')} <span class="font-mono">{session.busy}</span></span>
         {/if}
       </button>
       <button
@@ -77,7 +78,7 @@
         onclick={() => onpick(view.id)}
         class="{tab} pr-1"
       >
-        <span class="text-magenta">{sessions.length + at + 1}</span>
+        <span class={digit}>{sessions.length + at + 1}</span>
         <span class="text-cyan">{t('files')}</span>
         {view.host}
       </button>

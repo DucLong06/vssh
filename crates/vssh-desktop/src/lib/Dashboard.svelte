@@ -4,8 +4,9 @@
   import HostCard from './HostCard.svelte'
   import { address, chip, groupOf, hasTag, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
-  import { ask, live, sick } from './live.svelte'
+  import { ask, critical, down, live, sick, trail, up } from './live.svelte'
   import QuickPeek from './QuickPeek.svelte'
+  import Sparkline from './Sparkline.svelte'
 
   type Props = {
     hosts: Host[]
@@ -124,6 +125,9 @@
   /** For a host chosen again while it is the selected one: nothing changed for the effect below to hear of. */
   export const focus = (alias: string) => card(alias)?.focus()
 
+  /** The search, for whoever asks for the hosts from elsewhere (the rail). */
+  export const seek = () => search?.focus()
+
   // A host chosen elsewhere (the palette, the sidebar) is brought into view.
   $effect(() => {
     // Also when the dashboard comes back to the front.
@@ -227,45 +231,76 @@
     ['latency', t('sort_latency')],
     ['cpu', 'CPU'],
   ])
-  const control = 'rounded-md border border-edge bg-panel px-2 py-1 text-white'
+
+  /** The figures over the cards: how many answer, who does not, and all the hosts' CPU and memory as one. */
+  const fleet = $derived.by(() => {
+    const state = (host: Host): keyof typeof segment => {
+      const info = live[host.alias]
+      return down(info) ? 'down' : critical(info) ? 'crit' : up(info) ? 'ok' : 'unknown'
+    }
+    const states = hosts.map((host) => ({ alias: host.alias, state: state(host) }))
+    /** Round by round from the oldest, the mean of the hosts that have that round. */
+    const mean = (key: 'cpu' | 'mem') => {
+      const trails = hosts.map((host) => trail[host.alias]?.[key] ?? []).filter((list) => list.length)
+      const rounds = Math.max(0, ...trails.map((list) => list.length))
+      return Array.from({ length: rounds }, (_, at) => {
+        const round = trails.flatMap((list) => list.at(at - rounds) ?? [])
+        return Math.round(round.reduce((sum, pct) => sum + pct, 0) / round.length)
+      })
+    }
+    return {
+      states,
+      met: states.filter((host) => host.state === 'ok' || host.state === 'crit').length,
+      lost: states.filter((host) => host.state === 'down').map((host) => host.alias),
+      cpu: mean('cpu'),
+      mem: mean('mem'),
+    }
+  })
+
+  const control =
+    'h-10 cursor-pointer rounded-xl border border-edge px-3.5 font-medium whitespace-nowrap text-fg hover:border-dim/50 hover:bg-selection'
+  const tile = 'min-w-0 rounded-2xl bg-panel px-4 pt-3 shadow-card'
+  const figure = 'text-2xl leading-tight font-semibold tracking-tight text-ink'
+  const segment = { ok: 'bg-green', crit: 'bg-red', down: 'inset-ring-[1.5px] inset-ring-red', unknown: 'bg-bar' }
 </script>
 
 <svelte:window onkeydown={onwindowkey} />
 
-<section {hidden} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+<section {hidden} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
   {#if error}
-    <p role="alert" class="pt-4 break-words text-red"><strong>{error.label}</strong> {error.message}</p>
+    <p role="alert" class="mt-5 rounded-xl border border-dashed border-red/40 bg-bg px-4 py-3 break-words text-red">
+      <strong>{error.label}</strong>
+      {error.message}
+    </p>
   {/if}
   {#if hosts.length === 0}
     {#if !error}
-      <div class="grid h-full place-content-center justify-items-center gap-2 text-center">
-        <p aria-hidden="true" class="text-4xl text-edge">&gt;_</p>
-        <h1 class="text-base">{t('no_hosts')}</h1>
-        <p class="text-white">{t('no_hosts_hint')}</p>
-        <button
-          type="button"
-          onclick={onpalette}
-          aria-label={t('palette')}
-          class="mt-2 cursor-pointer rounded-md border border-edge px-3 py-1 text-magenta hover:bg-selection"
+      <div class="grid h-full place-content-center justify-items-center gap-3 text-center">
+        <p
+          aria-hidden="true"
+          class="grid size-14 place-items-center rounded-2xl bg-linear-to-br from-blue to-magenta font-mono text-xl font-bold text-page shadow-lg shadow-blue/30"
         >
-          Ctrl-K
-        </button>
-        {#if onadd}
-          <button
-            type="button"
-            onclick={onadd}
-            class="cursor-pointer rounded-md border border-edge px-3 py-1 text-cyan hover:bg-selection"
-          >
-            {t('add_host')}
+          &gt;_
+        </p>
+        <h2 class="text-lg font-semibold text-ink">{t('no_hosts')}</h2>
+        <p class="text-white">{t('no_hosts_hint')}</p>
+        <div class="mt-2 flex gap-2">
+          <button type="button" onclick={onpalette} aria-label={t('palette')} class="{control} font-mono text-[13px]">
+            Ctrl-K
           </button>
-        {/if}
+          {#if onadd}
+            <button type="button" onclick={onadd} class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90">
+              {t('add_host')}
+            </button>
+          {/if}
+        </div>
       </div>
     {/if}
   {:else}
     <!-- The search, and the controls as one group: where they have no room
          beside it (Vietnamese, with cards marked) they all go to a second
          row, from the same margin, and the cards start below it. -->
-    <div class="sticky top-0 z-20 flex flex-wrap items-center gap-2 bg-bg py-3">
+    <div class="sticky top-0 z-20 -mx-8 flex flex-wrap items-center gap-2.5 border-b border-edge bg-bg px-8 pb-4">
       <input
         bind:this={search}
         bind:value={query}
@@ -278,14 +313,14 @@
           query = ''
           search?.blur()
         }}
-        class="{control} min-w-40 flex-1 text-fg placeholder:text-dim"
+        class="h-10 min-w-40 flex-1 rounded-full border border-edge bg-panel px-4 text-fg placeholder:text-dim focus:border-blue"
       />
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2.5">
         <button
           type="button"
           aria-pressed={grouped}
           onclick={() => (grouped = !grouped)}
-          class="{control} cursor-pointer hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
+          class="{control} aria-pressed:border-dim/50 aria-pressed:bg-selection aria-pressed:text-ink"
         >
           {t('group_by_tag')}
         </button>
@@ -293,7 +328,7 @@
           <button
             type="button"
             onclick={() => connect()}
-            class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+            class="{control} border-magenta/70 text-magenta"
           >
             {t('connect')} {marked.length}
           </button>
@@ -301,22 +336,28 @@
             type="button"
             aria-keyshortcuts="x"
             onclick={() => onbatch?.()}
-            class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+            class="{control} border-magenta/70 text-magenta"
           >
             {t('run')} {marked.length}
           </button>
         {/if}
         {#if onadd}
-          <button type="button" aria-keyshortcuts="a" onclick={onadd} class="{control} cursor-pointer hover:bg-selection">
+          <!-- The concept's one filled button. -->
+          <button
+            type="button"
+            aria-keyshortcuts="a"
+            onclick={onadd}
+            class="{control} border-blue bg-blue font-semibold text-page shadow-lg shadow-blue/20 hover:bg-blue/90"
+          >
             {t('add_host')}
           </button>
         {/if}
         <!-- Radio buttons, drawn as one control: a native select opens the
              toolkit's own light menu over the dark window. -->
-        <div role="radiogroup" aria-label={t('sort')} class="flex rounded-md border border-edge bg-panel p-0.5">
+        <div role="radiogroup" aria-label={t('sort')} class="flex h-10 items-center rounded-xl border border-edge bg-page p-1">
           {#each sorts as [value, label] (value)}
             <label
-              class="cursor-pointer rounded px-2 py-0.5 text-white hover:text-fg has-checked:bg-selection has-checked:text-blue has-focus-visible:outline-2 has-focus-visible:outline-blue"
+              class="cursor-pointer rounded-lg px-2.5 py-1 text-[13px] whitespace-nowrap text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue"
             >
               <input type="radio" bind:group={sort} {value} class="sr-only" />
               {label}
@@ -326,21 +367,49 @@
       </div>
     </div>
 
-    <div bind:this={grid}>
+    <!-- The concept's row of figures. A picture of the cards below: what it says, they say to a reader of the screen. -->
+    <div aria-hidden="true" class="grid grid-cols-4 gap-4 pt-5">
+      <div class="{tile} pb-3">
+        <p class="truncate text-[13px] text-white first-letter:uppercase">{t('reachable')}</p>
+        <p class={figure}>{fleet.met}<span class="text-sm font-medium text-dim">&nbsp;/ {hosts.length}</span></p>
+        <p class="mt-2 flex gap-1">
+          {#each fleet.states as host (host.alias)}
+            <i class="h-2 max-w-6 flex-1 rounded {segment[host.state]}"></i>
+          {/each}
+        </p>
+      </div>
+      {#each [['CPU', fleet.cpu, 'text-blue'], [t('mem'), fleet.mem, 'text-teal']] as const as [label, past, colour] (label)}
+        <div class="{tile} overflow-hidden">
+          <p class="text-[13px] text-white">{label}</p>
+          <p class={figure}>
+            {#if past.length}{past.at(-1)}<span class="text-sm font-medium text-dim">%</span>{:else}—{/if}
+          </p>
+          <Sparkline points={[...past]} class="-mx-4 w-[calc(100%+2rem)] {colour}" />
+        </div>
+      {/each}
+      <div class="{tile} pb-3">
+        <p class="truncate text-[13px] text-white first-letter:uppercase">{t('down')}</p>
+        <p class="{figure} {fleet.lost.length ? 'text-red' : ''}">{fleet.lost.length}</p>
+        <p class="mt-1 truncate text-xs text-dim">{fleet.lost.join(', ')}</p>
+      </div>
+    </div>
+
+    <div bind:this={grid} class="pt-5">
       {#each sections as { name, list } (name)}
         {#if grouped}
-          <h2 class="flex items-baseline gap-2 pt-2 pb-2 first:pt-0">
+          <h2 class="flex items-baseline gap-2 pt-1 pb-3 text-lg font-semibold">
             {#if name}
               <span style="color: {chip(name)}">#{name}</span>
             {:else}
               <span class="text-white">{t('no_tags')}</span>
             {/if}
-            <span class="text-dim">{list.length}</span>
+            <span class="text-sm font-normal text-dim">{list.length}</span>
           </h2>
         {/if}
+        <!-- One column, two past 800 px of window, three past 1200. -->
         <ul
           aria-label={name || t('no_tags')}
-          class="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3 pb-3"
+          class="grid grid-cols-1 gap-5 pb-6 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
         >
           {#each list as host (host.alias)}
             <!-- Resting on a card shows what is known. It does not ask: a host
@@ -363,6 +432,8 @@
                 onfiles={onfiles && (() => onfiles(host.alias))}
                 onforwards={onforwards && (() => onforwards(host.alias))}
                 onedit={onedit && (() => onedit(host.alias))}
+                onretry={() => void ask(host.alias, false)}
+                trail={trail[host.alias]}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
                 aria-keyshortcuts="Enter Space v f Shift+L e d Alt+ArrowLeft Alt+ArrowRight"
@@ -386,7 +457,7 @@
                   dragging = null
                 }}
                 ondragend={() => (dragging = null)}
-                class="cursor-grab"
+                class="cursor-grab scroll-mt-20"
               />
               {#if peeking?.alias === host.alias}
                 <QuickPeek {host} info={live[host.alias]} />
@@ -395,7 +466,7 @@
           {/each}
         </ul>
       {:else}
-        <p class="pt-2 text-white">{t('no_match')}</p>
+        <p class="text-white">{t('no_match')}</p>
       {/each}
     </div>
   {/if}

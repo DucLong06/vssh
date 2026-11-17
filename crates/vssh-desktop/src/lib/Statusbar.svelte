@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Host } from './api'
-  import { i18n, setLang, t } from './i18n.svelte'
+  import { t } from './i18n.svelte'
   import { addr } from './streamer.svelte'
 
   type Props = {
@@ -17,7 +17,6 @@
     /** How many tabs are broadcasting. */
     broadcasting?: number
     onsnippets: () => void
-    onpalette: () => void
     /** The session in front is a quick connect: keeps it as a host. */
     onsave?: () => void
   }
@@ -31,21 +30,20 @@
     leader = false,
     broadcasting = 0,
     onsnippets,
-    onpalette,
     onsave,
   }: Props = $props()
 
-  const button = 'cursor-pointer rounded px-1.5 hover:bg-selection'
+  const button = 'cursor-pointer rounded-md px-1.5 hover:bg-selection hover:text-fg'
 </script>
 
 <!-- One line: what has no room is the selected host's address, which its card has too. -->
-<footer class="col-span-2 flex items-center gap-4 border-t border-edge bg-bar px-3 py-1 whitespace-nowrap text-white">
-  <span class="shrink-0">{t('hosts')} <span class="text-fg">{hosts}</span></span>
+<footer class="col-span-2 flex h-9 items-center gap-4 border-t border-edge bg-black px-5 text-[12.5px] whitespace-nowrap text-white">
+  <span class="shrink-0">{t('hosts')} <span class="font-semibold text-ink">{hosts}</span></span>
   <!-- The way to them for the pointer; `s` on the dashboard is the key. -->
   <button type="button" onclick={onsnippets} aria-keyshortcuts="s" class="{button} -mx-1.5 shrink-0">
-    {t('snippets')} <span class="text-fg">{snippets}</span>
+    {t('snippets')} <span class="font-semibold text-ink">{snippets}</span>
   </button>
-  <span class="shrink-0">{t('sessions')} <span class="text-fg">{sessions}</span></span>
+  <span class="shrink-0">{t('sessions')} <span class="font-semibold text-ink">{sessions}</span></span>
   {#if broadcasting}
     <strong class="shrink-0 text-yellow">{t('broadcasting').replace('{n}', String(broadcasting))}</strong>
   {/if}
@@ -68,7 +66,7 @@
       {t('right_click_more')}
     </span>
   {:else if selected}
-    <span class="truncate"><span class="text-cyan">{selected.alias}</span> {addr(selected)}</span>
+    <span class="truncate"><span class="font-semibold text-ink">{selected.alias}</span> <span class="font-mono text-xs">{addr(selected)}</span></span>
     <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
     <span class="shrink-0">
       <kbd class="text-magenta">Enter</kbd>
@@ -88,17 +86,6 @@
     </span>
   {/if}
   {#if onsave}
-    <button type="button" onclick={onsave} class="{button} shrink-0 text-cyan">{t('save_this_host')}</button>
+    <button type="button" onclick={onsave} class="{button} ml-auto shrink-0 text-cyan">{t('save_this_host')}</button>
   {/if}
-  <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto shrink-0 text-magenta">
-    Ctrl-K
-  </button>
-  <button
-    type="button"
-    onclick={() => setLang(i18n.lang === 'en' ? 'vi' : 'en')}
-    aria-label="{t('language')}: {i18n.lang.toUpperCase()}"
-    class="{button} shrink-0 text-fg"
-  >
-    {i18n.lang.toUpperCase()}
-  </button>
 </footer>

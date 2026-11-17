@@ -37,19 +37,19 @@
     }
   }
 
-  const field = 'mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim'
+  const field = 'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim'
 </script>
 
 <Modal label={t('quick_connect')} {onclose}>
-  <form {onsubmit} class="grid gap-3 p-4">
+  <form {onsubmit} class="grid gap-4 p-6">
     <p>
-      <span class="text-cyan">{t('quick_connect')}</span>
+      <span class="text-base font-semibold text-ink">{t('quick_connect')}</span>
       <span class="text-white">{t('quick_connect_note')}</span>
     </p>
-    <div class="grid grid-cols-[2fr_1fr_5.5rem] gap-2 text-white">
+    <div class="grid grid-cols-[2fr_1fr_5.5rem] gap-2 text-[13px] text-white">
       <label>
         {t('host')}
-        <input bind:value={host} type={streamer.on ? 'password' : 'text'} required autocomplete="off" autocapitalize="off" spellcheck="false" class={field} />
+        <input bind:value={host} type={streamer.on ? 'password' : 'text'} required autocomplete="off" autocapitalize="off" spellcheck="false" class="{field} font-mono text-[13px]" />
       </label>
       <label>
         {t('user')}
@@ -57,20 +57,20 @@
       </label>
       <label>
         {t('port')}
-        <input bind:value={port} type="number" min="1" max="65535" placeholder="22" class={field} />
+        <input bind:value={port} type="number" min="1" max="65535" placeholder="22" class="{field} font-mono text-[13px]" />
       </label>
     </div>
     {#if refusal}
       <p role="alert" class="text-red"><strong>{refusal.label}</strong> {refusal.message}</p>
     {/if}
     <div class="flex justify-end gap-2">
-      <button type="button" onclick={onclose} class="cursor-pointer rounded-md border border-edge px-3 py-1.5 text-white">
+      <button type="button" onclick={onclose} class="cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium text-white hover:bg-selection">
         {t('cancel')}
       </button>
       <button
         type="submit"
         disabled={busy}
-        class="cursor-pointer rounded-md border border-blue bg-selection px-3 py-1.5 text-blue disabled:opacity-60"
+        class="cursor-pointer rounded-[10px] border border-blue bg-blue! px-3.5 py-1.5 font-semibold text-page hover:brightness-110 disabled:opacity-60"
       >
         {t('connect')}
       </button>

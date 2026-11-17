@@ -2,6 +2,7 @@
 // keeps it current. Everything here answers into `live`; nothing rejects.
 import { api, explain, type ConnError, type Lang, type Peek, type Shown } from './api'
 import { i18n } from './i18n.svelte'
+import { POINTS } from './spark'
 import { parts } from './stats'
 
 /** One host. A field that is absent has not been answered yet. */
@@ -20,8 +21,26 @@ export type Live = {
 
 export const live = $state<Record<string, Live>>({})
 
+/** A host's last rounds of CPU and memory, in percent, oldest first: what its sparklines draw. */
+export type Trail = { cpu: number[]; mem: number[] }
+
+export const trail = $state<Record<string, Trail>>({})
+
 /** Forgets every host. */
-export const forget = () => Object.keys(live).forEach((alias) => delete live[alias])
+export function forget() {
+  for (const kept of [live, trail]) Object.keys(kept).forEach((alias) => delete kept[alias])
+}
+
+/** One more round of a host's trail; a figure it did not give leaves no point. */
+function follow(alias: string, peek: Peek) {
+  // Read back, not kept from the assignment: that would be the bare object, which nothing watches.
+  trail[alias] ??= { cpu: [], mem: [] }
+  const kept = trail[alias]
+  const { cpu, mem } = peek.stats
+  const add = (list: number[], pct: number) => list.push(pct) > POINTS && list.shift()
+  if (cpu !== null) add(kept.cpu, Math.min(cpu, 100))
+  if (mem) add(kept.mem, Math.floor((mem[0] * 100) / Math.max(mem[1], 1)))
+}
 
 /**
  * One round of metrics. `passive` is the dashboard's own poll: the shell
@@ -39,9 +58,12 @@ export async function ask(alias: string, passive: boolean) {
     if (peek || (!host.peek && !host.error)) {
       Object.assign(host, { peek, error: undefined, shown: undefined, at: Date.now() })
     }
+    if (peek) follow(alias, peek)
   } catch (error) {
     const shown = await explain(error, i18n.lang)
     Object.assign(host, { peek: undefined, error: error as ConnError, shown, at: Date.now() })
+    // What it was doing before it went is no part of what it does when it is back.
+    delete trail[alias]
   } finally {
     host.asking = false
   }
@@ -76,6 +98,9 @@ export const critical = (host: Live | undefined) =>
 
 /** Does not answer: its last round failed, or nobody asked and a ping got nowhere. */
 export const down = (host: Live | undefined) => !!host && (!!host.error || (host.ms === null && !host.peek))
+
+/** Answers: its figures came, or a ping got through and nothing failed since. */
+export const up = (host: Live | undefined) => !down(host) && (!!host?.peek || typeof host?.ms === 'number')
 
 /** A host that needs looking at. */
 export const sick = (host: Live | undefined) => down(host) || critical(host)

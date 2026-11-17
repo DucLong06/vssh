@@ -1,16 +1,26 @@
 @import "tailwindcss";
 
-/* TokyoNight Night, the terminal app's palette (docs/img/shots.py): the 16
-   ANSI colours by name, plus the two bands the TUI theme adds, the theme's
-   panel for cards, and its orange and teal for tag pills. Nothing else is a
-   colour here, so a class cannot leave the palette. `static`: the pills take
-   their colour from the variable, which no class names. */
+/* Concept A, "Studio Dark" (docs/mockups/concept-a.html), in TokyoNight
+   Night's colours: the 16 ANSI colours by name, the bands the TUI theme adds,
+   and the grounds of the concept. Nothing else is a colour here, so a class
+   cannot leave the palette. `static`: the pills take their colour from the
+   variable, which no class names.
+
+   The grounds, darkest first: `page` under the cards; `bg` for the rail, the
+   header band and the wells inside a card, which is the terminal's own ground;
+   `panel` for cards and dialogs; `selection` for what is chosen or pointed at.
+
+   The scales are Tailwind's own, said here so that they are one place:
+   spacing 4/8/12/16/24 px is 1/2/3/4/6, the radii 8/12/16 px are lg/xl/2xl. */
 @theme static {
   --color-*: initial;
   --color-bg: #1a1b26;
+  --color-page: #16161e;
   --color-panel: #1f2335;
+  /* Headings and figures: the concept's white. */
+  --color-ink: #ffffff;
   --color-orange: #ff9e64;
-  --color-teal: #73daca;
+  --color-teal: #1abc9c;
   --color-fg: #c0caf5;
   --color-black: #15161e;
   --color-red: #f7768e;
@@ -20,16 +30,31 @@
   --color-magenta: #bb9af7;
   --color-cyan: #7dcfff;
   --color-white: #a9b1d6;
-  /* Bright black: borders only, 1.9:1 on the background. */
-  --color-edge: #414868;
-  /* TokyoNight dark5, 4.1:1: placeholders and decoration. Text that must be
-     read is `white` (8.1:1) or `fg`. */
-  --color-dim: #737aa2;
-  --color-selection: #292e42;
+  /* Borders only: the concept's soft line, 1.2:1 on a card. */
+  --color-edge: #2a2f45;
+  /* The concept's muted text, 4.7:1 on a card: labels, placeholders. Text
+     that must be read is `white` (8.1:1 on `bg`) or `fg`. */
+  --color-dim: #828bb8;
+  --color-selection: #24283b;
   --color-bar: #2d3142;
   /* The terminal's own ground: Night's, whatever the theme (term.ts). */
   --color-term: #1a1b26;
-  --font-mono: "Maple Mono NF", "Maple Mono", ui-monospace, monospace;
+  /* The window speaks in a sans-serif; monospace is for what is typed or
+     copied letter by letter: addresses, paths, ports, commands, output. */
+  --font-sans: Inter, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Maple Mono NF", "Maple Mono", "JetBrains Mono", ui-monospace, monospace;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 12px 32px rgb(0 0 0 / 0.3);
+  /* What opens from under something slides out of it. */
+  --animate-slide: slide 0.18s ease-out;
+  @keyframes slide {
+    from {
+      opacity: 0;
+      translate: 0 -8px;
+    }
+  }
 }
 
 /* TokyoNight Day (folke/tokyonight.nvim, extras/lua/tokyonight_day.lua),
@@ -42,7 +67,9 @@
    out from this block). The published one is in the comment. */
 :root[data-theme='day'] {
   --color-bg: #e1e2e7;
+  --color-page: #e1e2e7;
   --color-panel: #d0d5e3;
+  --color-ink: #1b2d6b;
   --color-black: #d0d5e3;
   --color-bar: #c1c9df;
   --color-selection: #c4c8da;
@@ -58,6 +85,7 @@
   --color-cyan: #005876; /* #007197 */
   --color-orange: #7e4100; /* #b15c00 */
   --color-teal: #0b5d4d; /* #118c74 */
+  --shadow-card: 0 4px 14px rgb(0 0 0 / 0.08);
 }
 
 /* `day:` on a class: only under the Day theme. */
@@ -70,10 +98,12 @@ body,
 }
 
 body {
-  background: var(--color-bg);
+  background: var(--color-page);
   color: var(--color-fg);
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* In the base layer, so a class can move the ring: a card wears it outside
@@ -82,5 +112,14 @@ body {
   :focus-visible {
     outline: 2px solid var(--color-blue);
     outline-offset: -2px;
+  }
+  /* A key is a keycap wherever it is named. */
+  kbd {
+    padding: 1px 6px;
+    border: 1px solid var(--color-edge);
+    border-radius: 6px;
+    background: var(--color-page);
+    font-family: var(--font-mono);
+    font-size: 11px;
   }
 }

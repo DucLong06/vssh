@@ -107,9 +107,9 @@
     void api.localList('').then((home) => (path ||= join(home.path, 'vssh-vault.backup')))
   })
 
-  const field = 'mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim aria-invalid:border-red'
-  const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 whitespace-nowrap hover:bg-selection'
-  const go = `${button} border-blue bg-selection text-blue`
+  const field = 'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim aria-invalid:border-red'
+  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection first-letter:uppercase'
+  const go = `${button} border-blue bg-blue! font-semibold text-page hover:brightness-110`
 </script>
 
 {#snippet secret(label: string, get: () => string, set: (value: string) => void, bad = false)}
@@ -142,10 +142,10 @@
 {/snippet}
 
 <Modal label={t('vault')} {onclose}>
-  <div bind:this={root} class="grid gap-3 p-4">
+  <div bind:this={root} class="grid gap-4 p-6">
     <p class="flex flex-wrap gap-x-4">
       <span>
-        <span class="text-cyan">{t('vault')}</span>
+        <span class="text-base font-semibold text-ink">{t('vault')}</span>
         {#if vault !== 'none'}
           <strong class={vault === 'unlocked' ? 'text-green' : 'text-yellow'}>
             {vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
@@ -159,7 +159,7 @@
     </p>
 
     {#if vault !== 'unlocked'}
-      <form onsubmit={unlock} class="grid gap-3 text-white">
+      <form onsubmit={unlock} class="grid gap-3 text-[13px] text-white">
         {#if vault === 'none'}
           <p>{t('vault_none')}</p>
         {/if}
@@ -180,17 +180,17 @@
         </div>
       </form>
     {:else}
-      <form onsubmit={change} class="grid grid-cols-3 items-end gap-2 border-t border-edge pt-3 text-white">
+      <form onsubmit={change} class="grid grid-cols-3 items-end gap-2 border-t border-edge pt-4 text-[13px] text-white">
         {@render secret(t('old_passphrase'), () => pass, (value) => (pass = value))}
         {@render secret(t('new_passphrase'), () => next, (value) => (next = value))}
         {@render secret(t('repeat_passphrase'), () => again, (value) => (again = value), mismatch)}
         <button type="submit" class="{button} col-span-3 justify-self-end text-fg">{t('change_passphrase')}</button>
       </form>
-      <form onsubmit={save} class="grid grid-cols-[1fr_auto] items-end gap-2 border-t border-edge pt-3 text-white">
+      <form onsubmit={save} class="grid grid-cols-[1fr_auto] items-end gap-2 border-t border-edge pt-4 text-[13px] text-white">
         <p class="col-span-2">{t('export_note')}</p>
         <label>
           {t('path')}
-          <input bind:value={path} required autocomplete="off" autocapitalize="off" spellcheck="false" class={field} />
+          <input bind:value={path} required autocomplete="off" autocapitalize="off" spellcheck="false" class="{field} font-mono text-[13px]" />
         </label>
         <button type="submit" class="{button} text-fg">{t('export_backup')}</button>
       </form>

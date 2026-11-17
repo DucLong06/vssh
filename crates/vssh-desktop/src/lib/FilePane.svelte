@@ -164,15 +164,15 @@
     e.preventDefault()
     ondropped()
   }}
-  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-edge bg-panel focus-within:border-blue"
+  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-edge bg-panel text-[13px] focus-within:border-blue/70"
 >
-  <header class="flex items-center gap-2 border-b border-edge px-3 py-1.5">
-    <strong class="shrink-0 text-cyan">{label}</strong>
+  <header class="flex items-center gap-2 border-b border-edge px-3 py-2">
+    <strong class="shrink-0 font-semibold text-ink">{label}</strong>
     <nav
       bind:this={trail}
       bind:clientWidth={room}
       aria-label={t('path')}
-      class="flex min-w-0 flex-1 items-center whitespace-nowrap"
+      class="flex min-w-0 flex-1 items-center font-mono text-xs whitespace-nowrap"
     >
       {#if skip}<span aria-hidden="true" class="shrink-0 pr-1 text-dim">…</span>{/if}
       <div class="min-w-0 flex-1 overflow-hidden">
@@ -185,7 +185,7 @@
               type="button"
               onclick={() => cd(crumb.path)}
               aria-current={crumb.path === path ? 'location' : undefined}
-              class="cursor-pointer rounded px-1 text-white hover:bg-selection hover:text-fg aria-[current]:text-fg"
+              class="cursor-pointer rounded-md px-1 text-white hover:bg-selection hover:text-fg aria-[current]:text-ink"
             >
               {crumb.name}
             </button>
@@ -200,7 +200,7 @@
       aria-keyshortcuts="."
       title={t('hidden_files')}
       onclick={() => (showHidden = !showHidden)}
-      class="shrink-0 cursor-pointer rounded-md border border-edge px-1.5 text-white hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
+      class="shrink-0 cursor-pointer rounded-lg border border-edge px-1.5 text-white hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
     >
       .*
     </button>
@@ -219,7 +219,7 @@
         filtering = false
         grid?.focus()
       }}
-      class="border-b border-edge bg-bg px-3 py-1 text-fg placeholder:text-dim"
+      class="border-b border-edge bg-bg px-3 py-1.5 text-fg placeholder:text-dim"
     />
   {/if}
 
@@ -235,7 +235,7 @@
       {onkeydown}
       class="w-full table-fixed border-collapse outline-none aria-busy:opacity-60"
     >
-      <thead class="sticky top-0 bg-panel text-left whitespace-nowrap text-white">
+      <thead class="sticky top-0 bg-panel text-left text-xs whitespace-nowrap text-dim">
         <tr>
           <th scope="col" class="px-3 py-1 font-normal">{t('sort_name')}</th>
           <th scope="col" class="w-24 px-2 py-1 text-right font-normal">{t('size')}</th>
@@ -279,13 +279,13 @@
                       <path d="M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3" />
                     {/if}
                   </svg>
-                  <span title={entry.name} class="truncate {entry.is_dir ? 'font-bold' : ''}">{entry.name}</span>
+                  <span title={entry.name} class="truncate {entry.is_dir ? 'font-semibold text-ink' : ''}">{entry.name}</span>
                   {#if chosen}
                     <span role="img" aria-label={t('selected')}>✓</span>
                   {/if}
                 </div>
               </td>
-              <td role="gridcell" class="px-2 py-0.5 text-right whitespace-nowrap text-white">
+              <td role="gridcell" class="px-2 py-0.5 text-right whitespace-nowrap text-white tabular-nums">
                 {entry.is_dir ? '—' : human(entry.size)}
               </td>
               <td role="gridcell" class="{late} whitespace-nowrap text-white">{when(entry.mtime)}</td>
@@ -303,7 +303,7 @@
         <button
           type="button"
           onclick={onretry}
-          class="cursor-pointer rounded-md border border-edge px-2 py-0.5 text-blue hover:bg-selection"
+          class="cursor-pointer rounded-lg border border-edge px-2 py-0.5 text-blue hover:bg-selection"
         >
           {t('try_again')}
         </button>

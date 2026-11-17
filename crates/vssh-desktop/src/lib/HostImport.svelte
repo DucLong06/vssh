@@ -43,11 +43,11 @@
     void preview()
   })
 
-  const button = 'cursor-pointer rounded-md border border-edge px-3 py-1.5 whitespace-nowrap hover:bg-selection'
+  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
 </script>
 
-<div class="grid gap-3 p-4 text-white">
-  <p class="text-cyan">{t('import_ssh_config')}</p>
+<div class="grid gap-4 p-6 text-[13px] text-white">
+  <p class="text-base font-semibold text-ink">{t('import_ssh_config')}</p>
   <form
     class="grid grid-cols-[1fr_auto] items-end gap-2"
     onsubmit={(e) => {
@@ -64,7 +64,7 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        class="mt-1 w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim"
+        class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-[13px] text-fg placeholder:text-dim"
       />
     </label>
     <button type="submit" class="{button} text-fg">{t('preview')}</button>
@@ -81,10 +81,10 @@
     <ul aria-label={t('hosts')} class="flex max-h-[40vh] flex-col overflow-y-auto">
       {#each found as host (host.alias)}
         <li>
-          <label class="flex cursor-pointer items-baseline gap-2 rounded px-2 py-1 hover:bg-selection/50">
+          <label class="flex cursor-pointer items-baseline gap-2 rounded-lg px-2 py-1.5 hover:bg-selection">
             <input type="checkbox" bind:group={ticked} value={host.alias} class="accent-blue" />
-            <span class="text-fg">{host.alias}</span>
-            <span class="truncate">{addr(host)}</span>
+            <span class="font-medium text-ink">{host.alias}</span>
+            <span class="truncate font-mono text-xs">{addr(host)}</span>
           </label>
         </li>
       {/each}
@@ -99,7 +99,7 @@
         type="button"
         onclick={take}
         disabled={ticked.length === 0}
-        class="{button} border-blue bg-selection text-blue disabled:opacity-60"
+        class="{button} border-blue bg-blue! font-semibold text-page hover:brightness-110 disabled:opacity-60"
       >
         {t('import_n').replace('{n}', String(ticked.length))}
       </button>

@@ -24,7 +24,7 @@
   oncancel={(e) => locked && e.preventDefault()}
   onclose={() => (locked ? dialog.showModal() : onclose())}
   onclick={(e) => !locked && e.target === dialog && dialog.close()}
-  class="m-auto mt-[14vh] {wide ? 'w-[52rem]' : 'w-[36rem]'} max-w-[90vw] rounded-xl border border-edge bg-black p-0 text-fg shadow-2xl backdrop:bg-bg/70"
+  class="m-auto mt-[12vh] {wide ? 'w-[56rem]' : 'w-[38rem]'} max-w-[92vw] animate-slide rounded-2xl border border-edge bg-panel p-0 text-fg shadow-2xl shadow-black/60 backdrop:bg-page/70 backdrop:backdrop-blur-sm motion-reduce:animate-none"
 >
   {@render children()}
 </dialog>
