@@ -497,6 +497,18 @@ test('a host chosen in the palette is the selected one', async () => {
   expect(status()).toHaveTextContent('Enter Kết nối · Space chọn · v Xem nhanh')
 })
 
+test('the selected host is scrolled back into view when the sessions take room from the sidebar\'s list', async () => {
+  const user = shell()
+  const row = await screen.findByRole('button', { name: /db-primary/ })
+  await user.click(row)
+  const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView')
+  // Its own card: the selection does not change, only the list's height.
+  await user.click(within(await card('db-primary')).getByRole('button', { name: 'Connect' }))
+  await tab(/db-primary/)
+  expect(scrolled.mock.contexts).toContain(row)
+  scrolled.mockRestore()
+})
+
 test('quick connect from the palette opens a session and saves no host', async () => {
   const sent: unknown[] = []
   const user = shell({

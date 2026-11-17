@@ -23,8 +23,10 @@
   const tags = $derived(tagCounts(hosts))
   const shown = $derived(hosts.filter((host) => tag === null || hasTag(host, tag)))
 
-  // A host chosen elsewhere (the palette) may be below the fold.
+  // A host chosen elsewhere (the palette) may be below the fold; so may the
+  // selected one once the sessions take their share of the list's height.
   $effect(() => {
+    void sessions.length
     if (selected) list?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' })
   })
 
