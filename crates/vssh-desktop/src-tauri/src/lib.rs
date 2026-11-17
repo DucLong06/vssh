@@ -390,6 +390,7 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             snippets::snippets_delete,
             snippets::snippet_run,
             vault::vault_state,
+            vault::vault_hosts,
             vault::vault_unlock,
             vault::vault_pass_change,
             vault::vault_export,

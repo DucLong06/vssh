@@ -123,6 +123,11 @@ impl Vault {
         self.entries.get(name).map(|s| s.as_str())
     }
 
+    /// What the secrets are stored under, never the secrets.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.entries.keys().map(String::as_str)
+    }
+
     /// Stores a secret and saves the file; an empty secret removes the entry.
     pub fn set(&mut self, name: &str, secret: &mut String) -> Result<()> {
         if secret.is_empty() {

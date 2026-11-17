@@ -160,6 +160,47 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("off", "Off", "Tắt"),
     ("starting", "starting", "đang bật"),
     ("try_port", "Try port {n}", "Thử cổng {n}"),
+    // The vault, in the TUI's words for it and its states.
+    ("vault", "Vault", "Kho"),
+    ("vault_locked", "locked", "đang khoá"),
+    ("vault_unlocked", "unlocked", "đã mở"),
+    (
+        "vault_none",
+        "There is no vault yet. Its passphrase will protect the passwords of your hosts.",
+        "Chưa có kho. Mật khẩu kho sẽ bảo vệ mật khẩu các máy chủ của bạn.",
+    ),
+    ("passphrase", "Vault passphrase", "Mật khẩu kho"),
+    ("repeat_passphrase", "Repeat passphrase", "Nhập lại mật khẩu"),
+    ("unlock", "Unlock", "Mở kho"),
+    ("create_vault", "Create vault", "Tạo kho"),
+    (
+        "passphrase_mismatch",
+        "passphrases do not match",
+        "hai lần nhập không khớp",
+    ),
+    (
+        "wrong_attempts",
+        "{n} wrong attempts. The vault does not lock you out, but a forgotten passphrase cannot be recovered.",
+        "Đã sai {n} lần. Kho không khoá bạn lại, nhưng mật khẩu đã quên thì không lấy lại được.",
+    ),
+    ("passwords", "Passwords", "Mật khẩu"),
+    ("change_passphrase", "Change passphrase", "Đổi mật khẩu kho"),
+    ("old_passphrase", "Current passphrase", "Mật khẩu hiện tại"),
+    ("new_passphrase", "New passphrase", "Mật khẩu mới"),
+    (
+        "passphrase_changed",
+        "Passphrase changed.",
+        "Đã đổi mật khẩu kho.",
+    ),
+    ("export_backup", "Export backup", "Xuất bản sao lưu"),
+    (
+        "export_note",
+        "An encrypted copy, opened by the same passphrase.",
+        "Bản sao đã mã hoá, mở bằng chính mật khẩu kho.",
+    ),
+    ("exported", "Saved to {name}", "Đã lưu vào {name}"),
+    // The host form: the titles are the TUI's.
+    ("add_host", "Add host", "Thêm máy chủ"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

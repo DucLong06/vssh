@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Host } from './api'
+  import type { Host, VaultState } from './api'
   import { address, chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
   import SessionDot from './SessionDot.svelte'
@@ -15,8 +15,21 @@
     sessions?: Tab[]
     active?: number | null
     onsession?: (id: number) => void
+    /** What the vault is, and the way to it. */
+    vault?: VaultState
+    onvault?: () => void
   }
-  let { hosts, selected, onselect, tag = $bindable(null), sessions = [], active = null, onsession }: Props = $props()
+  let {
+    hosts,
+    selected,
+    onselect,
+    tag = $bindable(null),
+    sessions = [],
+    active = null,
+    onsession,
+    vault = 'none',
+    onvault,
+  }: Props = $props()
 
   let list = $state<HTMLElement>()
 
@@ -98,5 +111,20 @@
         </li>
       {/each}
     </ul>
+  {/if}
+
+  {#if onvault}
+    <button
+      type="button"
+      onclick={onvault}
+      class="flex cursor-pointer justify-between border-t border-edge px-3 py-2 text-left text-cyan hover:bg-bar"
+    >
+      {t('vault')}
+      {#if vault !== 'none'}
+        <span class={vault === 'unlocked' ? 'text-green' : 'text-yellow'}>
+          {vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
+        </span>
+      {/if}
+    </button>
   {/if}
 </nav>

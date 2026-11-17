@@ -105,6 +105,9 @@ export type ConnError = { class: ErrorClass; fail: Fail | null; chain: string[] 
 /** A failure put into words. */
 export type Shown = { class: ErrorClass; label: string; message: string; chain: string }
 
+/** `none`: there is no vault file yet. Unlocked, it stays so until the app is closed. */
+export type VaultState = 'none' | 'locked' | 'unlocked'
+
 /** What `pty-state:<id>` says about a session's shell. */
 export type PtyState =
   | { state: 'up' }
@@ -187,6 +190,14 @@ export const api = {
   /** Stops it if it runs, and takes it out of the config. */
   forwardKill: (host: string, kind: Forward['kind'], value: string) =>
     invoke<void>('forward_kill', { host, kind, value }),
+  vaultState: () => invoke<VaultState>('vault_state'),
+  /** Unlocks the vault; where there is none, makes it with this passphrase. */
+  vaultUnlock: (passphrase: string) => invoke<void>('vault_unlock', { passphrase }),
+  /** The hosts the unlocked vault has a password for; none while it is locked. */
+  vaultHosts: () => invoke<string[]>('vault_hosts'),
+  vaultPassChange: (old: string, next: string) => invoke<void>('vault_pass_change', { old, new: next }),
+  /** A sealed copy of the unlocked vault, in a file that must not exist yet. */
+  vaultExport: (path: string) => invoke<void>('vault_export', { path }),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),
 }

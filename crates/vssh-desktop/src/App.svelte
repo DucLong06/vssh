@@ -1,6 +1,15 @@
 <script lang="ts">
   import { onMount, tick as rendered } from 'svelte'
-  import { api, explain, type ConnError, type Host, type PtyState, type Shown, type Snippet } from './lib/api'
+  import {
+    api,
+    explain,
+    type ConnError,
+    type Host,
+    type PtyState,
+    type Shown,
+    type Snippet,
+    type VaultState,
+  } from './lib/api'
   import Dashboard from './lib/Dashboard.svelte'
   import Failure from './lib/Failure.svelte'
   import Files from './lib/Files.svelte'
@@ -15,6 +24,7 @@
   import Statusbar from './lib/Statusbar.svelte'
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
+  import Vault from './lib/Vault.svelte'
 
   /** How often the hosts are asked for their figures, and every how many rounds pinged. */
   const EVERY = 5000
@@ -45,7 +55,9 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | null>(null)
+  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | null>(null)
+  /** Unlocked, the vault stays so until the app is closed: the shell holds it, and nothing of it is written down. */
+  let vault = $state<VaultState>('none')
   /** The host whose forwards are open. */
   let forwarding = $state('')
   /** The command the batch dialog runs, and where. */
@@ -79,6 +91,11 @@
     }
     void tick()
     api.listSnippets().then((list) => (snippets = list), fail)
+    // A vault that is there is asked to be opened first thing; it may be left shut.
+    api.vaultState().then((now) => {
+      vault = now
+      if (now === 'locked') modal ??= 'vault'
+    }, fail)
     const timer = setInterval(tick, EVERY)
     return () => clearInterval(timer)
   })
@@ -252,6 +269,8 @@
     {sessions}
     {active}
     onsession={(id) => (active = id)}
+    {vault}
+    onvault={() => (modal = 'vault')}
   />
 
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
@@ -340,8 +359,11 @@
     }}
     onquick={() => (modal = 'quick')}
     onsnippets={() => (modal = 'snippets')}
+    onvault={() => (modal = 'vault')}
     onclose={() => (modal = null)}
   />
+{:else if modal === 'vault'}
+  <Vault bind:vault hosts={hosts.length} onclose={() => (modal = null)} />
 {:else if modal === 'quick'}
   <QuickConnect onconnect={connect} onclose={() => (modal = null)} />
 {:else if modal === 'snippets'}

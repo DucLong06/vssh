@@ -41,6 +41,8 @@ function shell(over: Record<string, (args: Args) => unknown> = {}) {
     local_list: () => ({ path: '/home/me', entries: [] }),
     sftp_realpath: () => '/home/deploy',
     sftp_list: () => listing,
+    vault_state: () => 'none',
+    vault_hosts: () => [],
     // The core's own words for a failure of that class.
     resolve_conn_error: ({ error, lang }) =>
       shown[lang as 'en' | 'vi'][errors.findIndex((known) => known.class === (error as typeof refused).class)],
@@ -864,4 +866,56 @@ test('L on a card, or its Forwards button, opens the host\'s port forwards', asy
   setLang('vi')
   expect(await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })).toBeInTheDocument()
   await vi.waitFor(() => expect(status()).toHaveTextContent('L Chuyển tiếp'))
+})
+
+// --- D6: the vault, the host form, the key setup ----------------------------
+
+/** The sidebar's way to the vault, which says what state it is in. */
+const vaultButton = (name: string | RegExp) => within(screen.getByRole('navigation')).findByRole('button', { name })
+const shut = async () => {
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+}
+
+test('a locked vault asks for its passphrase as the app opens; unlocked, it stays so and the sidebar says it', async () => {
+  let open = false
+  const user = shell({
+    vault_state: () => (open ? 'unlocked' : 'locked'),
+    vault_unlock: () => void (open = true),
+    vault_hosts: () => ['web-01'],
+  })
+  const dialog = await screen.findByRole('dialog', { name: 'Vault' })
+  expect(await vaultButton('Vault locked')).toBeInTheDocument()
+  await user.type(within(dialog).getByLabelText('Vault passphrase'), 'master{Enter}')
+  expect(asked('vault_unlock')).toEqual([{ passphrase: 'master' }])
+  expect(await vaultButton('Vault unlocked')).toBeInTheDocument()
+  await vi.waitFor(() => expect(dialog).toHaveTextContent('Hosts 4 Passwords 1'))
+  await shut()
+
+  // The manager again, from the sidebar and from the palette.
+  await user.click(await vaultButton('Vault unlocked'))
+  expect(await screen.findByRole('dialog', { name: 'Vault' })).toHaveTextContent('Vault unlocked')
+  await shut()
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'vault{Enter}')
+  expect(await screen.findByRole('dialog', { name: 'Vault' })).toBeInTheDocument()
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  setLang('vi')
+  expect(await screen.findByRole('dialog', { name: 'Kho' })).toHaveTextContent('Kho đã mở')
+  expect(await vaultButton('Kho đã mở')).toBeInTheDocument()
+})
+
+test('a vault left locked asks no more; without one nothing is asked at all', async () => {
+  const user = shell({ vault_state: () => 'locked' })
+  await user.click(within(await screen.findByRole('dialog', { name: 'Vault' })).getByRole('button', { name: 'Cancel' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(await vaultButton('Vault locked')).toBeInTheDocument()
+  expect(asked('vault_unlock')).toEqual([])
+  cleanup()
+
+  shell()
+  await card('web-01')
+  expect(asked('vault_state')).toHaveLength(2)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(await vaultButton('Vault')).toBeInTheDocument()
 })

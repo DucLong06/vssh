@@ -26,6 +26,15 @@ pub fn vault_state(backend: State<'_, Backend>) -> &'static str {
     }
 }
 
+/// The hosts the unlocked vault has a password for; none while it is
+/// locked. The names only: no command hands a password back.
+#[tauri::command(async)]
+pub fn vault_hosts(backend: State<'_, Backend>) -> Vec<String> {
+    let vault = backend.vault.lock().unwrap();
+    let names = vault.iter().flat_map(Vault::names);
+    names.map(str::to_string).collect()
+}
+
 fn unlock(backend: &Backend, passphrase: &str) -> Result<()> {
     let path = path(backend)?;
     let vault = match path.exists() {

@@ -10,9 +10,12 @@
     onhost: (alias: string) => void
     onquick: () => void
     onsnippets: () => void
+    /** The host form, empty, and the vault: where the window has them. */
+    onadd?: () => void
+    onvault?: () => void
     onclose: () => void
   }
-  let { hosts, onhost, onquick, onsnippets, onclose }: Props = $props()
+  let { hosts, onhost, onquick, onsnippets, onadd, onvault, onclose }: Props = $props()
 
   type Item = { key: string; label: string; detail: string; action: boolean; run: () => void }
 
@@ -28,6 +31,8 @@
     const actions = [
       { key: 'quick-connect', label: t('quick_connect'), detail: 'user@host[:port]', en: 'quick connect', run: onquick },
       { key: 'snippets', label: t('snippets'), detail: 's', en: 'snippets', run: onsnippets },
+      ...(onadd ? [{ key: 'add-host', label: t('add_host'), detail: 'a', en: 'add host', run: onadd }] : []),
+      ...(onvault ? [{ key: 'vault', label: t('vault'), detail: '', en: 'vault', run: onvault }] : []),
     ].map(({ en, ...item }) => ({ item: { ...item, action: true }, en }))
     const rows = hosts.map((host) => {
       const detail = address(host)
