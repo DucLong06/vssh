@@ -1,22 +1,88 @@
-# Tiếng Việt
+# vssh
 
-**Tiếng Việt** · [English](README.md)
+[![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
+
+**Tiếng Việt** · [English](README.md) · Ứng dụng terminal: [README-terminal.vi.md](README-terminal.vi.md) · [README-terminal.md](README-terminal.md)
 
 Trình quản lý SSH đúng cách bạn làm việc: chọn máy chủ, kết nối, giữ nhiều phiên,
 chép file, quản lý chuyển tiếp cổng — mà vẫn giữ nguyên `~/.ssh/config` quen
-thuộc. Một lõi Rust, hai giao diện: ứng dụng desktop bên dưới và ứng dụng
-terminal phía sau đọc chung cấu hình, chung cơ sở dữ liệu và chung kho mật
-khẩu, cùng theme TokyoNight.
+thuộc.
 
-Chạy trên Linux và macOS. SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`.
+Một lõi Rust, hai giao diện. **Ứng dụng desktop** là giao diện chính, và trang
+này viết về nó. **Ứng dụng terminal** là lựa chọn thứ hai: cùng một lõi, dùng
+phím kiểu vim, được mô tả trong [README-terminal.vi.md](README-terminal.vi.md)
+([English](README-terminal.md)). Cả hai đọc chung `~/.ssh/config`, chung cơ sở
+dữ liệu và chung kho mật khẩu, cùng theme TokyoNight.
+
+SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không cần chương trình `ssh`. Ứng dụng desktop chạy trên Linux x86_64, ứng dụng terminal chạy trên Linux và macOS.
 
 ## Ứng dụng desktop
 
-Vẫn những máy chủ đó, trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, snippet, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu. Đây là một giao diện trên cùng một lõi với ứng dụng terminal, nên cả hai đọc chung `~/.ssh/config`, chung cơ sở dữ liệu và chung kho mật khẩu.
+Các máy chủ của bạn trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, đoạn lệnh, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu.
 
-| Bảng điều khiển với thanh điều hướng | Tab terminal |
+![Bảng điều khiển: thanh điều hướng bên trái, một hàng số liệu, các thẻ máy chủ nhóm theo thẻ kèm sparkline và thanh ổ đĩa, hai phiên đang mở trong tab](docs/img/desktop-d9-rail.vi.png)
+
+| Xem nhanh | Tab terminal, đang phát |
 |---|---|
-| ![Thanh điều hướng bên trái, các thẻ máy chủ kèm sparkline và thanh ổ đĩa](docs/img/desktop-d9-rail.vi.png) | ![Một shell trong tab terminal của ứng dụng desktop](docs/img/desktop-d3-terminal.vi.png) |
+| ![Xem nhanh một máy chủ: kết nối, hệ thống, thời gian đã chạy, tải, CPU, bộ nhớ và đĩa](docs/img/desktop-d2-peek.vi.png) | ![Một shell trong tab terminal, hai tab đang bật phát, thanh trạng thái báo điều đó](docs/img/desktop-d3-terminal.vi.png) |
+| **Tệp: máy mình và máy chủ** | **Một lệnh trên bốn máy** |
+| ![Trình duyệt tệp hai khung với hai lượt tải lên đang chạy: phần trăm, tốc độ, thời gian còn lại](docs/img/desktop-d4-sftp.vi.png) | ![Một lượt chạy hàng loạt: hai máy trả lời, hai máy lỗi và nêu lý do](docs/img/desktop-d5-batch.vi.png) |
+| **Biểu mẫu máy chủ** | **Kho mật khẩu** |
+| ![Biểu mẫu thêm máy chủ: địa chỉ, cách đăng nhập, máy trung gian, thẻ, nhóm, ghi chú](docs/img/desktop-d6-host.vi.png) | ![Kho đã mở: đổi mật khẩu kho, xuất bản sao lưu](docs/img/desktop-d6-vault.vi.png) |
+| **Giao diện Sáng** | **Chế độ phát trực tiếp** |
+| ![Bảng điều khiển ở giao diện Sáng](docs/img/desktop-d7-day.vi.png) | ![Bảng điều khiển ở chế độ phát trực tiếp: mọi địa chỉ đều là địa chỉ giả](docs/img/desktop-d7-streamer.vi.png) |
+
+Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-smoke.sh`](scripts/gui-smoke.sh), bằng ngôn ngữ giao diện tiếng Việt; các máy chủ trong hình là một `sshd` tạm chạy ngay trên máy.
+
+## Tính năng
+
+- **Bảng điều khiển.** Mỗi máy chủ trong `~/.ssh/config` là một thẻ: nhãn độ trễ, các thẻ (tag), sparkline CPU và bộ nhớ của phút vừa qua, một thanh cho đĩa gốc. Phía trên là một hàng số liệu: số máy kết nối được, CPU, bộ nhớ, và những máy đang mất kết nối. Máy mất kết nối hoặc vượt ngưỡng nguy hiểm được xếp lên đầu, và thẻ của nó nêu lý do (`DNS`, `BỊ TỪ CHỐI`, `XÁC THỰC`, …) kèm nút "Thử lại".
+- **Nhóm, sắp xếp, tìm kiếm.** Các thẻ máy chủ được nhóm theo thẻ hoặc để phẳng; sắp xếp theo thứ tự của bạn, tên, độ trễ hoặc CPU. Kéo một thẻ máy chủ lên thẻ khác để đổi chỗ, hoặc `Alt` + phím mũi tên. `/` tìm theo tên, địa chỉ hoặc `#thẻ`; bấm một thẻ trên thanh điều hướng cũng lọc.
+- **Số liệu trực tiếp, không gây bất ngờ.** Số liệu được đọc mỗi 5 giây qua một kết nối giữ sẵn cho mỗi máy, không đăng nhập lại mỗi lượt. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`) và không cần máy trung gian; các máy còn lại ghi "chưa kiểm tra" cho tới khi bạn hỏi bằng `v`. Việc kiểm tra kết nối được chạy mỗi phút một lần.
+- **Xem nhanh.** `v` trên một thẻ máy chủ: máy đó tự nói gì về mình — tên máy, hệ thống, thời gian đã chạy, tải, CPU, bộ nhớ, đĩa — cùng địa chỉ và việc nó có trả lời hay không. Câu trả lời được giữ 30 giây; `r` hỏi lại, `Esc` đóng.
+- **Tab terminal.** `Enter` hoặc nút "Kết nối" mở một shell thật trong tab (PTY qua russh, vẽ bằng xterm.js). Đánh dấu nhiều thẻ bằng `Space` rồi `Enter` để kết nối tới tất cả. Tab cho biết trạng thái của nó và, với máy chủ Linux, lệnh đang chạy trong đó. Bôi chọn chữ là chép. Khi shell kết thúc, tab có nút "Kết nối lại".
+- **Phát (broadcast).** `Ctrl-A` `b` bật phát cho một tab, `Ctrl-A` `B` cho mọi tab: những gì bạn gõ được gửi tới mọi tab đang bật. Các tab đó chuyển màu vàng và thanh trạng thái ghi "Đang phát: N".
+- **Khi kết nối thất bại**, một hộp thoại cho biết vì sao, theo cùng các loại lỗi như ứng dụng terminal, tới cả chặng nào của chuỗi máy trung gian bị lỗi. Khoá máy chủ thay đổi thì hộp thoại hiện dấu vân tay mới cùng dòng `known_hosts` mà nó xung đột, và hỏi: Chấp nhận một lần, Tin cậy, hoặc Huỷ.
+- **SFTP hai khung.** `f` trên một thẻ máy chủ, hoặc nút "Tệp": máy mình bên trái, máy chủ bên phải, trong một tab riêng. `Space` đánh dấu, `c` chép sang bên kia; hai mũi tên giữa hai khung và việc kéo các dòng sang cũng vậy. Tệp đã có ở bên kia thì chờ bạn đồng ý ghi đè. Chuột phải để Sao chép, Tạo thư mục, Đổi tên, Xoá. Mỗi lượt truyền có một dòng dưới hai khung: thanh tiến độ, phần trăm, tốc độ, thời gian còn lại, Huỷ; ba lượt chạy cùng lúc. `.` hiện tệp ẩn, `/` lọc. Chỉ chép tệp: không chép thư mục.
+- **Đoạn lệnh (snippet).** `s`, hoặc "Đoạn lệnh" trên thanh điều hướng: các lệnh đã lưu, cho một máy hoặc cho mọi máy. Đoạn lệnh có thể có tham số (`systemctl restart {{unit}}`); tham số được hỏi khi chạy. Nó chạy trên các máy bạn đã đánh dấu.
+- **Chạy hàng loạt.** Đánh dấu các máy bằng `Space`, nhấn `x`, gõ một lệnh. Lệnh chạy cùng lúc trên mọi máy đó, mỗi máy một kết nối riêng; từng máy hiện kết quả của nó, hoặc lý do lỗi. `j`/`k` để cuộn, `/` lọc theo máy, "Chép tất cả" lấy toàn bộ.
+- **Chuyển tiếp cổng.** `L` trên một thẻ máy chủ, hoặc nút "Chuyển tiếp": các chuyển tiếp của máy trong một bảng — local (`L`), remote (`R`) hoặc dynamic SOCKS (`D`), cổng, đích, đang chạy hay không. Bật hoặc tắt, thêm, xoá. Cổng đã bị dùng thì biểu mẫu báo ngay, kèm một cổng khác để thử.
+- **Máy chủ.** `a` hoặc nút "Thêm máy chủ", `e` để sửa, `d` để xoá (có hỏi trước). Biểu mẫu gồm tên gọi, máy chủ, người dùng, cổng, cách đăng nhập (mật khẩu trong kho, tệp khoá hoặc agent), máy trung gian, thẻ, nhóm, ghim, ghi chú; có thể nhập các máy chủ từ một ssh config khác, có xem trước. Máy chủ được ghi vào `~/.ssh/config` thành các khối `Host` bình thường.
+- **Kết nối nhanh.** Trong bảng lệnh: `user@host[:port]`, và không có gì được lưu. Khi một phiên như vậy đang ở trước mặt, thanh trạng thái có nút "Lưu máy chủ này".
+- **Kho mật khẩu.** Mật khẩu các máy chủ của bạn, mã hoá bằng Argon2id + XChaCha20-Poly1305 dưới một mật khẩu kho. Kho đang khoá sẽ hỏi mật khẩu khi ứng dụng khởi động và ở trạng thái mở cho tới khi đóng ứng dụng. Hộp thoại này cũng tạo kho, đổi mật khẩu kho và xuất một bản sao lưu đã mã hoá. Quên mật khẩu kho thì không lấy lại được.
+- **Chế độ phát trực tiếp.** Nút hình con mắt trên thanh trên cùng: mọi địa chỉ cửa sổ hiển thị trở thành địa chỉ giả thuộc các dải dành cho tài liệu (`203.0.113.x`, `198.51.100.x`), cùng một máy thì luôn cùng một địa chỉ. Chỉ phần hiển thị thay đổi: file cấu hình, cơ sở dữ liệu và những gì gửi tới máy chủ vẫn dùng địa chỉ thật. Tên gọi của máy chủ và những gì shell in ra được giữ nguyên.
+- **Giao diện.** TokyoNight Tối (mặc định) và Sáng, đổi ở dòng cuối của thanh điều hướng. Riêng terminal luôn giữ màu Tối.
+- **Tiếng Anh và tiếng Việt.** Nút `EN` / `VI` trên thanh trên cùng đổi ngôn ngữ của cửa sổ; lỗi kết nối cũng được diễn đạt bằng ngôn ngữ đó.
+- **Bảng lệnh.** `Ctrl-K`, hoặc ô tìm kiếm trên thanh trên cùng: mọi máy chủ và mọi lệnh, tìm kiếm mờ.
+
+### Phím tắt
+
+| Ở đâu | Phím | Tác dụng |
+|-------|------|----------|
+| Mọi nơi | `Ctrl-K` | bảng lệnh |
+| Bảng điều khiển | `/` | tìm máy chủ, `#thẻ` để lọc theo thẻ |
+| | `a` | thêm máy chủ |
+| | `s` | đoạn lệnh |
+| | `x` | chạy một lệnh trên các máy đã đánh dấu |
+| Trên một thẻ máy chủ | `Enter` | kết nối (tới mọi máy đã đánh dấu, nếu có) |
+| | `Space` | đánh dấu máy |
+| | `v` | xem nhanh; `r` hỏi lại, `Esc` đóng |
+| | `f` / `L` | tệp / chuyển tiếp của máy |
+| | `e` / `d` | sửa / xoá máy chủ |
+| | `Alt` + phím mũi tên | dời thẻ |
+| Tab | `Ctrl-A`, rồi `0`-`9` | tới tab số đó |
+| | `Ctrl-A`, rồi `Tab` hoặc `n` / `p` | tab kế tiếp / tab trước |
+| | `Ctrl-A`, rồi `b` / `B` | phát: tab này / mọi tab |
+| | `Ctrl-A`, rồi `y` | chép kết quả của lệnh cuối |
+| | `Ctrl-A`, rồi `q` | về bảng điều khiển |
+| | `Ctrl-A`, rồi `x` hoặc `d`; `Ctrl-W` | đóng tab |
+| | `Ctrl-A` `Ctrl-A` | gửi `Ctrl-A` tới máy chủ |
+| Tệp | `j` `k` `g` `G` | di chuyển, về đầu, về cuối |
+| | `Enter` hoặc `l` / `h` | vào thư mục / lên thư mục cha |
+| | `Space`, `c` | đánh dấu, chép sang bên kia |
+| | `/`, `.` | lọc theo tên, hiện tệp ẩn |
+
+## Cài đặt
 
 Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/DucLong06/vssh/releases) có ba gói; chọn một:
 
@@ -28,288 +94,63 @@ Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/Du
 
 Mở từ menu ứng dụng, hoặc gõ `vssh-desktop`. Gói `.deb` và `.rpm` phụ thuộc WebKitGTK 4.1 và GTK 3; trình quản lý gói sẽ cài kèm. Trước khi một bản được phát hành, gói `.deb` của nó được cài vào một Ubuntu 22.04 trống và phải hiện được cửa sổ: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
 
-Tự dựng gói `.deb` (cần Rust, Node.js 24 và `libwebkit2gtk-4.1-dev`): chạy `npm ci` trong `crates/vssh-desktop`, rồi `scripts/desktop-deb.sh 0.2.0`.
+### Biên dịch từ mã nguồn
 
-Lấy cảm hứng từ [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): một ứng dụng terminal và một ứng dụng desktop trên cùng một lõi Rust. Không dùng mã nguồn hay văn bản nào của dự án đó.
-
-## Ứng dụng terminal
-
-Thích dùng bàn phím? Cùng một lõi trong terminal của bạn: danh sách máy chủ bên trái, thông tin chi tiết hoặc phiên làm việc bên phải, phím kiểu vim ở mọi nơi. Máy chủ được lưu ngay trong `~/.ssh/config`, nên lệnh `ssh` thông thường vẫn dùng được mọi thứ vssh chỉnh sửa.
-
-![vssh: danh sách máy chủ, lọc theo thẻ, ba máy cạnh nhau với chế độ phát, menu leader, kết nối nhanh và SFTP](docs/img/demo.vi.gif)
-
-- Nhiều phiên SSH trong các tab, có sẵn trình giả lập terminal
-- Nhiều máy chủ cạnh nhau trong các khung chia, và chế độ phát (broadcast): gõ một lần, chạy trên mọi máy
-- Kết nối nhanh tới `user@host`, có thể lưu hoặc không lưu máy chủ và mật khẩu
-- Trình duyệt SFTP hai khung, có thanh tiến độ
-- Chuyển tiếp cổng local, remote và dynamic (SOCKS5) cho từng máy chủ
-- Kho mật khẩu mã hoá, snippet lệnh, nhóm và thẻ (tag), tìm kiếm mờ
-- Ghi log phiên, script đăng nhập, giao diện tiếng Anh hoặc tiếng Việt
-
-| Danh sách máy chủ và chi tiết | Phát tới ba máy chủ |
-|---|---|
-| ![Danh sách máy chủ với chấm trạng thái, độ trễ, nhóm và thẻ](docs/img/hosts.vi.png) | ![Ba phiên cạnh nhau, một lệnh được gõ vào cả ba](docs/img/broadcast.vi.png) |
-| **Menu leader (`Ctrl-a`)** | **SFTP** |
-| ![Popup which-key liệt kê các phím của phiên làm việc](docs/img/which-key.vi.png) | ![Trình duyệt SFTP hai khung](docs/img/sftp.vi.png) |
-
-Mọi hình ảnh được chụp từ chính ứng dụng bằng [`docs/img/demo.sh`](docs/img/demo.sh) (nội dung terminal được dựng thành ảnh), bằng ngôn ngữ giao diện tiếng Việt; các máy chủ trong hình là một container demo chạy trên máy.
-
-### Cài đặt (terminal)
+Để tự dựng gói `.deb`, bạn cần Rust, Node.js 24 và `libwebkit2gtk-4.1-dev`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh -s -- --lang vi
+(cd crates/vssh-desktop && npm ci)
+scripts/desktop-deb.sh 0.2.0     # -> target/deb/vssh-desktop_0.2.0_<arch>.deb
+sudo apt install ./target/deb/vssh-desktop_0.2.0_*.deb
 ```
 
-Cài vào `~/.local/bin` (đổi bằng `--prefix THƯ_MỤC`); chạy lại để cập nhật. Trình cài đặt dùng bản dựng sẵn nếu có cho máy của bạn, nếu không sẽ biên dịch bằng `cargo`. Thông báo hiện bằng tiếng Anh hoặc tiếng Việt theo locale của máy; ép chọn bằng `--lang vi` hoặc `VSSH_LANG=vi`.
+## Dữ liệu và cấu hình dùng chung
 
-### Biên dịch
-
-Cần Rust 1.89 trở lên và một trình biên dịch C (cho SQLite đi kèm).
-
-```sh
-cargo build --release
-./target/release/vssh        # hoặc: sh install.sh, ngay trong thư mục mã nguồn
-```
-
-## Bắt đầu nhanh: kết nối đầu tiên
-
-1. Chạy `vssh`. Mọi máy chủ trong `~/.ssh/config` sẽ hiện ra. Chưa có máy chủ nào? Nhấn `a` để thêm (xem mục kế tiếp).
-2. Di chuyển bằng `j` / `k`, nhấn `Enter`. Một shell mở ra trong tab mới.
-3. Việc đăng nhập thử lần lượt SSH agent, các file khoá, rồi mật khẩu trong kho. Nếu tất cả bị từ chối, vssh hỏi mật khẩu một lần.
-4. Lần đầu kết nối, khoá của máy chủ được lưu vào `~/.ssh/known_hosts`. Nếu sau này khoá đó thay đổi, vssh từ chối kết nối.
-5. `Ctrl-a q` quay về danh sách máy chủ, `Ctrl-a x` đóng phiên, `q` thoát. Sau khi nhấn `Ctrl-a`, một menu hiện ra mọi phím có thể nhấn tiếp.
-
-`r` kiểm tra máy chủ nào phản hồi: chấm xanh kèm thời gian kết nối, chấm đỏ cho máy không kết nối được, chấm xám rỗng cho máy chưa kiểm tra.
-
-## Kết nối nhanh
-
-Nhấn `c`, gõ `user@host` hoặc `user@host:port`, có thể thêm mật khẩu, rồi nhấn `Enter`. Một phiên làm việc mở ra trong tab. Không có gì được lưu: không thêm vào `~/.ssh/config`, không lưu vào kho mật khẩu, không ghi thống kê; mật khẩu chỉ dùng cho phiên đó. Khoá máy chủ vẫn được kiểm tra và ghi vào `~/.ssh/known_hosts`, giống như `ssh`.
-
-**Lưu ngay khi kết nối.** Đánh dấu ô chọn trong biểu mẫu bằng `Ctrl-s` (hoặc `Tab` tới ô đó rồi nhấn `S`), sau đó nhấn `Enter`:
-
-- máy chủ được thêm vào `~/.ssh/config` như mọi máy chủ khác. Alias là tên máy, hoặc `user@host` nếu tên đó đã được dùng;
-- mật khẩu bạn đã gõ được lưu vào kho mật khẩu dưới alias đó, mã hoá như mọi mật khẩu trong kho. Nếu kho đang khoá, vssh hỏi mật khẩu chủ (hoặc tạo kho mới); nếu bạn huỷ bước này thì mật khẩu bị bỏ đi, không được lưu;
-- mật khẩu không bao giờ được ghi vào `~/.ssh/config` hay `config.toml`.
-
-Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng để bật/tắt vì đó là một chữ cái bạn có thể cần gõ; vì vậy phím tắt là `Ctrl-s`.
-
-![Biểu mẫu kết nối nhanh, ô lưu đã được đánh dấu](docs/img/quick-connect.vi.png)
-
-## Nhiều máy chủ cùng lúc
-
-- **Mở nhiều máy:** đánh dấu các máy bằng `Space`, rồi `Enter` mở một phiên trên từng máy. Hoặc nhấn `T`, gõ một thẻ hay nhóm, mọi máy có thẻ đó sẽ được kết nối.
-- **Mọi tỷ lệ màn hình:** bố cục tự theo màn hình terminal — cạnh nhau khi rộng, xếp chồng chiếm hết chiều rộng khi cao (điện thoại chạy Termux, màn hình dọc), từng bảng một khi không đủ chỗ. Ép bằng `layout = "landscape"|"portrait"` trong cấu hình.
-- **Bố cục:** các phiên hiện cạnh nhau. `Ctrl-a L` đổi lần lượt: một khung, 2 cột, lưới 2x2, 3 cột; `Ctrl-a w` rồi `s` `v` `g` `t` để chọn thẳng. Khi số phiên nhiều hơn số khung, màn hình đi theo phiên đang được chọn.
-- **Chuyển khung:** `Alt-h/j/k/l` di chuyển giữa các khung như cửa sổ vim (hoặc `Ctrl-a` + phím mũi tên). `Ctrl-a d` đóng phiên đang chọn.
-- **Phát (broadcast):** `Alt-b` (hoặc `Ctrl-a b`). Khi bật, những gì bạn gõ hay dán sẽ được gửi tới *mọi* phiên đang kết nối, kể cả phiên không hiện trên màn hình. Thanh trạng thái chuyển sang màu cam và cho biết có bao nhiêu phiên đang nhận, các khung đó có viền cam. Nhấn `Alt-b` lần nữa để tắt.
-- **Snippet:** `Ctrl-a s` gõ một snippet đã lưu vào phiên, hoặc vào mọi phiên khi đang phát.
-- **Một lệnh, nhiều máy:** đánh dấu các máy bằng `Space`, nhấn `x`, gõ một lệnh. Lệnh chạy cùng lúc trên mọi máy đã đánh dấu, mỗi máy một kết nối riêng, không mở phiên nào. Kết quả hiện dần khi các máy trả lời, mỗi dòng dạng `máy │ kết quả`, tên máy mang màu thẻ của nó; máy còn đang chạy hiện vòng xoay, máy lỗi hiện lý do. `j`/`k` để cuộn, `/` chỉ hiện những máy có tên chứa chữ bạn gõ, `Esc` để đóng và bỏ các máy chưa trả lời. Phát (broadcast) dành cho việc gõ vào các phiên đang mở; `x` dành cho lệnh chạy một lần. Snippet chạy trên các máy đã đánh dấu cũng dùng màn hình này.
-
-## Thanh trạng thái
-
-Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi tới thẻ, nhóm và độ trễ. Ở cửa sổ rộng, nó còn cho biết tình trạng của máy chủ:
-
-```
- TERMINAL  single          web-01 : khung 1/1          CPU ▂ 23% · RAM ▂ 4.2/16G · / ▅ 61%   web  prod  12 ms
-```
-
-- **CPU** là tải trung bình 1 phút chia cho số nhân (trên 100% nghĩa là việc đang phải xếp hàng), **RAM** là bộ nhớ đã dùng / tổng, **/** là mức đầy của phân vùng gốc. Mỗi số chuyển sang vàng rồi đỏ: CPU trên 50% / 80%, bộ nhớ trên 70% / 85%, đĩa trên 80% / 90%.
-- **Trong một phiên**, số liệu được đọc mỗi 5 giây qua một kênh thứ hai của chính kết nối đang mở: không đăng nhập thêm lần nào. Hỗ trợ máy chủ Linux (`/proc`) và macOS (`uptime`, `vm_stat`); máy không trả lời thì không hiện gì.
-- **Ở danh sách máy chủ**, dừng con trỏ trên một máy trong giây lát thì máy đó được hỏi một lần. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`), và chỉ dùng agent hoặc file khoá: mật khẩu trong kho không bao giờ được gửi cho việc này. Máy đang có phiên mở thì dùng số liệu của phiên đó; máy đã từ chối thì không bị hỏi lại.
-- **Khi thiếu chỗ:** bỏ thanh nhỏ trước, rồi tới đĩa, rồi bộ nhớ. Màn hình dọc và cửa sổ nhỏ chỉ giữ chế độ và máy chủ.
-- `status_stats = false` trong file cấu hình sẽ tắt toàn bộ.
-- **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
-- **Chuyển tab:** tab được chuyển tới trượt vào từ bên phải trong ba khung hình (120 ms). Terminal từ xa không bị đổi kích thước trong lúc trượt. Trên đường truyền chậm, ba lần vẽ lại là ba lượt gửi nhận: đặt `transitions = false` để tắt.
-
-## Chép vào clipboard
-
-vssh không dùng thư viện clipboard nào. Nó nhờ chính terminal đang chạy nó chép giúp, bằng chuỗi thoát OSC 52, nên vẫn dùng được khi bạn SSH vào máy đang chạy vssh.
-
-- **Danh sách máy chủ:** `y` chép `ssh <máy>`.
-- **Phiên làm việc:** `Ctrl-a y` chép kết quả của lệnh cuối: các dòng nằm giữa dấu nhắc bạn đang đứng và dấu nhắc trước đó. Nếu hai dấu nhắc không giống hệt nhau (có đồng hồ trong đó, hoặc bạn đã gõ dở), mọi thứ phía trên con trỏ sẽ được chép. Chỉ tính những gì đang hiện trên màn hình. Phím là `Ctrl-a y` chứ không phải `y`, vì `y` trần là của shell.
-- **SFTP:** `y` chép đường dẫn đầy đủ của file đang chọn.
-- **Terminal hỗ trợ:** hầu hết terminal hiện nay nhận OSC 52 (có cái hỏi trước hoặc cần bật). Trong tmux, vssh còn đưa văn bản cho chính tmux (`tmux load-buffer -w`), vì tmux bỏ qua OSC 52 của chương trình trừ khi `set-clipboard on`. `osc52 = false` tắt chuỗi thoát cho terminal in nó ra thay vì thực hiện; bộ đệm tmux vẫn được đặt.
-
-## Máy trung gian (jump host)
-
-`ProxyJump` và `ProxyCommand` trong `~/.ssh/config` được áp dụng cho mọi thứ vssh mở: phiên, SFTP, chuyển tiếp cổng, xem nhanh, chạy lệnh hàng loạt. vssh không có biểu mẫu cho hai mục này; hãy viết chúng vào file như khi dùng `ssh`.
-
-```
-Host bastion
-    HostName 203.0.113.1
-    User jump
-
-Host db-internal
-    HostName 10.0.0.5
-    ProxyJump bastion
-```
-
-- **`ProxyJump`** nhận một máy hoặc một chuỗi cách nhau bằng dấu phẩy, mỗi mục dạng `[user@]host[:port]`. Mỗi chặng được tra qua file cấu hình như mọi máy khác, nên có thể là một alias có `HostName`, `User`, `IdentityFile` riêng và cả `ProxyJump` riêng. Khoá máy chủ của từng chặng được kiểm tra với `known_hosts` y như máy đích.
-- **Các chặng chỉ đăng nhập bằng agent hoặc file khoá.** Mật khẩu trong kho chỉ dùng cho máy đích, không bao giờ dùng cho chặng trung gian.
-- **`ProxyCommand`** chạy lệnh ngay trên máy bạn, thay `%h`, `%p`, `%r` và `%%`, rồi nói chuyện SSH qua đầu vào và đầu ra của lệnh. Lệnh bị dừng khi kết nối kết thúc. Tên máy hay tên người dùng chứa ký tự nào ngoài chữ, số và `. _ - : @ [ ]` sẽ bị từ chối chứ không được đưa cho shell. Nếu một máy có cả hai, `ProxyJump` được dùng. `none` tắt mục tương ứng.
-- **Khi một chặng lỗi**, thông báo nêu rõ chặng đó và vị trí của nó trong chuỗi.
-- **Chưa hỗ trợ:** địa chỉ IPv6 trong ngoặc vuông và URI `ssh://` làm chặng (hãy tạo một khối `Host` cho chặng đó); và khi dừng con trỏ trên một máy cần máy trung gian hay lệnh proxy, vssh không hỏi số liệu của máy đó: hãy mở phiên hoặc nhấn `v`.
-
-## Xem nhanh
-
-Nhấn `v` ở danh sách máy chủ để mở một cửa sổ nhỏ cho biết máy đó tự nói gì về mình: tên máy, hệ thống (`uname -srm`), thời gian đã chạy, ba chỉ số tải trung bình, CPU, bộ nhớ và đĩa gốc. Không mở shell nào: chỉ là một lệnh qua một kết nối ngắn, với cùng cách kiểm tra khoá máy chủ và đăng nhập như một phiên (agent, khoá, rồi mật khẩu trong kho).
-
-- Câu trả lời được giữ 30 giây, nên mở lại cửa sổ là có ngay; `r` hoặc `Enter` để hỏi lại, `Esc` hoặc `q` để đóng.
-- Mục nào máy không trả lời thì hiện dấu gạch; phần còn lại vẫn hiện. Nếu kết nối thất bại, cửa sổ cho biết vì sao, theo cách diễn đạt ở mục kế tiếp.
-
-## Khi kết nối thất bại
-
-vssh cho biết vì sao, không chỉ báo là thất bại. Một hộp thoại hiện lý do cùng toàn bộ chuỗi lỗi; phần chi tiết của máy chủ giữ lỗi gần nhất, màu đỏ, cho tới khi kết nối được.
-
-| Hiển thị | Chuyện gì đã xảy ra |
-|----------|---------------------|
-| `DNS` Không phân giải được tên db.internal: … | tra tên thất bại; theo sau là nguyên văn lỗi của bộ phân giải |
-| `HẾT GIỜ` Hết thời gian kết nối sau 10 giây (203.0.113.7:22) | không có gì trả lời ở địa chỉ đó |
-| `BỊ TỪ CHỐI` 203.0.113.7:22 từ chối kết nối — sshd có đang chạy không? | máy có trả lời, nhưng không có gì nghe ở cổng đó |
-| `KHÔNG TỚI ĐƯỢC` Không tới được 203.0.113.7:22: … | không có đường đi; theo sau là nguyên văn lỗi của hệ thống |
-| `XÁC THỰC` Sai mật khẩu / Khoá công khai bị từ chối / Không có cách đăng nhập | máy chủ từ chối cách nào; sau đó bạn được hỏi mật khẩu |
-| `KHOÁ MÁY CHỦ` Khoá máy chủ … không khớp | dấu vân tay máy chủ gửi, và dòng trong `known_hosts` mà nó xung đột |
-| `MÁY TRUNG GIAN` Máy trung gian bastion:22 (hop 1 of 2) lỗi: … | chặng nào của chuỗi `ProxyJump` bị lỗi, và vì sao, theo cách diễn đạt của các dòng trên |
-| `LỖI` … | mọi lỗi khác, hiện nguyên văn |
-
-Snippet chạy trên nhiều máy và chuyển tiếp cổng báo lỗi bằng cùng cách diễn đạt.
-
-## Ghi log phiên và script đăng nhập
-
-- **Ghi log một phiên:** `Ctrl-a l` bật và tắt việc ghi vào `~/.local/share/vssh/logs/<máy>-<ngày>-<giờ>.log` (quyền 0600). File chứa mọi thứ terminal hiển thị, nguyên văn và không che gì, nên mật khẩu nào bị in ra cũng nằm trong đó; đọc bằng `less -R`. Đặt `log_sessions = true` trong file cấu hình để ghi mọi phiên.
-- **Script đăng nhập:** khai báo một lệnh trong mục `[exec]` của `config.toml`, lệnh sẽ được gõ vào shell ngay sau khi đăng nhập. `RemoteCommand` trong `~/.ssh/config` cũng được tôn trọng: lệnh đó chạy *thay cho* shell, giống `ssh`.
-
-## Thêm máy chủ
-
-**Trong giao diện.** Nhấn `a`, điền biểu mẫu (`Tab` để chuyển ô), rồi nhấn `Enter`:
-
-| Ô | Ý nghĩa |
-|---|---------|
-| Alias | tên ngắn hiển thị trong danh sách |
-| HostName | địa chỉ IP hoặc tên miền |
-| User, Port, IdentityFile | không bắt buộc; mặc định là user hiện tại, cổng 22, và agent / các khoá mặc định |
-| Group, Tags, Notes | không bắt buộc; chỉ vssh lưu |
-
-Máy chủ được ghi vào `~/.ssh/config` thành một khối `Host` bình thường. `e` để sửa, `y` để nhân bản, `d` để xoá.
-
-**Qua `~/.ssh/config`.** Thêm một khối rồi khởi động lại vssh (file được đọc lúc khởi động):
-
-```
-Host web1
-    HostName 203.0.113.10
-    User deploy
-    Port 2222
-    IdentityFile ~/.ssh/id_ed25519
-```
-
-Chú thích, các tuỳ chọn vssh không biết và phần mặc định `Host *` đều được giữ nguyên. Trước lần sửa đầu tiên, vssh lưu một bản sao tại `~/.ssh/config.vssh.bak`.
-
-## Nhóm và thẻ
-
-Nhấn `e` trên một máy chủ rồi điền **Group** (một tên, ví dụ `prod`) và **Tags** (cách nhau bằng dấu cách hoặc dấu phẩy, ví dụ `web eu`). Máy chủ được sắp xếp: đã ghim lên trước, sau đó theo nhóm; nhóm và thẻ được tô màu.
-
-| Gõ | Hiển thị |
-|----|----------|
-| `/#web` | máy chủ có thẻ hoặc nhóm bắt đầu bằng `web` |
-| `/#` | mọi máy chủ có thẻ hoặc nhóm |
-| `/web` | tìm mờ theo alias, hostname, user, nhóm và thẻ |
-
-`Enter` giữ bộ lọc, `Esc` xoá bộ lọc. Nhóm và thẻ nằm trong cơ sở dữ liệu riêng của vssh, không nằm trong ssh config.
-
-**Ngăn thẻ.** `w` mở một ngăn bên phải liệt kê mọi thẻ và nhóm dưới dạng nhãn màu, kèm số máy chủ mà thẻ đó liệt kê, thẻ dùng nhiều đứng trước. `1`-`9` lọc danh sách máy theo thẻ đó (giống hệt gõ `/#thẻ`, nên con số chính là số máy bạn nhận được); `j`/`k` rồi `Enter` để chọn thẻ ở phía dưới. `0` bỏ lọc, `/` thu hẹp chính ngăn thẻ bằng cách gõ, `w` hoặc `q` đóng ngăn và giữ bộ lọc, `Esc` đóng ngăn và bỏ lọc.
-
-## Phím tắt
-
-Nhấn `?` trong vssh để xem danh sách này.
-
-| Ở đâu | Phím | Tác dụng |
-|-------|------|----------|
-| Danh sách máy chủ | `j` `k` `g` `G` | di chuyển, về đầu, về cuối |
-| | `Ctrl-d` / `Ctrl-u` | xuống / lên nửa màn hình |
-| | `Enter` / `s` | mở shell / trình duyệt SFTP |
-| | `Space`, rồi `Enter` | đánh dấu các máy, rồi mở phiên trên mọi máy đã đánh dấu |
-| | `T` | kết nối mọi máy có cùng thẻ hoặc nhóm |
-| | `x` | chạy một lệnh trên mọi máy đã đánh dấu (máy đang chọn nếu chưa đánh dấu máy nào) |
-| | `c` | kết nối nhanh; `Ctrl-s` trong biểu mẫu để lưu máy chủ và mật khẩu |
-| | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm); `Esc` để xoá |
-| | `a` `e` `d` `Y` | thêm, sửa, xoá, nhân bản máy chủ |
-| | `y` | chép `ssh <máy>` vào clipboard |
-| | `p` | ghim máy chủ |
-| | `f` / `n` | chuyển tiếp cổng / snippet của máy chủ |
-| | `w` | ngăn thẻ: `1`-`9` lọc theo thẻ, `0` hoặc `Esc` bỏ lọc, `/` tìm trong các thẻ |
-| | `r` | kiểm tra máy chủ nào kết nối được |
-| | `v` | xem nhanh: uptime, tải, bộ nhớ và đĩa của máy, không cần mở phiên |
-| | `P` / `V` | lưu mật khẩu vào kho / mở hoặc khoá kho |
-| | `Tab` / `Shift-Tab` | tab kế tiếp / tab trước |
-| | `?` | trợ giúp |
-| | `q`, `Q` hoặc `Ctrl-c` | thoát |
-| Chuyển tiếp cổng, snippet | `a` `e` `d` | thêm, sửa (snippet), xoá |
-| | `Enter` | bật/tắt chuyển tiếp, chạy snippet |
-| | `Esc` | quay lại |
-| Phiên làm việc | `Alt-b` hoặc `Ctrl-a` `b` | bật / tắt phát: gõ tới mọi phiên |
-| | `Alt-h` `j` `k` `l` | chọn khung bên trái / dưới / trên / phải |
-| | `Ctrl-a` `L` | bố cục kế tiếp: một khung, 2 cột, 2x2, 3 cột |
-| | `Ctrl-a` `w` | menu cửa sổ: `h` `j` `k` `l` chọn khung, `s` `v` `g` `t` bố cục, `d` đóng |
-| | `Ctrl-a` `l` | bật / tắt ghi log phiên ra file |
-| | `Ctrl-a` `s` | gõ một snippet vào phiên |
-| | `Ctrl-a` `y` | chép kết quả của lệnh cuối vào clipboard |
-| | `Ctrl-a` `d` hoặc `x` | đóng phiên |
-| | `Ctrl-a` `q` | về danh sách máy chủ |
-| | `Ctrl-a` `Tab` / `p`, `1`-`9` | tab kế tiếp / tab trước, tới tab số đó |
-| | `Ctrl-a` `PgUp` / `PgDn` | cuộn lên / cuộn xuống (hoặc `Ctrl-u` / `Ctrl-d`) |
-| | `Ctrl-a` `Ctrl-a` | gửi `Ctrl-a` tới máy từ xa |
-| SFTP | `Tab` | đổi khung (trái là máy mình, phải là máy từ xa) |
-| | `Enter` / `h` | vào thư mục / lên thư mục cha |
-| | `c` | chép file sang khung bên kia |
-| | `m` `r` `d` `R` | tạo thư mục, đổi tên, xoá, tải lại |
-| | `y` | chép đường dẫn của file đang chọn vào clipboard |
-| | `q` / `Q` | đóng / thoát |
-
-`Alt-b` và, khi đang hiện nhiều khung, `Alt-h/j/k/l` do vssh xử lý nên không còn tới shell ở máy từ xa. Nếu bạn dùng bản cũ: `Ctrl-a h` (về danh sách máy chủ) nay là `Ctrl-a q`, `Ctrl-a k` / `j` (cuộn) nay là `Ctrl-a PgUp` / `PgDn`, còn nhân bản chuyển từ `y` sang `Y` vì `y` nay là chép (file cấu hình có `duplicate = "y"` thì vẫn giữ nguyên).
-
-Chuyển tiếp cổng được gõ giống cờ của `ssh`: `L 8080 localhost:80`, `R 9000 localhost:3000`, `D 1080`.
-
-## Bảo mật
-
-- **Khoá máy chủ:** máy chủ chưa biết được ghi lại ở lần kết nối đầu; máy chủ đã biết phải đưa ra đúng khoá đã ghi, nếu không kết nối bị từ chối.
-- **Kho mật khẩu:** `P` lưu mật khẩu của máy chủ vào `~/.local/share/vssh/vault` (quyền 0600), mã hoá bằng Argon2id + XChaCha20-Poly1305. Mất mật khẩu chủ thì không khôi phục được.
-- **Cảnh báo đã biết:** `cargo audit` báo [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071) (kênh kề thời gian trong crate `rsa`, bị russh ghim phiên bản). Lỗi ảnh hưởng tới việc ký bằng *file* khoá RSA. Nên dùng khoá Ed25519, hoặc để khoá RSA trong `ssh-agent`. Chi tiết: `.cargo/audit.toml`.
-
-## File và cấu hình
+Ứng dụng desktop không có kho dữ liệu riêng: nó dùng cùng dữ liệu với ứng dụng terminal. Một máy chủ, một thẻ, một đoạn lệnh, một chuyển tiếp hay một mật khẩu trong kho tạo ở bên này thì có ngay ở bên kia.
 
 | Đường dẫn | Nội dung |
 |-----------|----------|
 | `~/.ssh/config`, `~/.ssh/known_hosts` | máy chủ, chuyển tiếp cổng, khoá máy chủ (dùng chung với OpenSSH) |
-| `~/.local/share/vssh/vssh.db` | nhóm, thẻ, ghi chú, ghim, thống kê, snippet |
+| `~/.local/share/vssh/vssh.db` | nhóm, thẻ, ghi chú, ghim, thống kê, đoạn lệnh |
 | `~/.local/share/vssh/vault` | mật khẩu đã mã hoá |
-| `~/.local/share/vssh/logs/` | log phiên, khi bạn bật ghi log |
-| `~/.config/vssh/config.toml` | thiết lập, màu và phím (không bắt buộc) |
+| `~/.config/vssh/config.toml` | thiết lập (không bắt buộc) |
 
-```toml
-lang = "vi"             # "vi": gợi ý phím, menu và trợ giúp bằng tiếng Việt; mặc định "en"
-ping_on_start = false   # kiểm tra mọi máy chủ khi khởi động
-log_sessions = false    # ghi log mọi phiên ngay từ đầu
-status_stats = true     # tải, bộ nhớ và đĩa của máy đang chọn trên thanh trạng thái
-nerd_font = false       # true: đầu bo Powerline cho các nhãn (cần Nerd Font)
-transitions = true      # tab trượt vào trong ba khung hình khi chuyển tab
-osc52 = true            # chép qua chuỗi thoát OSC 52 của terminal
+- **`~/.ssh/config`** vẫn là file mà chính `ssh` dùng được. Trước lần sửa đầu tiên, vssh lưu một bản sao tại `~/.ssh/config.vssh.bak`. Ứng dụng desktop đọc lại danh sách máy chủ mỗi 5 giây, nên máy chủ thêm bằng tay hoặc thêm trong ứng dụng terminal sẽ hiện ra mà không cần khởi động lại.
+- **`~/.config/vssh/config.toml`** chủ yếu là của ứng dụng terminal: phím, màu và thanh trạng thái của nó ([xem đầy đủ](README-terminal.vi.md#file-và-cấu-hình)). Ứng dụng desktop đọc một thiết lập trong đó, `batch_max_parallel`: số máy chạy lệnh cùng lúc trong một lượt chạy hàng loạt (mặc định 8; các máy còn lại chờ tới lượt).
+- **Những gì bạn chọn trong cửa sổ** — ngôn ngữ, giao diện, chế độ phát trực tiếp, thứ tự các thẻ máy chủ — do chính cửa sổ lưu, không nằm trong `config.toml`.
+- **Bảo mật** thuộc về lõi, nên giống nhau ở cả hai: khoá của máy chủ chưa biết được ghi lại ở lần kết nối đầu, máy chủ đã biết phải đưa ra đúng khoá đã ghi. Chi tiết, cùng một cảnh báo đã biết, nằm trong [README-terminal.vi.md](README-terminal.vi.md#bảo-mật).
 
-[exec]                  # script đăng nhập: được gõ vào shell sau khi đăng nhập
-web-01 = "cd /srv/app && git status"
+## Xử lý sự cố
 
-[theme]                 # tên màu hoặc "#rrggbb"
-accent = "cyan"         # còn có: border, text, dim, selection, ok, error, warn, bar, key
+**Không khởi động được: thiếu `libwebkit2gtk-4.1.so.0`.** Gói `.deb` và `.rpm` cần WebKitGTK 4.1 và GTK 3. `apt install ./…deb` và `dnf install ./…rpm` sẽ cài kèm; `dpkg -i` và `rpm -i` thì không. Để tự cài thêm:
 
-[keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
-leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets, tags,
-quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
+```sh
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0    # Ubuntu, Debian
+sudo dnf install webkit2gtk4.1 gtk3                # Fedora
 ```
 
-Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hình viết cho phiên bản cũ vẫn dùng được. Cũng có thể chọn ngôn ngữ cho từng lần chạy bằng `vssh --lang vi` hoặc `VSSH_LANG=vi`; các biểu mẫu và thông báo lỗi vẫn bằng tiếng Anh.
+Các bản phân phối cũ hơn những bản trong bảng ở trên không có WebKitGTK 4.1.
 
-## Không hỗ trợ
+**Wayland hay X11.** Cửa sổ là GTK 3 với WebKitGTK và dùng thứ mà phiên làm việc cung cấp. Các lượt chạy thử của chính dự án chạy trên X11. Nếu dưới Wayland cửa sổ trắng trơn hoặc không mở, hãy chạy qua XWayland:
 
-`Include`, file khoá có mật khẩu bảo vệ (hãy dùng agent), keyboard-interactive / 2FA, chép thư mục qua SFTP, Telnet, serial, Zmodem, chuyển tiếp X11, chuột. Lý do nằm trong [docs/PLAN.md](docs/PLAN.md#not-planned).
+```sh
+GDK_BACKEND=x11 vssh-desktop
+```
+
+Với driver NVIDIA, cửa sổ trắng trơn là một lỗi đã biết của WebKitGTK; cách xử lý thường dùng là `WEBKIT_DISABLE_DMABUF_RENDERER=1 vssh-desktop`.
+
+**Không thấy biểu tượng trong menu ứng dụng.** Làm mới bộ đệm của môi trường desktop, hoặc đăng xuất rồi đăng nhập lại:
+
+```sh
+sudo update-desktop-database
+sudo gtk-update-icon-cache -f /usr/share/icons/hicolor
+```
+
+AppImage không cài gì vào hệ thống, nên không có mục trong menu: chạy thẳng file đó.
+
+## Lấy cảm hứng từ OmnySSH
+
+Lấy cảm hứng từ [OmnySSH](https://github.com/timhartmann7/omnyssh) (Apache-2.0): một ứng dụng terminal và một ứng dụng desktop trên cùng một lõi Rust. Không dùng mã nguồn hay văn bản nào của dự án đó.
 
 ## Phát triển
 
@@ -317,6 +158,7 @@ Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hì
 cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
 ./scripts/check-core-deps.sh    # crates/vssh-core không được phụ thuộc thư viện TUI
 cargo audit    # cần: cargo install cargo-audit
+(cd crates/vssh-desktop && npm test && npm run check)    # giao diện desktop
 ```
 
 Ghi chú thiết kế: [docs/PLAN.md](docs/PLAN.md).
@@ -324,3 +166,13 @@ Ghi chú thiết kế: [docs/PLAN.md](docs/PLAN.md).
 ## Giấy phép
 
 MIT. Xem file [LICENSE](LICENSE).
+
+## Ứng dụng terminal
+
+Thích dùng bàn phím? Cùng một lõi trong terminal của bạn: danh sách máy chủ bên trái, thông tin chi tiết hoặc phiên làm việc bên phải, phím kiểu vim ở mọi nơi. Nhiều phiên trong các tab và khung chia, chế độ phát, SFTP, chuyển tiếp cổng, snippet và cùng một kho mật khẩu, trên Linux và macOS.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh -s -- --lang vi
+```
+
+Mọi thứ khác về nó — bắt đầu nhanh, phím tắt, cấu hình — nằm trong [README-terminal.vi.md](README-terminal.vi.md) ([English](README-terminal.md)).
