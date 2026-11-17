@@ -83,7 +83,7 @@ impl Target {
         };
         let host = c.get(alias, "HostName").unwrap_or(alias);
         crate::proto::ensure_ssh(host)?;
-        let home = crate::config::home();
+        let home = vssh_core::config::home();
         let mut keys: Vec<PathBuf> = c
             .get_all(alias, "IdentityFile")
             .iter()
@@ -199,7 +199,7 @@ fn current_user() -> String {
 }
 
 fn default_keys() -> Vec<PathBuf> {
-    let dir = crate::config::home().join(".ssh");
+    let dir = vssh_core::config::home().join(".ssh");
     ["id_ed25519", "id_ecdsa", "id_rsa"]
         .map(|k| dir.join(k))
         .into()
@@ -385,7 +385,7 @@ impl client::Handler for Client {
 }
 
 fn known_hosts_path() -> PathBuf {
-    crate::config::home().join(".ssh/known_hosts")
+    vssh_core::config::home().join(".ssh/known_hosts")
 }
 
 /// `known_hosts` policy, as `StrictHostKeyChecking accept-new`: a host with

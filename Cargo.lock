@@ -3135,6 +3135,7 @@ dependencies = [
  "serde",
  "tokio",
  "toml",
+ "vssh-core",
  "vt100",
  "zeroize",
 ]
@@ -3142,6 +3143,11 @@ dependencies = [
 [[package]]
 name = "vssh-core"
 version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "vt100"

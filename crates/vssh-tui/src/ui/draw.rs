@@ -17,9 +17,10 @@ use super::panes;
 use super::panes::Shape;
 use super::stats::Level;
 use super::{batch_lines, clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Row, Tab};
-use crate::config::{Lang, Theme};
 use crate::ssh::SessionCmd;
 use crate::store::db::Meta;
+use crate::theme::Theme;
+use vssh_core::config::Lang;
 
 /// Stable colour per group or tag name. 256-colour pastels, so they look the
 /// same on every terminal theme and stay readable under black badge text.

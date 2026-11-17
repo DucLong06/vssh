@@ -213,7 +213,7 @@ fn identity_file_expands_only_a_leading_home() {
         "Host h\n  IdentityFile ~/.ssh/k\n  IdentityFile ~other/k\n  IdentityFile /abs/~/k\n  \
          IdentityFile rel/k\n  IdentityFile \"~/with space/k\"\n",
     );
-    let home = vssh::config::home();
+    let home = vssh_core::config::home();
     let keys = Target::from_config(&c, "h").unwrap().keys;
     let expected = [
         home.join(".ssh/k"),
