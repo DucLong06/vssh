@@ -145,6 +145,10 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     // `{name}` is a parameter of a snippet: what stands between its `{{ }}`.
     ("param_hint", "value for {name}", "giá trị cho {name}"),
     ("no_output", "(no output)", "(không có kết quả)"),
+    ("scroll", "scroll", "cuộn"),
+    ("copy_all", "Copy all", "Chép tất cả"),
+    // The TUI's word for what Ctrl-A y did.
+    ("copied", "copied", "đã chép"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

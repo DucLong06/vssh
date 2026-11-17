@@ -1,14 +1,15 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event'
-  import { onMount, untrack } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import { api, explain, type Answered, type Host, type Lang, type Shown } from './api'
+  import { chip, groupOf } from './hosts'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
 
   type Props = {
     /** The hosts the command is run on. */
     hosts: Host[]
-    /** A snippet's command, run at once, with a value for each of its `{{name}}`s. */
+    /** A snippet's command, run at once, with a value for each of its `{{name}}`s; none: one is typed here. */
     command?: string
     params?: Record<string, string>
     onclose: () => void
@@ -23,10 +24,20 @@
   const answers = $state<Record<string, Answer>>({})
   /** Why the batch could not be started. */
   let refusal = $state<Shown | null>(null)
+  /** The command line: what is run on Enter. It starts as the snippet's. */
+  // svelte-ignore state_referenced_locally
+  let typed = $state(command)
+  /** Only the hosts whose name has this in it are shown. */
+  let filter = $state('')
+  let filtering = $state(false)
+  let copied = $state(false)
+  let list = $state<HTMLElement>()
+  let search = $state<HTMLInputElement>()
 
   const title = $derived(t('run_on').replace('{n}', String(hosts.length)))
-  const rows = $derived(hosts.map((host) => ({ host, answer: answers[`${batch} ${host.alias}`] })))
-  const done = $derived(rows.filter((row) => row.answer).length)
+  const all = $derived(hosts.map((host) => ({ host, answer: answers[`${batch} ${host.alias}`] })))
+  const rows = $derived(all.filter(({ host }) => host.alias.toLowerCase().includes(filter.toLowerCase())))
+  const done = $derived(all.filter((row) => row.answer).length)
 
   /** A failure is kept as data: the words for it follow the language. */
   const say = (answer: Answer, lang: Lang) =>
@@ -45,12 +56,18 @@
   })
 
   async function run() {
+    if (!typed.trim()) return
     refusal = null
+    // The answers of the last command are not this one's.
+    batch = null
+    copied = false
+    // The keys are the answers' from here on.
+    list?.focus()
     await heard
     try {
       batch = await api.snippetRun(
         hosts.map((host) => host.alias),
-        command,
+        typed,
         params,
       )
     } catch (error) {
@@ -59,31 +76,104 @@
   }
 
   onMount(() => {
-    if (command) void run()
+    void run()
     return () => void heard.then((unlisten) => unlisten())
   })
+
+  /** What the hosts on screen answered, a failure in its words. */
+  async function copy() {
+    const parts = rows.flatMap(({ host, answer }) => {
+      if (!answer) return []
+      const said = answer.error ? `✗ ${answer.why?.label} ${answer.why?.message}` : answer.output?.trimEnd()
+      return [`# ${host.alias}\n${said}\n`]
+    })
+    if (!parts.length) return
+    await api.copy(parts.join('\n'))
+    copied = true
+  }
+
+  /** How far a j or a k goes: a few lines. */
+  const STEP = 80
+  const keys: Record<string, () => void> = {
+    j: () => list && (list.scrollTop += STEP),
+    k: () => list && (list.scrollTop = Math.max(0, list.scrollTop - STEP)),
+    y: () => void copy(),
+    '/': async () => {
+      filtering = true
+      await tick()
+      search?.focus()
+    },
+  }
+
+  function onkeydown(e: KeyboardEvent) {
+    // In a field a letter is a letter.
+    if (e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey || e.altKey || !(e.key in keys)) return
+    e.preventDefault()
+    keys[e.key]()
+  }
+
+  const field = 'w-full rounded-md border border-edge bg-bg px-2 py-1.5 text-fg placeholder:text-dim'
 </script>
 
 <Modal label={title} wide {onclose}>
-  <div class="grid gap-3 p-4">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="grid gap-3 p-4" {onkeydown}>
     <p class="flex items-baseline gap-2">
       <span class="text-cyan">{title}</span>
       {#if batch !== null}
         <span class="ml-auto text-white">{done}/{hosts.length}</span>
       {/if}
     </p>
-    <p class="break-words text-white">{command}</p>
+    <form
+      onsubmit={(e) => {
+        e.preventDefault()
+        void run()
+      }}
+    >
+      <input
+        bind:value={typed}
+        aria-label={t('command')}
+        placeholder="uptime"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        class={field}
+      />
+    </form>
     {#if refusal}
       <p role="alert" title={refusal.chain} class="break-words">
         <strong class="text-red">✗ {refusal.label}</strong>
         <span class="text-white">{refusal.message}</span>
       </p>
     {/if}
-    <ul aria-label={t('hosts')} class="grid max-h-[50vh] gap-2 overflow-y-auto">
+    {#if filtering || filter}
+      <input
+        bind:this={search}
+        bind:value={filter}
+        type="search"
+        aria-label={t('filter')}
+        placeholder="/  {t('filter')}"
+        onkeydown={(e) => {
+          if (e.key !== 'Enter') return
+          filtering = false
+          list?.focus()
+        }}
+        class={field}
+      />
+    {/if}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <ul
+      bind:this={list}
+      tabindex="0"
+      aria-label={t('hosts')}
+      aria-keyshortcuts="j k / y"
+      class="grid max-h-[45vh] gap-2 overflow-y-auto rounded-xl"
+    >
       {#each rows as { host, answer } (host.alias)}
         <li data-host={host.alias} class="rounded-xl border border-edge bg-panel px-3 py-2">
           <p class="flex items-center gap-2">
-            <strong>{host.alias}</strong>
+            <!-- The colour its group has on the dashboard. -->
+            <strong style:color={groupOf(host) ? chip(groupOf(host)) : undefined}>{host.alias}</strong>
             {#if answer?.error}
               <!-- The class of the failure, as a card says it: a host that failed is not left out. -->
               <span role="alert" title={answer.why?.chain} class="min-w-0 break-words">
@@ -107,4 +197,19 @@
       {/each}
     </ul>
   </div>
+  <footer class="flex items-center gap-4 border-t border-edge px-4 py-2 text-white">
+    <span><kbd class="text-magenta">j k</kbd> {t('scroll')}</span>
+    <span><kbd class="text-magenta">/</kbd> {t('filter').toLowerCase()}</span>
+    <span><kbd class="text-magenta">esc</kbd> {t('close')}</span>
+    <span role="status" class="ml-auto text-green">{copied ? t('copied') : ''}</span>
+    <button
+      type="button"
+      aria-keyshortcuts="y"
+      disabled={!done}
+      onclick={copy}
+      class="cursor-pointer rounded-md border border-edge px-2 text-blue hover:bg-selection disabled:cursor-default disabled:opacity-60"
+    >
+      {t('copy_all')}
+    </button>
+  </footer>
 </Modal>

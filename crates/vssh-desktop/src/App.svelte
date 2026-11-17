@@ -266,6 +266,11 @@
       onconnect={open}
       onfiles={browse}
       onsnippets={() => (modal = 'snippets')}
+      onbatch={() => {
+        if (!picked.length) return
+        job = { hosts: picked, command: '', params: {} }
+        modal = 'batch'
+      }}
       onpalette={() => (modal = 'palette')}
       bind:marked
     />

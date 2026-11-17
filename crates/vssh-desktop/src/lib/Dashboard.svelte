@@ -22,6 +22,8 @@
     onfiles?: (alias: string) => void
     /** `s`: the snippets. */
     onsnippets?: () => void
+    /** `x`: a command for the marked hosts. */
+    onbatch?: () => void
     onpalette: () => void
     /** The cards chosen to act on together, as Space marks hosts in the TUI. */
     marked?: string[]
@@ -36,6 +38,7 @@
     onconnect,
     onfiles,
     onsnippets,
+    onbatch,
     onpalette,
     marked = $bindable([]),
   }: Props = $props()
@@ -178,6 +181,8 @@
       search?.focus()
     } else if (e.key === 's') {
       onsnippets?.()
+    } else if (e.key === 'x') {
+      onbatch?.()
     } else if (peeking && e.key === 'Escape') {
       peeking = null
     } else if (peeking && e.key === 'r') {
@@ -248,6 +253,14 @@
           class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
         >
           {t('connect')} {marked.length}
+        </button>
+        <button
+          type="button"
+          aria-keyshortcuts="x"
+          onclick={() => onbatch?.()}
+          class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+        >
+          {t('run')} {marked.length}
         </button>
       {/if}
       <!-- Radio buttons, drawn as one control: a native select opens the

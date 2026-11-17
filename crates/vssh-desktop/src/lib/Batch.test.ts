@@ -7,6 +7,7 @@ import type { Host } from './api'
 import Batch from './Batch.svelte'
 import errors from './fixtures/errors.json'
 import fixture from './fixtures/hosts.json'
+import { chip } from './hosts'
 import shown from './fixtures/shown.json'
 import { setLang } from './i18n.svelte'
 
@@ -116,4 +117,92 @@ test('a batch the shell will not run says why', async () => {
   })
   expect(await screen.findByRole('alert')).toHaveTextContent('no value for {{unit}}')
   expect(spinner('web-01')).toBeNull()
+})
+
+// --- M2: x, a command typed for the hosts marked -----------------------------
+
+const line = () => screen.getByRole('textbox', { name: 'Command' })
+const list = () => screen.getByRole('list', { name: 'Hosts' })
+const shownRows = () => within(list()).getAllByRole('listitem').map((item) => item.dataset.host)
+const copied = () => asked('plugin:clipboard-manager|write_text').map((args) => args.text)
+
+test('a line for the command: Enter runs it on the hosts, and then another one', async () => {
+  const { user } = shell()
+  // Nothing runs before there is a command.
+  await user.type(line(), '  {Enter}')
+  expect(asked('snippet_run')).toHaveLength(0)
+  expect(shownRows()).toEqual(['web-01', 'web-02', 'db-primary'])
+  expect(spinner('web-01')).toBeNull()
+
+  await user.clear(line())
+  await user.type(line(), 'uptime{Enter}')
+  await vi.waitFor(() =>
+    expect(asked('snippet_run')).toEqual([{ hosts: ['web-01', 'web-02', 'db-primary'], command: 'uptime', params: {} }]),
+  )
+  await vi.waitFor(() => expect(spinner('web-01')).toBeInTheDocument())
+  await answers(7, 'web-01', 'up 3 days\n')
+  await vi.waitFor(() => expect(row('web-01')).toHaveTextContent('up 3 days'))
+
+  // The next command is a batch of its own: what the last one printed is not its answer.
+  await user.clear(line())
+  await user.type(line(), 'date{Enter}')
+  await vi.waitFor(() => expect(asked('snippet_run')).toHaveLength(2))
+  await vi.waitFor(() => expect(spinner('web-01')).toBeInTheDocument())
+  expect(row('web-01')).not.toHaveTextContent('up 3 days')
+  await answers(8, 'web-01', 'Tue Nov 17\n')
+  await vi.waitFor(() => expect(row('web-01')).toHaveTextContent('Tue Nov 17'))
+})
+
+test('once a command runs the answers have the keys: j and k scroll them, / filters by host', async () => {
+  const { user } = shell()
+  await user.type(line(), 'uptime{Enter}')
+  await vi.waitFor(() => expect(list()).toHaveFocus())
+  await user.keyboard('jj')
+  expect(list().scrollTop).toBe(160)
+  await user.keyboard('kkk')
+  expect(list().scrollTop).toBe(0)
+
+  await user.keyboard('/')
+  const filter = await screen.findByRole('searchbox', { name: 'Filter' })
+  await vi.waitFor(() => expect(filter).toHaveFocus())
+  // In the box a j is a letter.
+  await user.keyboard('j')
+  expect(filter).toHaveValue('j')
+  await user.clear(filter)
+  await user.keyboard('WEB')
+  expect(shownRows()).toEqual(['web-01', 'web-02'])
+  // Every host still counts, on screen or not.
+  await answers(7, 'db-primary', 'ok\n')
+  await vi.waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('1/3'))
+  // Enter gives the keys back to the answers, and the filter stays.
+  await user.keyboard('{Enter}')
+  expect(list()).toHaveFocus()
+  expect(shownRows()).toEqual(['web-01', 'web-02'])
+  expect(line()).toHaveValue('uptime')
+})
+
+test('a host\'s name has the colour of its tag, as its group has on the dashboard', () => {
+  shell()
+  const name = (host: string) => within(row(host)).getByText(host)
+  expect(name('web-01').style.color).toBe(chip('prod'))
+  expect(name('db-primary').style.color).toBe(chip('db'))
+})
+
+test('Copy all puts what every host answered on the clipboard, a failure in its words; y does the same', async () => {
+  const { user } = shell({ command: 'uptime' })
+  const button = screen.getByRole('button', { name: 'Copy all' })
+  // Nothing to copy before anyone has answered.
+  expect(button).toBeDisabled()
+  await vi.waitFor(() => expect(asked('snippet_run')).toHaveLength(1))
+  await answers(7, 'web-01', 'up 3 days\n')
+  await answers(7, 'web-02', null, refused)
+  await vi.waitFor(() => expect(within(row('web-02')).getByRole('alert')).toHaveTextContent('✗ REFUSED Connection'))
+  await user.click(button)
+  const words = shown.en[errors.indexOf(refused)]
+  const text = `# web-01\nup 3 days\n\n# web-02\n✗ REFUSED ${words.message}\n`
+  expect(copied()).toEqual([text])
+  expect(await screen.findByRole('status')).toHaveTextContent('copied')
+  list().focus()
+  await user.keyboard('y')
+  await vi.waitFor(() => expect(copied()).toEqual([text, text]))
 })

@@ -801,3 +801,40 @@ test('with nothing marked, a snippet is for the selected host', async () => {
   expect(within(dialog).getByRole('checkbox', { name: 'web-02' })).toBeChecked()
   expect(within(dialog).getByRole('checkbox', { name: 'web-01' })).not.toBeChecked()
 })
+
+test('x on the dashboard: a command for the marked hosts, or the selected one; the marks stay for the next', async () => {
+  const user = shell({ snippet_run: () => 1 })
+  await card('web-01')
+  // With no host there is nobody to run on.
+  await user.keyboard('x')
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  ;(await card('web-02')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('x Run'))
+  await user.keyboard('x')
+  const one = await screen.findByRole('dialog', { name: 'Run on 1 host(s)' })
+  // An x typed into the line is a letter.
+  await user.type(within(one).getByRole('textbox', { name: 'Command' }), 'xargs --version{Enter}')
+  await vi.waitFor(() =>
+    expect(asked('snippet_run')).toEqual([{ hosts: ['web-02'], command: 'xargs --version', params: {} }]),
+  )
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  ;(await card('db-primary')).focus()
+  await user.keyboard(' ')
+  ;(await card('web-01')).focus()
+  await user.keyboard(' x')
+  const two = await screen.findByRole('dialog', { name: 'Run on 2 host(s)' })
+  await user.type(within(two).getByRole('textbox', { name: 'Command' }), 'uptime{Enter}')
+  await vi.waitFor(() => expect(asked('snippet_run')[1]).toEqual({ hosts: ['web-01', 'db-primary'], command: 'uptime', params: {} }))
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // For the pointer, next to Connect; in Vietnamese, the TUI's words.
+  expect(await card('web-01')).toHaveAttribute('data-marked')
+  await user.click(screen.getByRole('button', { name: 'Run 2' }))
+  expect(await screen.findByRole('dialog', { name: 'Run on 2 host(s)' })).toBeInTheDocument()
+  setLang('vi')
+  expect(await screen.findByRole('dialog', { name: 'Chạy trên 2 máy' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Chép tất cả', hidden: true })).toBeInTheDocument()
+})
