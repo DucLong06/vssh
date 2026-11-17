@@ -2,6 +2,7 @@
 //! order, reporting listings and transfer progress back.
 
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 use std::{fs, io};
 
 use anyhow::Result;
@@ -13,13 +14,16 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::ssh::Client;
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Entry {
     pub name: String,
     pub is_dir: bool,
     pub size: u64,
+    /// Last change, Unix seconds; 0 = not known.
+    pub mtime: u64,
 }
 
+#[derive(Debug)]
 pub enum Cmd {
     /// Change to and list a directory.
     List(String),
@@ -51,10 +55,13 @@ pub fn list_local(dir: &Path) -> io::Result<Vec<Entry>> {
         let e = e.ok()?;
         // Follows symlinks, so a link to a directory can be entered.
         let meta = fs::metadata(e.path()).ok()?;
+        let changed = meta.modified().ok();
+        let changed = changed.and_then(|at| at.duration_since(UNIX_EPOCH).ok());
         Some(Entry {
             name: e.file_name().to_string_lossy().into_owned(),
             is_dir: meta.is_dir(),
             size: meta.len(),
+            mtime: changed.map_or(0, |d| d.as_secs()),
         })
     });
     Ok(sorted(entries.collect()))
@@ -66,7 +73,7 @@ async fn copy(
     mut from: impl AsyncRead + Unpin,
     mut to: impl AsyncWrite + Unpin,
     total: u64,
-    reply: &impl Fn(Reply),
+    progress: &impl Fn(u64, u64),
 ) -> Result<()> {
     let mut buf = vec![0u8; 64 * 1024];
     let mut done = 0;
@@ -77,11 +84,78 @@ async fn copy(
         }
         to.write_all(&buf[..n]).await?;
         done += n as u64;
-        reply(Reply::Progress(done, total));
+        progress(done, total);
     }
     // Flushes and closes; a failure here means the tail was not written.
     to.shutdown().await?;
     Ok(())
+}
+
+async fn open(h: &Handle<Client>) -> Result<SftpSession> {
+    let channel = h.channel_open_session().await?;
+    channel.request_subsystem(true, "sftp").await?;
+    Ok(SftpSession::new(channel.into_stream()).await?)
+}
+
+async fn read_dir(sftp: &SftpSession, dir: &str) -> Result<Vec<Entry>> {
+    let entries = sftp.read_dir(dir).await?.map(|e| {
+        let meta = e.metadata();
+        Entry {
+            name: e.file_name(),
+            is_dir: meta.is_dir(),
+            size: meta.len(),
+            mtime: meta.mtime.unwrap_or(0).into(),
+        }
+    });
+    Ok(sorted(entries.collect()))
+}
+
+/// Carries out a command that changes something and returns the words for
+/// it. `List` changes nothing.
+async fn apply(sftp: &SftpSession, cmd: Cmd, progress: &impl Fn(u64, u64)) -> Result<&'static str> {
+    Ok(match cmd {
+        Cmd::List(_) => "",
+        Cmd::Upload(local, remote) => {
+            let from = tokio::fs::File::open(local).await?;
+            let total = from.metadata().await?.len();
+            copy(from, sftp.create(remote).await?, total, progress).await?;
+            "upload complete"
+        }
+        Cmd::Download(remote, local) => {
+            let from = sftp.open(remote).await?;
+            let total = from.metadata().await?.len();
+            let to = tokio::fs::File::create(local).await?;
+            copy(from, to, total, progress).await?;
+            "download complete"
+        }
+        Cmd::Mkdir(path) => {
+            sftp.create_dir(path).await?;
+            "directory created"
+        }
+        Cmd::Rename(from, to) => {
+            sftp.rename(from, to).await?;
+            "renamed"
+        }
+        Cmd::Delete(path, true) => {
+            sftp.remove_dir(path).await?;
+            "deleted"
+        }
+        Cmd::Delete(path, false) => {
+            sftp.remove_file(path).await?;
+            "deleted"
+        }
+    })
+}
+
+/// One command for a frontend that asks and waits for the answer: what a
+/// `List` found, nothing for the rest. Dropping the future stops a transfer
+/// where it is.
+pub async fn once(h: &Handle<Client>, cmd: Cmd, progress: impl Fn(u64, u64)) -> Result<Vec<Entry>> {
+    let sftp = open(h).await?;
+    match cmd {
+        Cmd::List(path) => read_dir(&sftp, &sftp.canonicalize(path).await?).await,
+        change => apply(&sftp, change, &progress).await.map(|_| vec![]),
+    }
 }
 
 pub async fn worker(
@@ -89,58 +163,21 @@ pub async fn worker(
     mut rx: UnboundedReceiver<Cmd>,
     reply: impl Fn(Reply),
 ) -> Result<()> {
-    let channel = h.channel_open_session().await?;
-    channel.request_subsystem(true, "sftp").await?;
-    let sftp = SftpSession::new(channel.into_stream()).await?;
+    let sftp = open(&h).await?;
     let mut cwd = sftp.canonicalize(".").await?;
     let mut cmd = Cmd::List(cwd.clone());
+    let progress = |done, total| reply(Reply::Progress(done, total));
     loop {
         let res = async {
             let (dir, msg) = match cmd {
                 Cmd::List(path) => (sftp.canonicalize(path).await?, ""),
-                Cmd::Upload(local, remote) => {
-                    let from = tokio::fs::File::open(local).await?;
-                    let total = from.metadata().await?.len();
-                    copy(from, sftp.create(remote).await?, total, &reply).await?;
-                    (cwd.clone(), "upload complete")
-                }
-                Cmd::Download(remote, local) => {
-                    let from = sftp.open(remote).await?;
-                    let total = from.metadata().await?.len();
-                    let to = tokio::fs::File::create(local).await?;
-                    copy(from, to, total, &reply).await?;
-                    (cwd.clone(), "download complete")
-                }
-                Cmd::Mkdir(path) => {
-                    sftp.create_dir(path).await?;
-                    (cwd.clone(), "directory created")
-                }
-                Cmd::Rename(from, to) => {
-                    sftp.rename(from, to).await?;
-                    (cwd.clone(), "renamed")
-                }
-                Cmd::Delete(path, true) => {
-                    sftp.remove_dir(path).await?;
-                    (cwd.clone(), "deleted")
-                }
-                Cmd::Delete(path, false) => {
-                    sftp.remove_file(path).await?;
-                    (cwd.clone(), "deleted")
-                }
+                change => (cwd.clone(), apply(&sftp, change, &progress).await?),
             };
-            let entries = sftp.read_dir(dir.as_str()).await?.map(|e| {
-                let meta = e.metadata();
-                Entry {
-                    name: e.file_name(),
-                    is_dir: meta.is_dir(),
-                    size: meta.len(),
-                }
-            });
-            anyhow::Ok((dir, sorted(entries.collect()), msg))
+            anyhow::Ok((read_dir(&sftp, &dir).await?, dir, msg))
         }
         .await;
         match res {
-            Ok((dir, entries, msg)) => {
+            Ok((entries, dir, msg)) => {
                 cwd = dir;
                 reply(Reply::Listing(cwd.clone(), entries));
                 if !msg.is_empty() {

@@ -94,6 +94,9 @@ pub struct Config<T = toml::Table> {
     /// Copy through the OSC 52 terminal escape. On by default; turn it off
     /// for a terminal that prints the sequence instead of obeying it.
     pub osc52: bool,
+    /// How many hosts of a batch the desktop app runs a command on at once.
+    /// Eight by default; the rest wait their turn.
+    pub batch_max_parallel: usize,
 }
 
 impl<T: Default> Default for Config<T> {
@@ -110,6 +113,7 @@ impl<T: Default> Default for Config<T> {
             nerd_font: false,
             transitions: true,
             osc52: true,
+            batch_max_parallel: 8,
         }
     }
 }
@@ -216,6 +220,14 @@ mod tests {
         let set = "status_stats = false\nnerd_font = true\ntransitions = false\nosc52 = false";
         let set: Config = toml::from_str(set).unwrap();
         assert!(!set.status_stats && !set.transitions && !set.osc52 && set.nerd_font);
+    }
+
+    #[test]
+    fn batches_run_eight_hosts_at_once_unless_told_otherwise() {
+        let cap = |text: &str| toml::from_str::<Config>(text).map(|c| c.batch_max_parallel);
+        assert_eq!(cap("").unwrap(), 8);
+        assert_eq!(cap("batch_max_parallel = 2").unwrap(), 2);
+        assert!(cap("batch_max_parallel = -1").is_err());
     }
 
     #[test]

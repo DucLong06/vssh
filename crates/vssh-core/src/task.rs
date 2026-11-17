@@ -150,7 +150,7 @@ pub enum Shell {
 
 /// A shell session for a frontend that is on the runtime itself (Tauri):
 /// awaited until either side ends it, and dropped to end it. `keys` types
-/// into it and resizes it. Keys and the agent only, as [`Peeks`].
+/// into it and resizes it. Keys and the agent only.
 pub async fn shell(
     target: Target,
     size: (u16, u16),
@@ -255,13 +255,21 @@ type Kept = (Target, Handle<Client>);
 impl Peeks {
     /// One round of [`stats::PEEK`] over the connection kept for `alias`,
     /// opened first if there is none, it has dropped, or the alias now names
-    /// another target. Keys and the agent only. A connection is out of the
-    /// map while it is asked, so one that fails is not kept.
-    pub async fn ask(&self, alias: &str, target: Target) -> Result<Peek, ConnError> {
+    /// another target; `password` is for that login. A connection is out of
+    /// the map while it is asked, so one that fails is not kept.
+    pub async fn ask(
+        &self,
+        alias: &str,
+        target: Target,
+        password: Password,
+    ) -> Result<Peek, ConnError> {
         let kept = self.0.lock().unwrap().remove(alias);
         let h = match kept {
             Some((t, h)) if t == target && !h.is_closed() => h,
-            _ => ssh::connect(&target, None, None).await?,
+            _ => {
+                let pw = password.as_ref().map(|p| p.as_str());
+                ssh::connect(&target, pw, None).await?
+            }
         };
         let asking = ssh::exec(&h, stats::PEEK);
         let out = timeout(Duration::from_secs(10), asking)

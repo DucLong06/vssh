@@ -14,6 +14,8 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json = "1"
 tauri = { version = "2", features = [] }
+tokio.workspace = true
+zeroize.workspace = true
 tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]

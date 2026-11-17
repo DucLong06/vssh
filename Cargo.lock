@@ -6243,7 +6243,9 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
+ "tokio",
  "vssh-core",
+ "zeroize",
 ]
 
 [[package]]

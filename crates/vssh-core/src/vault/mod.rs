@@ -134,7 +134,31 @@ impl Vault {
         self.save()
     }
 
+    /// Seals the vault under a new passphrase, with a new salt. If the file
+    /// cannot be written the old passphrase stays the one that opens it.
+    pub fn change_passphrase(&mut self, passphrase: &str) -> Result<()> {
+        ensure!(!passphrase.is_empty(), "passphrase must not be empty");
+        let salt: [u8; SALT] = Key::generate().into();
+        let key = derive(passphrase, &salt)?;
+        let old = (
+            mem::replace(&mut self.salt, salt),
+            mem::replace(&mut self.key, key),
+        );
+        self.save().inspect_err(|_| (self.salt, self.key) = old)
+    }
+
+    /// Writes a copy of the vault, sealed under the same passphrase, to a
+    /// file that does not exist yet: a backup, or the way to another machine.
+    pub fn export(&self, to: &Path) -> Result<()> {
+        ensure!(!to.exists(), "{} already exists", to.display());
+        self.write(to)
+    }
+
     fn save(&self) -> Result<()> {
+        self.write(&self.path)
+    }
+
+    fn write(&self, path: &Path) -> Result<()> {
         let nonce = XNonce::generate();
         let plain = encode(&self.entries);
         let sealed = XChaCha20Poly1305::new((&*self.key).into())
@@ -146,11 +170,11 @@ impl Vault {
                 },
             )
             .map_err(|_| anyhow!("encryption failed"))?;
-        if let Some(dir) = self.path.parent() {
+        if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
         }
         // Temp file + rename: a crash mid-write must not destroy the old vault.
-        let tmp = self.path.with_extension("tmp");
+        let tmp = path.with_extension("tmp");
         let mut f = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -159,7 +183,7 @@ impl Vault {
             .open(&tmp)?;
         f.write_all(&[MAGIC, &self.salt, &nonce, &sealed].concat())?;
         f.sync_all()?;
-        fs::rename(tmp, &self.path)?;
+        fs::rename(tmp, path)?;
         Ok(())
     }
 }
@@ -289,6 +313,53 @@ mod tests {
         let second = fs::read(&path).unwrap();
         assert_eq!(first.len(), second.len());
         assert_ne!(first[MAGIC.len() + SALT..], second[MAGIC.len() + SALT..]);
+    }
+
+    #[test]
+    fn the_passphrase_can_be_changed() {
+        let path = temp("rekey");
+        let mut v = filled(&path);
+        assert!(v.change_passphrase("").is_err());
+        let before = fs::read(&path).unwrap();
+        v.change_passphrase("battery staple").unwrap();
+        // A new salt, not just a new key: nothing of the old file is left.
+        let after = fs::read(&path).unwrap();
+        assert_ne!(
+            before[MAGIC.len()..MAGIC.len() + SALT],
+            after[MAGIC.len()..MAGIC.len() + SALT]
+        );
+
+        assert!(Vault::open(&path, "correct horse").is_err());
+        let mut v = Vault::open(&path, "battery staple").unwrap();
+        assert_eq!(v.get("web1"), Some("hunter2"));
+        // The vault that was re-keyed goes on saving under the new passphrase.
+        v.set("new", &mut "pw".to_string()).unwrap();
+        assert_eq!(
+            Vault::open(&path, "battery staple").unwrap().get("new"),
+            Some("pw")
+        );
+    }
+
+    #[test]
+    fn an_export_is_a_vault_of_its_own() {
+        let path = temp("export");
+        let v = filled(&path);
+        let copy = path.with_file_name("copy.vault");
+        v.export(&copy).unwrap();
+        assert_eq!(
+            fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let opened = Vault::open(&copy, "correct horse").unwrap();
+        assert_eq!(opened.get("web1"), Some("hunter2"));
+        assert!(Vault::open(&copy, "other").is_err());
+        // Sealed again, not copied: the same secrets under another nonce.
+        assert_ne!(fs::read(&copy).unwrap(), fs::read(&path).unwrap());
+        // Never over a file that is there, and the original is as it was.
+        let err = v.export(&copy).unwrap_err().to_string();
+        assert!(err.ends_with("already exists"), "{err}");
+        assert!(v.export(&path).is_err());
+        assert!(Vault::open(&path, "correct horse").is_ok());
     }
 
     #[test]

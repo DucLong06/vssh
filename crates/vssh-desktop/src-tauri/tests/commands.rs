@@ -3,9 +3,12 @@
 //! JSON answer is what `src/lib/api.ts` declares. Nothing here opens a
 //! socket: the network is a [`Transport`] that answers from memory.
 
+use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::ipc::{CallbackFn, InvokeBody};
@@ -14,17 +17,38 @@ use tauri::webview::InvokeRequest;
 use tauri::{Listener, Manager, WebviewWindow, WebviewWindowBuilder};
 use vssh_core::config::Lang;
 use vssh_core::conn_err::{ConnError, Fail};
+use vssh_core::sftp::{Cmd, Entry};
 use vssh_core::ssh::{SessionCmd, Target};
 use vssh_core::stats::parse_peek;
 use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
+use vssh_core::store::ssh_config::Forward;
 use vssh_core::store::Host;
 use vssh_core::task::{Receiver, Shell};
-use vssh_desktop::{builder, Answer, Backend, Heard, Ping, Transport};
+use vssh_desktop::{
+    builder, Answer, Backend, Heard, Password, Ping, Progress, Ready, Remote, Transport,
+};
 
+#[path = "commands/files.rs"]
+mod files;
+#[path = "commands/forwards.rs"]
+mod forwards;
+#[path = "commands/hosts.rs"]
+mod hosts;
+#[path = "commands/key_setup.rs"]
+mod key_setup;
+#[path = "commands/real.rs"]
+mod real;
 /// Terminal sessions.
 #[path = "commands/session.rs"]
 mod session;
+#[path = "commands/snippets.rs"]
+mod snippets;
+#[path = "commands/vault.rs"]
+mod vault;
+
+/// What a command run on a host answers.
+type Exec = dyn Fn(&Target, &str) -> Result<String, ConnError> + Send + Sync;
 
 const SSH_CONFIG: &str = "\
 Host web-01
@@ -38,14 +62,53 @@ Host *.lan
   User ops
 ";
 
-/// A network that answers every peek with the same thing and remembers
-/// whom it was asked about. Every host is one it has met, 12 ms away.
+/// A network that answers from memory and remembers what it was asked.
+/// Every host is one it has met, 12 ms away.
 #[derive(Clone)]
 struct Fake {
+    /// What every peek answers.
     answer: Result<Peek, ConnError>,
     asked: Arc<Mutex<Vec<String>>>,
+    /// What every SFTP command answers, once it has reported `steps`.
+    files: Result<Vec<Entry>, ConnError>,
+    steps: Vec<(u64, u64)>,
+    /// While set, a transfer reports its steps and then never ends.
+    stall: Arc<AtomicBool>,
+    /// A stalled transfer or a running forward was dropped: it stopped
+    /// where it was.
+    dropped: Arc<AtomicBool>,
+    /// Why a forward ends before it listens; `None` = it listens for good.
+    forward: Arc<Mutex<Option<ConnError>>>,
+    /// What a command answers on a host, after `pace`.
+    exec: Arc<Exec>,
+    pace: Duration,
+    /// How many commands run right now, and the most there ever were.
+    busy: Arc<AtomicUsize>,
+    peak: Arc<AtomicUsize>,
+    /// What the next logins with a key alone answer; after these, yes.
+    key_logins: Arc<Mutex<VecDeque<Result<(), ConnError>>>>,
+    /// Why no host can be logged in to for commands; `None` = each can.
+    down: Option<ConnError>,
     known: bool,
     ping: Option<u64>,
+}
+
+/// Says so when it is dropped.
+struct Flag(Arc<AtomicBool>);
+
+impl Drop for Flag {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Whom a command went to, and the password it was given to log in with.
+fn at(target: &Target, password: &Password) -> String {
+    let at = format!("{}@{}:{}", target.user, target.host, target.port);
+    match password {
+        Some(password) => format!("{at} ({})", password.as_str()),
+        None => at,
+    }
 }
 
 impl Fake {
@@ -53,9 +116,24 @@ impl Fake {
         Self {
             answer,
             asked: Arc::default(),
+            files: Ok(vec![]),
+            steps: vec![],
+            stall: Arc::default(),
+            dropped: Arc::default(),
+            forward: Arc::default(),
+            exec: Arc::new(|_, _| Ok(String::new())),
+            pace: Duration::ZERO,
+            busy: Arc::default(),
+            peak: Arc::default(),
+            key_logins: Arc::default(),
+            down: None,
             known: true,
             ping: Some(12),
         }
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
     }
 
     fn silent() -> Self {
@@ -64,11 +142,88 @@ impl Fake {
 }
 
 impl Transport for Fake {
-    fn peek(&self, alias: String, target: Target) -> Answer<Peek> {
-        let line = format!("{alias} = {}@{}:{}", target.user, target.host, target.port);
+    fn peek(&self, alias: String, target: Target, password: Password) -> Answer<Peek> {
+        let line = format!("{alias} = {}", at(&target, &password));
         self.asked.lock().unwrap().push(line);
         let answer = self.answer.clone();
         Box::pin(async move { answer })
+    }
+
+    fn sftp(
+        &self,
+        target: Target,
+        password: Password,
+        cmd: Cmd,
+        progress: Progress,
+    ) -> Answer<Vec<Entry>> {
+        let line = format!("{} {cmd:?}", at(&target, &password));
+        self.asked.lock().unwrap().push(line);
+        let fake = self.clone();
+        Box::pin(async move {
+            for (done, total) in fake.steps {
+                progress(done, total);
+            }
+            if fake.stall.load(Ordering::SeqCst) {
+                let _stopped = Flag(fake.dropped);
+                std::future::pending::<()>().await;
+            }
+            fake.files
+        })
+    }
+
+    fn forward(
+        &self,
+        target: Target,
+        password: Password,
+        fwd: Forward,
+        ready: Ready,
+    ) -> Answer<()> {
+        let line = format!(
+            "{} forward {} {}",
+            at(&target, &password),
+            fwd.kind,
+            fwd.value()
+        );
+        self.asked.lock().unwrap().push(line);
+        let fake = self.clone();
+        Box::pin(async move {
+            if let Some(why) = fake.forward.lock().unwrap().clone() {
+                return Err(why);
+            }
+            ready();
+            let _stopped = Flag(fake.dropped);
+            std::future::pending().await
+        })
+    }
+
+    fn connect(&self, target: Target, password: Password) -> Answer<Remote> {
+        let fake = self.clone();
+        Box::pin(async move {
+            if let Some(why) = fake.down.clone() {
+                return Err(why);
+            }
+            let exec = move |command: String| -> Answer<String> {
+                let (fake, target) = (fake.clone(), target.clone());
+                // Asked once the command really starts.
+                let line = format!("{} exec {command}", at(&target, &password));
+                Box::pin(async move {
+                    fake.asked.lock().unwrap().push(line);
+                    let busy = fake.busy.fetch_add(1, Ordering::SeqCst) + 1;
+                    fake.peak.fetch_max(busy, Ordering::SeqCst);
+                    tokio::time::sleep(fake.pace).await;
+                    fake.busy.fetch_sub(1, Ordering::SeqCst);
+                    (fake.exec)(&target, &command)
+                })
+            };
+            Ok(Box::new(exec) as Remote)
+        })
+    }
+
+    fn key_login(&self, target: Target, key: PathBuf) -> Answer<()> {
+        let line = format!("{} key {}", at(&target, &None), key.display());
+        self.asked.lock().unwrap().push(line);
+        let answer = self.key_logins.lock().unwrap().pop_front();
+        Box::pin(async move { answer.unwrap_or(Ok(())) })
     }
 
     fn ping(&self, target: Target) -> Ping {
@@ -126,6 +281,11 @@ impl Transport for Fake {
     }
 }
 
+/// A failure the connect path tagged, as a command answers with it.
+fn failed(fail: Fail) -> ConnError {
+    ConnError::from(anyhow::Error::new(fail))
+}
+
 /// Says when a shell's connection is let go of.
 struct Gone(Box<dyn Fn(String) + Send>, String);
 
@@ -157,7 +317,10 @@ fn db(home: &Path) -> Db {
 
 /// The app over that home, and its window. The app must outlive the window.
 fn window(home: &Path, net: Fake) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
-    let backend = Backend::new(home.join("config"), home.join("data"), net);
+    open(Backend::new(home.join("config"), home.join("data"), net))
+}
+
+fn open(backend: Backend) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
     let app = builder(backend).build(mock_context(noop_assets())).unwrap();
     let window = WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
@@ -179,6 +342,32 @@ fn call(window: &WebviewWindow<MockRuntime>, cmd: &str, args: Value) -> Result<V
         invoke_key: window.app_handle().invoke_key().to_string(),
     };
     get_ipc_response(window, request).map(|body| body.deserialize::<Value>().unwrap())
+}
+
+/// Everything the app emits under one event name, as the window would hear it.
+fn listen(app: &tauri::App<MockRuntime>, event: &str) -> mpsc::Receiver<Value> {
+    let (tx, rx) = mpsc::channel();
+    app.listen(event, move |ev| {
+        drop(tx.send(serde_json::from_str(ev.payload()).unwrap()))
+    });
+    rx
+}
+
+/// The next event, which must come.
+fn next(events: &mpsc::Receiver<Value>) -> Value {
+    events.recv_timeout(Duration::from_secs(5)).unwrap()
+}
+
+/// Waits for what the runtime does in its own time, such as dropping work
+/// that was stopped.
+fn until(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("never happened: {what}");
 }
 
 /// The shape of an error that is not a connection failure.
@@ -287,7 +476,7 @@ fn get_host_stats_refuses_a_host_that_is_not_in_the_config() {
         assert!(err.as_str().unwrap().contains("alias"), "{err}");
     }
     // Nobody was connected to for any of that.
-    assert!(net.asked.lock().unwrap().is_empty());
+    assert!(net.asked().is_empty());
 }
 
 #[test]
@@ -472,13 +661,24 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
         listener.local_addr().unwrap().port()
     };
     let target = Target::parse(&format!("nobody@127.0.0.1:{port}")).unwrap();
-    let answer =
-        tauri::async_runtime::block_on(vssh_desktop::Core::default().peek("closed".into(), target));
-    let err = answer.unwrap_err();
-    assert_eq!(
-        serde_json::to_value(&err.fail).unwrap(),
-        json!({ "kind": "refused", "addr": format!("127.0.0.1:{port}") })
-    );
+    let refused = json!({ "kind": "refused", "addr": format!("127.0.0.1:{port}") });
+    let fail = |err: ConnError| serde_json::to_value(&err.fail).unwrap();
+    use tauri::async_runtime::block_on;
+    let core = vssh_desktop::Core::default();
+
+    let answer = block_on(core.peek("closed".into(), target.clone(), None));
+    assert_eq!(fail(answer.unwrap_err()), refused);
+    let list = Cmd::List(".".into());
+    let quiet = Box::new(|_, _| {});
+    let answer = block_on(core.sftp(target.clone(), None, list, quiet));
+    assert_eq!(fail(answer.unwrap_err()), refused);
+    let fwd = Forward::parse('D', "1080").unwrap();
+    let answer = block_on(core.forward(target.clone(), None, fwd, Box::new(|| {})));
+    assert_eq!(fail(answer.unwrap_err()), refused);
+    let answer = block_on(core.connect(target.clone(), None));
+    assert_eq!(fail(answer.err().unwrap()), refused);
+    let answer = block_on(core.key_login(target, "/no/such/key".into()));
+    assert_eq!(fail(answer.unwrap_err()), refused);
 }
 
 fn fixtures() -> PathBuf {

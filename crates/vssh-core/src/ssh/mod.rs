@@ -8,13 +8,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::known_hosts::{known_host_keys_path, learn_known_hosts_path};
+use russh::keys::ssh_key::LineEnding;
 use russh::keys::{
-    load_public_key, load_secret_key, Algorithm, HashAlg, PrivateKeyWithHashAlg, PublicKey,
-    PublicKeyOrCertificate,
+    load_public_key, load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg,
+    PublicKey, PublicKeyOrCertificate,
 };
 use russh::{Channel, ChannelMsg};
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
@@ -618,6 +619,43 @@ pub async fn connect(
     Ok(h)
 }
 
+/// Connects and logs in with one key file and nothing else: no agent, no
+/// other key, no password. This is the proof that the key opens the host.
+pub async fn connect_key(t: &Target, key: &Path) -> Result<Handle<Client>> {
+    let (stream, road) = road(t).await?;
+    let mut h = handshake(t, stream, None, road).await?;
+    let rsa_hash = h.best_supported_rsa_hash().await?.flatten();
+    let key = load_secret_key(key, None)
+        .with_context(|| format!("cannot read the key {}", key.display()))?;
+    let key = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+    if h.authenticate_publickey(&t.user, key).await?.success() {
+        return Ok(h);
+    }
+    Err(Fail::Auth {
+        user: t.user.clone(),
+        host: t.host.clone(),
+        keys: 1,
+        password: false,
+    }
+    .into())
+}
+
+/// Makes a new Ed25519 key pair without a passphrase: the private key in
+/// `path` (mode 0600), its public line in `path.pub`. Returns that line,
+/// the one that goes into `authorized_keys`. Never writes over a key.
+pub fn generate_key(path: &Path, comment: &str) -> Result<String> {
+    ensure!(!path.exists(), "{} already exists", path.display());
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut key = PrivateKey::random(&mut russh::keys::key::safe_rng(), Algorithm::Ed25519)?;
+    key.set_comment(comment);
+    key.write_openssh_file(path, LineEnding::LF)?;
+    let public = key.public_key().to_openssh()?;
+    std::fs::write(format!("{}.pub", path.display()), format!("{public}\n"))?;
+    Ok(public)
+}
+
 pub enum SessionCmd {
     Data(Vec<u8>),
     /// Columns, rows.
@@ -819,6 +857,40 @@ mod tests {
         assert!(matches!(offered[2], Algorithm::Rsa { hash: None }));
         // Everything else is still offered, once.
         assert_eq!(offered.len(), default.len());
+    }
+
+    #[test]
+    fn a_generated_key_is_private_loadable_and_never_overwrites() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("vssh-keygen-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        // An alias with a dot in it: `.pub` is added, not put in its place.
+        let path = dir.join("vssh_db.prod_ed25519");
+
+        let public = generate_key(&path, "vssh").unwrap();
+        assert!(public.starts_with("ssh-ed25519 AAAA"), "{public}");
+        assert!(public.ends_with(" vssh"), "{public}");
+        let written = fs::read_to_string(dir.join("vssh_db.prod_ed25519.pub")).unwrap();
+        assert_eq!(written, format!("{public}\n"));
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        // It is the pair of the public line, and has no passphrase.
+        let key = load_secret_key(&path, None).unwrap();
+        assert_eq!(
+            key.public_key().key_data(),
+            load_public_key(dir.join("vssh_db.prod_ed25519.pub"))
+                .unwrap()
+                .key_data()
+        );
+
+        let before = fs::read(&path).unwrap();
+        assert!(generate_key(&path, "vssh").is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        // Two keys are two keys.
+        assert_ne!(generate_key(&dir.join("other"), "vssh").unwrap(), public);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

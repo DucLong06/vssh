@@ -294,6 +294,53 @@ impl SshConfig {
         }
     }
 
+    /// Takes over every host of `other` that this config does not have, and
+    /// returns their aliases. A host comes with its own block as it is
+    /// written (comments, forwards, `ProxyJump` and all); `other`'s wildcard
+    /// blocks stay behind, so what the host took from them for the options
+    /// a connection is made of is written into its block.
+    pub fn import(&mut self, other: &SshConfig) -> Vec<String> {
+        const INHERITED: [&str; 6] = [
+            "HostName",
+            "User",
+            "Port",
+            "ProxyJump",
+            "ProxyCommand",
+            "IdentityFile",
+        ];
+        let mut added = vec![];
+        for alias in other.hosts() {
+            let (None, Some(theirs)) = (self.owner(&alias), other.owner(&alias)) else {
+                continue;
+            };
+            self.add_host(&alias);
+            let Some(ours) = self.owner(&alias) else {
+                continue;
+            };
+            let lines = &other.blocks[theirs].lines;
+            let written = lines.iter().rposition(|l| !l.trim().is_empty());
+            let written = &lines[..written.map_or(0, |last| last + 1)];
+            self.blocks[ours]
+                .lines
+                .splice(0..0, written.iter().cloned());
+            for key in INHERITED {
+                let values = other.get_all(&alias, key);
+                // Of an option that holds one value, the first is the one that counts.
+                let count = if key == "IdentityFile" {
+                    values.len()
+                } else {
+                    1
+                };
+                let unset = other.own_all(&alias, key).is_empty();
+                for value in values.into_iter().take(count).filter(|_| unset) {
+                    self.add(&alias, key, value);
+                }
+            }
+            added.push(alias);
+        }
+        added
+    }
+
     pub fn rename_host(&mut self, old: &str, new: &str) {
         let Some(i) = self.owner(old) else { return };
         let pats: Vec<&str> = self.blocks[i]
@@ -321,6 +368,7 @@ pub const FORWARD_KEYS: [(char, &str); 3] = [
 ];
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Forward {
     /// `L`, `R` or `D`.
     pub kind: char,
@@ -526,6 +574,43 @@ Host *
         c.remove_host("web-alias");
         assert!(!c.to_string().contains("10.0.0.1"));
         assert_eq!(c.hosts(), ["db=ignored", "db", "newer", "copy"]);
+    }
+
+    #[test]
+    fn hosts_of_another_config_are_imported_with_what_they_inherit() {
+        let theirs = SshConfig::parse(
+            "Host bastion\n    HostName 203.0.113.1\n\n\
+             Host inner alias\n    HostName 10.0.0.5\n    User deploy\n    ProxyJump bastion\n    \
+             # keep this\n    LocalForward 8080 localhost:80\n\n\
+             Host kept\n    HostName theirs\n\n\
+             Host *\n    User ops\n    Port 2200\n    IdentityFile ~/.ssh/a\n    IdentityFile ~/.ssh/b\n",
+        );
+        let mut ours = SshConfig::parse("Host kept\n    HostName ours\n\nHost *\n    User me\n");
+        assert_eq!(ours.import(&theirs), ["bastion", "inner", "alias"]);
+        // A host we have is not touched, and nothing is imported twice.
+        assert_eq!(ours.get("kept", "HostName"), Some("ours"));
+        assert!(ours.import(&theirs).is_empty());
+
+        // The block as it was written, then what came from their `Host *`,
+        // which does not come along; all of it ahead of our own `Host *`.
+        let inherited =
+            "    User ops\n    Port 2200\n    IdentityFile ~/.ssh/a\n    IdentityFile ~/.ssh/b\n";
+        let inner = "    HostName 10.0.0.5\n    User deploy\n    ProxyJump bastion\n    \
+                     # keep this\n    LocalForward 8080 localhost:80\n    Port 2200\n    \
+                     IdentityFile ~/.ssh/a\n    IdentityFile ~/.ssh/b\n";
+        assert_eq!(
+            ours.to_string(),
+            format!(
+                "Host kept\n    HostName ours\n\n\
+                 Host bastion\n    HostName 203.0.113.1\n{inherited}\n\
+                 Host inner\n{inner}\n\
+                 Host alias\n{inner}\n\
+                 Host *\n    User me\n"
+            )
+        );
+        assert_eq!(ours.get("inner", "User"), Some("deploy"));
+        assert_eq!(ours.get("bastion", "User"), Some("ops"));
+        assert_eq!(ours.get("inner", "ProxyJump"), Some("bastion"));
     }
 
     #[test]
