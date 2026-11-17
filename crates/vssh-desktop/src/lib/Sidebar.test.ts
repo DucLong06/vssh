@@ -116,3 +116,66 @@ test('the tag chosen is the caller\'s to use: the dashboard filters by it too', 
   await user.click(screen.getByRole('button', { name: '#db 1' }))
   expect(tag).toBeNull()
 })
+
+// --- D9: the rail ------------------------------------------------------------
+
+const rail = (over = {}) => {
+  const heard = { onnav: vi.fn(), onvault: vi.fn() }
+  const sessions = [{ id: 1, title: 'web-01', state: 'up', busy: null }]
+  render(Sidebar, props({ selected: 'web-01', sessions, snippets: 3, ...heard, ...over }))
+  return heard
+}
+const item = (name: string) => screen.getByRole('button', { name })
+
+test('the rail leads everywhere: each row has an icon and a name, and a click asks for its view', async () => {
+  const user = userEvent.setup()
+  const { onnav, onvault } = rail()
+  const rows = { Status: 'dashboard', 'Hosts 4': 'hosts', 'Sessions 1': 'sessions', Files: 'files', 'Snippets 3': 'snippets', Forwards: 'forwards' }
+  for (const [name, to] of Object.entries(rows)) {
+    expect(item(name).querySelector('svg'), name).toHaveAttribute('aria-hidden', 'true')
+    await user.click(item(name))
+    expect(onnav, name).toHaveBeenLastCalledWith(to)
+  }
+  expect(onnav).toHaveBeenCalledTimes(6)
+  // The vault is the last of them, and has its own way in.
+  expect(item('Vault').querySelector('svg')).not.toBeNull()
+  await user.click(item('Vault'))
+  expect(onvault).toHaveBeenCalledOnce()
+  // In the order of the concept.
+  const order = within(screen.getByRole('navigation')).getAllByRole('button').map((row) => row.textContent?.replace(/\s+/g, ' ').trim())
+  const names = ['Status', 'Hosts 4', 'Sessions 1', 'Files', 'Snippets 3', 'Forwards', 'Vault']
+  expect(order.filter((name) => names.includes(name!))).toEqual(names)
+})
+
+test('the view in front is the current page of the rail', () => {
+  rail({ current: 'sessions' })
+  expect(item('Sessions 1')).toHaveAttribute('aria-current', 'page')
+  expect(item('Status')).not.toHaveAttribute('aria-current')
+})
+
+test("files and forwards are the selected host's: with none selected there is nowhere to go, nor to a session with none open", async () => {
+  const user = userEvent.setup()
+  const { onnav } = rail({ selected: null, sessions: [] })
+  for (const name of ['Files', 'Forwards', 'Sessions']) {
+    expect(item(name), name).toBeDisabled()
+    await user.click(item(name))
+  }
+  expect(onnav).not.toHaveBeenCalled()
+  expect(item('Status')).toBeEnabled()
+  expect(item('Snippets 3')).toBeEnabled()
+})
+
+test('the vault says what it is on its row', () => {
+  rail({ vault: 'locked' })
+  expect(item('Vault locked')).toBeInTheDocument()
+})
+
+test("the rail in Vietnamese: the table's words, and no other", () => {
+  setLang('vi')
+  rail()
+  for (const name of ['Trạng thái', 'Máy chủ 4', 'Phiên 1', 'Tệp', 'Đoạn lệnh 3', 'Chuyển tiếp', 'Kho', 'Giao diện: Tối']) {
+    expect(item(name), name).toBeInTheDocument()
+  }
+  // The name of the app is drawn, not said: it is the same in every language.
+  expect(screen.getByRole('navigation').textContent).not.toMatch(/vssh/)
+})

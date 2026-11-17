@@ -124,6 +124,9 @@
   /** For a host chosen again while it is the selected one: nothing changed for the effect below to hear of. */
   export const focus = (alias: string) => card(alias)?.focus()
 
+  /** The search, for whoever asks for the hosts from elsewhere (the rail). */
+  export const seek = () => search?.focus()
+
   // A host chosen elsewhere (the palette, the sidebar) is brought into view.
   $effect(() => {
     // Also when the dashboard comes back to the front.

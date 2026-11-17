@@ -77,5 +77,8 @@ export const critical = (host: Live | undefined) =>
 /** Does not answer: its last round failed, or nobody asked and a ping got nowhere. */
 export const down = (host: Live | undefined) => !!host && (!!host.error || (host.ms === null && !host.peek))
 
+/** Answers: its figures came, or a ping got through and nothing failed since. */
+export const up = (host: Live | undefined) => !down(host) && (!!host?.peek || typeof host?.ms === 'number')
+
 /** A host that needs looking at. */
 export const sick = (host: Live | undefined) => down(host) || critical(host)
