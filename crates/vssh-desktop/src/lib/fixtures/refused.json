@@ -1,0 +1,5 @@
+{
+  "class": "refused",
+  "fail": { "kind": "refused", "addr": "10.0.0.5:2222" },
+  "chain": ["connection refused by 10.0.0.5:2222", "Connection refused (os error 111)"]
+}
