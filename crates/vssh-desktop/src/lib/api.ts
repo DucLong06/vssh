@@ -43,6 +43,16 @@ export type Peek = {
   host: string | null
 }
 
+/** An entry of a directory, here or on a host. */
+export type Entry = {
+  name: string
+  is_dir: boolean
+  /** Bytes. */
+  size: number
+  /** Last change, Unix seconds; 0 = not known. */
+  mtime: number
+}
+
 export type Snippet = { id: number; host: string; name: string; command: string }
 
 export type ErrorClass =
@@ -104,6 +114,28 @@ export const api = {
     invoke<void>('session_trust', { id, host, fingerprint, forever }),
   /** The clipboard plugin's command: `navigator.clipboard` wants a user gesture, which an OSC 52 from a host is not. */
   copy: (text: string) => invoke<void>('plugin:clipboard-manager|write_text', { text }),
+  /** A directory of this machine, directories first; no path is the user's home. `path` comes back in full. */
+  localList: (path: string) => invoke<{ path: string; entries: Entry[] }>('local_list', { path }),
+  localMkdir: (path: string) => invoke<void>('local_mkdir', { path }),
+  /** A file, or a directory that is empty. */
+  localRm: (path: string, isDir: boolean) => invoke<void>('local_rm', { path, isDir }),
+  localRename: (from: string, to: string) => invoke<void>('local_rename', { from, to }),
+  /** Where a path on the host leads, in full; no path is the directory the server starts in. */
+  sftpRealpath: (host: string, path: string) => invoke<string>('sftp_realpath', { host, path }),
+  sftpList: (host: string, path: string) => invoke<Entry[]>('sftp_list', { host, path }),
+  sftpMkdir: (host: string, path: string) => invoke<void>('sftp_mkdir', { host, path }),
+  sftpRm: (host: string, path: string, isDir: boolean) => invoke<void>('sftp_rm', { host, path, isDir }),
+  sftpRename: (host: string, from: string, to: string) => invoke<void>('sftp_rename', { host, from, to }),
+  /**
+   * One file, to the full path given for it. Resolves when it is over;
+   * `sftp-progress:<id>` carries `{ done, total }` meanwhile: listen first.
+   */
+  sftpUpload: (host: string, local: string, remote: string, id: string) =>
+    invoke<void>('sftp_upload', { host, local, remote, id }),
+  sftpDownload: (host: string, remote: string, local: string, id: string) =>
+    invoke<void>('sftp_download', { host, remote, local, id }),
+  /** Stops a transfer, which then rejects; what was written so far stays. */
+  sftpCancel: (id: string) => invoke<boolean>('sftp_cancel', { id }),
   listSnippets: () => invoke<Snippet[]>('list_snippets'),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),

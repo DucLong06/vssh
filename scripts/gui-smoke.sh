@@ -19,9 +19,15 @@
 #   shell-01, shell-02  a real shell on a PTY  moved-box   a key that changed
 #   far-box             its second jump host refuses
 #
-# Screenshots land in docs/img/desktop-d2*.png and desktop-d3*.png (.vi.png:
-# the Vietnamese UI; d3-fail: a connection that fails, d3-closed: one that
-# drops); those of the steps in between, in target/smoke/.
+# Then the file view, on one more host:
+#
+#   files-01            an SFTP server over a directory of its own, fed at
+#                       2 MiB a second so that a transfer can be looked at
+#
+# Screenshots land in docs/img/desktop-d2*.png, desktop-d3*.png and
+# desktop-d4*.png (.vi.png: the Vietnamese UI; d3-fail: a connection that
+# fails, d3-closed: one that drops; d4-sftp: the file view with transfers
+# under way); those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -33,7 +39,7 @@ SIZE=1100x700
 SSHD=/usr/sbin/sshd
 
 if [ -z "${VSSH_SMOKE_DISPLAY:-}" ]; then
-    for tool in xvfb-run xdotool ffmpeg npm ssh-keygen python3 "$SSHD"; do
+    for tool in xvfb-run xdotool ffmpeg npm ssh-keygen python3 "$SSHD" /usr/lib/openssh/sftp-server; do
         command -v "$tool" >/dev/null || { echo "FAIL: $tool is not installed"; exit 1; }
     done
     # `tauri build` puts the frontend inside the binary; a plain `cargo
@@ -46,7 +52,9 @@ mkdir -p target/smoke
 home=$(mktemp -d)
 app=
 sshd=
-trap 'kill $app $sshd 2>/dev/null; rm -rf "$home"' EXIT
+# The app is given the time to go before its HOME is taken away: what it
+# still writes on its way out would otherwise be in the way of the rm.
+trap 'kill $app $sshd 2>/dev/null || true; wait 2>/dev/null || true; rm -rf "$home" 2>/dev/null || { sleep 2; rm -rf "$home"; }' EXIT
 mkdir -p "$home/.ssh" "$home/.local/share" "$home/sshd"
 chmod 700 "$home/.ssh"
 # The user's own fonts (Maple Mono NF) are under the HOME this run hides.
@@ -66,10 +74,27 @@ for port in 2204 2205; do
     mkdir "$home/sshd/$port"
     cp scripts/smoke-hosts/2201.txt "$home/sshd/$port.txt"
 done
+# files-01 (2206) is asked for its SFTP subsystem, which a forced command
+# stands in for too: the real sftp-server, in a directory of its own, behind
+# a pipe that lets 2 MiB a second through. Each time it is asked leaves a
+# line in sshd/sftp-asked.
+mkdir "$home/sshd/files"
+cp scripts/smoke-hosts/2201.txt "$home/sshd/2206.txt"
+cat >"$home/sshd/slow" <<'EOF'
+import os, subprocess, time
+server = subprocess.Popen(["/usr/lib/openssh/sftp-server"], stdin=subprocess.PIPE)
+while data := os.read(0, 65536):
+    server.stdin.write(data)
+    server.stdin.flush()
+    time.sleep(len(data) / (2 * 1024 * 1024))
+server.stdin.close()
+server.wait()
+EOF
 cat >"$home/sshd/answer" <<EOF
 #!/bin/sh
 set -- \$SSH_CONNECTION
 case "\$4:\${SSH_ORIGINAL_COMMAND:-}" in
+2206:*sftp-server*) echo >>"$home/sshd/sftp-asked"; cd "$home/sshd/files" && exec python3 "$home/sshd/slow" ;;
 220[45]:) cd "$home/sshd/\$4" && exec env -i PATH=/usr/bin:/bin TERM="\$TERM" PS1="shell:\$4> " bash --norc --noprofile ;;
 220[45]:*ps\ -o*) exec sh -c "\$SSH_ORIGINAL_COMMAND" ;;
 esac
@@ -84,6 +109,8 @@ ListenAddress 127.0.0.2:2201
 ListenAddress 127.0.0.1:2204
 ListenAddress 127.0.0.1:2205
 ListenAddress 127.0.0.3:2201
+ListenAddress 127.0.0.1:2206
+Subsystem sftp /usr/lib/openssh/sftp-server
 HostKey $home/sshd/host_key
 PidFile $home/sshd/pid
 AuthorizedKeysFile $home/.ssh/authorized_keys
@@ -233,11 +260,11 @@ sleep 1
 shot target/smoke/hover.png
 xdotool mousemove --window "$win" 600 20
 
-# A person asking about the host nobody connected to: the last card, two tab
-# stops per card further on. That is a decision: its key goes on record, as
+# A person asking about the host nobody connected to: the last card, three
+# tab stops per card further on (the card, Files, Connect). That is a decision: its key goes on record, as
 # with `v` in the TUI, and from then on it is polled like the others.
 first_card
-xdotool key --window "$win" --repeat 14 Tab
+xdotool key --window "$win" --repeat 21 Tab
 xdotool key --window "$win" v
 sleep 3
 shot target/smoke/asked.png
@@ -425,4 +452,140 @@ step "a session that ended leaves a red banner on its tab"
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the terminal tabs"
+
+# --- D4: files ---------------------------------------------------------------
+# What is on this machine (the throwaway HOME) and what is on the host. The
+# two big files are holes: they take no room here, and at 2 MiB a second
+# little of them gets there.
+files="$home/sshd/files"
+mkdir "$home/Documents" "$home/Downloads" "$files/releases" "$files/shared"
+echo 'a note from this machine' >"$home/notes.txt"
+echo 'hello from this machine' >"$home/hello.txt"
+truncate -s 96M "$home/site.tar.gz"
+truncate -s 64M "$home/backup.sql"
+echo 'deployed by the fixture' >"$files/deploy.log"
+echo 'worker_processes auto;' >"$files/nginx.conf"
+cat >>"$home/.ssh/config" <<EOF
+Host files-01
+    HostName 127.0.0.1
+    Port 2206
+EOF
+sleep 6
+
+fail() { echo "FAIL: $1"; shot target/smoke/failed.png; exit 1; }
+sftps() { wc -l <"$home/sshd/sftp-asked" 2>/dev/null || echo 0; }
+size() { stat -c %s "$1" 2>/dev/null || echo 0; }
+# The palette finds the host's card; f on the card opens its files.
+open_files() {
+    key ctrl+k
+    xdotool type --window "$win" "$1"
+    key Return
+    key f
+    sleep 4
+}
+# The rows of the two panes: 23 px each, the middle of the first at y 120.
+row() { echo $((120 + 23 * $1)); }
+LOCAL=420 REMOTE=860
+click_row() { xdotool mousemove --window "$win" "$1" "$(row "$2")" click "${3:-1}"; sleep 0.5; }
+# A row dragged from one pane into the other.
+drag_row() {
+    xdotool mousemove --window "$win" "$1" "$(row "$2")" mousedown 1
+    for part in 1 2 3 4 5 6; do
+        xdotool mousemove --window "$win" $(($1 + ($3 - $1) * part / 6)) 420
+        sleep 0.1
+    done
+    xdotool mouseup 1
+    sleep 3
+}
+
+open_files files-01
+shot target/smoke/files.png
+[ "$(sftps)" -ge 2 ] || fail "the file view did not ask files-01 over SFTP ($(sftps) requests)"
+step "f on a card opened its files: this machine left, the host right"
+
+# The keys are the local pane's: the last file but one is notes.txt.
+key G k c
+sleep 3
+cmp -s "$home/notes.txt" "$files/notes.txt" || fail "c did not copy notes.txt to the host"
+step "c copied the selected file up to the host, byte for byte"
+
+# The right button under the host's rows: New folder is all there is to ask.
+xdotool mousemove --window "$win" "$REMOTE" 540 click 3
+sleep 0.5
+shot target/smoke/files-menu.png
+key Return
+xdotool type --window "$win" made-here
+key Return
+sleep 3
+[ -d "$files/made-here" ] || fail "the menu's New folder made nothing on the host"
+step "the right button's menu made a folder on the host"
+
+# The host's rows now: made-here, releases, shared, deploy.log, nginx.conf,
+# notes.txt. On a file the menu is Copy, New folder, Rename, Delete.
+click_row "$REMOTE" 3 3
+key Down Down Return
+xdotool type --window "$win" deploy.old
+key Return
+sleep 3
+[ -e "$files/deploy.old" ] && [ ! -e "$files/deploy.log" ] || fail "Rename did not rename deploy.log"
+# Delete asks first: Cancel has the focus, Delete is next.
+click_row "$REMOTE" 4 3
+key Up Return
+sleep 0.5
+key Tab Return
+sleep 3
+[ ! -e "$files/nginx.conf" ] || fail "Delete did not remove nginx.conf"
+step "the menu renamed one file on the host and, after a yes, deleted another"
+
+# Drag and drop, both ways. Here: Documents, Downloads, sshd, backup.sql,
+# hello.txt, notes.txt, site.tar.gz. There: ..., deploy.old, notes.txt.
+drag_row "$LOCAL" 4 "$REMOTE"
+cmp -s "$home/hello.txt" "$files/hello.txt" || fail "a row dragged to the host's pane was not uploaded"
+drag_row "$REMOTE" 3 "$LOCAL"
+cmp -s "$files/deploy.old" "$home/deploy.old" || fail "a row dragged from the host's pane was not downloaded"
+step "a row dragged across was copied: one up, one down"
+
+# The two big files, marked and sent together. Here now: ..., backup.sql
+# (3), deploy.old, hello.txt, notes.txt, site.tar.gz (last).
+click_row "$LOCAL" 3
+key space G space c
+sleep 5
+shot docs/img/desktop-d4-sftp.png
+# The language button takes the keyboard; a click on the row that is
+# selected gives it back to the pane, so both shots are of the same state.
+language
+click_row "$LOCAL" 7
+shot docs/img/desktop-d4-sftp.vi.png
+language
+for name in backup.sql site.tar.gz; do
+    [ "$(size "$files/$name")" -gt 0 ] || fail "$name is not on its way to the host"
+done
+[ "$(size "$files/site.tar.gz")" -lt "$(size "$home/site.tar.gz")" ] || fail "the transfer was over before it could be looked at"
+step "two transfers at once, each with its line ($(size "$files/backup.sql") and $(size "$files/site.tar.gz") bytes so far)"
+
+# Cancel on the first line stops that one where it is; the other goes on.
+xdotool mousemove --window "$win" 1041 609 click 1
+sleep 2
+stopped=$(size "$files/backup.sql")
+going=$(size "$files/site.tar.gz")
+sleep 3
+[ "$(size "$files/backup.sql")" -eq "$stopped" ] || fail "backup.sql still grows after Cancel"
+[ "$(size "$files/site.tar.gz")" -gt "$going" ] || fail "Cancel stopped the other transfer too"
+shot target/smoke/files-cancelled.png
+step "Cancel stopped one transfer where it was ($stopped bytes), the other went on"
+# Closing the tab stops what it was moving.
+key ctrl+w
+sleep 2
+going=$(size "$files/site.tar.gz")
+sleep 3
+[ "$(size "$files/site.tar.gz")" -eq "$going" ] || fail "site.tar.gz still grows after its tab was closed"
+step "closing the tab stopped the transfer that was left"
+
+# A host that is down: its pane says how, this machine's pane works.
+open_files cache-01
+shot target/smoke/files-dead.png
+key ctrl+w
+
+kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
+step "the app is still running after the file views"
 echo "gui smoke: ok (now look at the screenshots)"

@@ -1,6 +1,7 @@
 //! SFTP (D4): listings, the small changes, and transfers that report their
 //! progress on `sftp-progress:<id>` and can be cancelled.
 
+use std::fs;
 use std::sync::atomic::Ordering;
 use std::thread;
 
@@ -41,6 +42,88 @@ fn sftp_list_answers_with_the_entries_of_a_directory() {
             "deploy@10.0.0.5:2222 List(\".\")",
         ]
     );
+}
+
+#[test]
+fn sftp_realpath_says_where_a_path_leads() {
+    let home = home("sftp-realpath");
+    let mut net = Fake::silent();
+    net.files = Ok(vec![Entry {
+        name: "/home/deploy".into(),
+        is_dir: true,
+        size: 0,
+        mtime: 0,
+    }]);
+    let (_app, window) = window(&home, net.clone());
+    let realpath = |path: &str| {
+        call(
+            &window,
+            "sftp_realpath",
+            json!({ "host": "web-01", "path": path }),
+        )
+    };
+    // No path is the directory the server starts in: how the window learns
+    // where a listing of it is.
+    assert_eq!(realpath(""), Ok(json!("/home/deploy")));
+    assert_eq!(realpath("/srv/.."), Ok(json!("/home/deploy")));
+    assert_eq!(
+        net.asked(),
+        [
+            "deploy@10.0.0.5:2222 Realpath(\".\")",
+            "deploy@10.0.0.5:2222 Realpath(\"/srv/..\")",
+        ]
+    );
+}
+
+#[test]
+fn the_local_commands_read_and_change_this_machine() {
+    let home = home("local");
+    let dir = home.join("files");
+    fs::create_dir_all(dir.join("sub")).unwrap();
+    fs::write(dir.join("b.txt"), "hello").unwrap();
+    let net = Fake::silent();
+    let (_app, window) = window(&home, net.clone());
+    let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+    let names = |listing: &Value| -> Vec<String> {
+        let entries = listing["entries"].as_array().unwrap().iter();
+        entries
+            .map(|e| e["name"].as_str().unwrap().into())
+            .collect()
+    };
+
+    // The path comes back in full, whatever way it was asked for.
+    let listed = call(&window, "local_list", json!({ "path": path("sub/..") })).unwrap();
+    assert_eq!(listed["path"], json!(dir.canonicalize().unwrap()));
+    assert_eq!(names(&listed), ["sub", "b.txt"]);
+    assert_eq!(listed["entries"][0]["is_dir"], true);
+    assert_eq!(listed["entries"][1]["size"], 5);
+    // No path is the user's home.
+    let at_home = call(&window, "local_list", json!({ "path": "" })).unwrap();
+    let user_home = vssh_core::config::home().canonicalize().unwrap();
+    assert_eq!(at_home["path"], json!(user_home));
+
+    let done = |cmd: &str, args: Value| assert_eq!(call(&window, cmd, args), Ok(Value::Null));
+    done("local_mkdir", json!({ "path": path("new") }));
+    done(
+        "local_rename",
+        json!({ "from": path("b.txt"), "to": path("c.txt") }),
+    );
+    let listed = call(&window, "local_list", json!({ "path": path("") })).unwrap();
+    assert_eq!(names(&listed), ["new", "sub", "c.txt"]);
+    done("local_rm", json!({ "path": path("c.txt"), "isDir": false }));
+    done("local_rm", json!({ "path": path("new"), "isDir": true }));
+    let listed = call(&window, "local_list", json!({ "path": path("") })).unwrap();
+    assert_eq!(names(&listed), ["sub"]);
+
+    // What cannot be done says why, and names the path.
+    let missing = call(&window, "local_list", json!({ "path": path("nope") })).unwrap_err();
+    assert_eq!(missing["class"], "other");
+    assert!(
+        missing["chain"][0].as_str().unwrap().contains("nope"),
+        "{missing}"
+    );
+    // Nothing of this goes near the network.
+    assert!(net.asked().is_empty());
 }
 
 #[test]
@@ -85,6 +168,7 @@ fn sftp_refuses_a_host_that_is_not_in_the_config() {
     let nobody = other("no host named \"nope\"");
     let cases = [
         ("sftp_list", json!({ "host": "nope", "path": "/" })),
+        ("sftp_realpath", json!({ "host": "nope", "path": "" })),
         ("sftp_mkdir", json!({ "host": "nope", "path": "/x" })),
         (
             "sftp_rm",

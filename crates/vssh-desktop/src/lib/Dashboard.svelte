@@ -18,9 +18,11 @@
     hidden?: boolean
     onselect?: (alias: string) => void
     onconnect: (alias: string) => void
+    /** Opens a host's files. */
+    onfiles?: (alias: string) => void
     onpalette: () => void
   }
-  let { hosts, error = null, tag = null, selected = null, hidden = false, onselect, onconnect, onpalette }: Props = $props()
+  let { hosts, error = null, tag = null, selected = null, hidden = false, onselect, onconnect, onfiles, onpalette }: Props = $props()
 
   /** How long the pointer rests on a card before its quick peek opens, and how long an answer is good for. */
   const REST = 600
@@ -137,6 +139,8 @@
       marked = marked.includes(alias) ? marked.filter((name) => name !== alias) : [...marked, alias]
     } else if (e.key === 'v') {
       peek(alias)
+    } else if (e.key === 'f') {
+      onfiles?.(alias)
     } else if (step) {
       // Drag and drop for the keyboard: one place along, among the cards on screen.
       e.preventDefault()
@@ -278,9 +282,10 @@
                 info={live[host.alias]}
                 marked={marked.includes(host.alias)}
                 onconnect={() => onconnect(host.alias)}
+                onfiles={onfiles && (() => onfiles(host.alias))}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Space v Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v f Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null

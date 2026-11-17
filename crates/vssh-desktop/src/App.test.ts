@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
+import listing from '../src-tauri/tests/fixtures/files.json'
 import errors from './lib/fixtures/errors.json'
 import hosts from './lib/fixtures/hosts.json'
 import peek from './lib/fixtures/peek.json'
@@ -36,6 +37,9 @@ function shell(over: Record<string, (args: Args) => unknown> = {}) {
     session_close: () => null,
     session_trust: () => null,
     'plugin:clipboard-manager|write_text': () => null,
+    local_list: () => ({ path: '/home/me', entries: [] }),
+    sftp_realpath: () => '/home/deploy',
+    sftp_list: () => listing,
     // The core's own words for a failure of that class.
     resolve_conn_error: ({ error, lang }) =>
       shown[lang as 'en' | 'vi'][errors.findIndex((known) => known.class === (error as typeof refused).class)],
@@ -665,4 +669,61 @@ test('every string of the table is one the window uses', async () => {
   const code = Object.values(sources).join('\n')
   const unused = Object.keys(strings.en).filter((key) => !code.includes(`t('${key}')`))
   expect(unused).toEqual([])
+})
+
+test('f on a card, or its Files button, opens the host\'s files in a tab of their own, once per host', async () => {
+  const user = shell()
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  expect(await tab(/Files web-01/)).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tabpanel', { name: 'Files web-01' })).toBeVisible()
+  expect(await screen.findByRole('row', { name: /nginx/ })).toBeInTheDocument()
+  expect(asked('sftp_list')).toEqual([{ host: 'web-01', path: '/home/deploy' }])
+  // The keys are the file view's, and the status bar says which.
+  expect(screen.getByRole('grid', { name: 'local' })).toHaveFocus()
+  expect(status()).toHaveTextContent('Space select · c copy · / filter')
+  expect(status()).not.toHaveTextContent('Ctrl-A')
+  // It is no session: nothing was logged in to for a shell.
+  expect(asked('session_open')).toHaveLength(0)
+  expect(status()).toHaveTextContent('Sessions 0')
+
+  // From the dashboard again, the card's button goes to the tab that is open.
+  await user.keyboard(`${leader}0`)
+  expect(screen.getByRole('tabpanel', { hidden: true })).not.toBeVisible()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Files' }))
+  expect(screen.getAllByRole('tab')).toHaveLength(2)
+  expect(asked('sftp_list')).toHaveLength(1)
+  await user.keyboard(`${leader}0`)
+  await user.click(within(await card('web-02')).getByRole('button', { name: 'Files' }))
+  expect(await tab(/2 Files web-02/)).toHaveAttribute('aria-selected', 'true')
+
+  // Ctrl-W closes the one in front, as it closes a terminal; so does its ×.
+  await user.keyboard('{Control>}w{/Control}')
+  expect(screen.queryByRole('tab', { name: /Files web-02/ })).toBeNull()
+  expect(await tab(/Files web-01/)).toHaveAttribute('aria-selected', 'true')
+  await user.click(screen.getByRole('button', { name: 'close Files web-01' }))
+  expect(screen.queryByRole('tablist')).toBeNull()
+  expect(screen.getByRole('region', { name: 'Hosts' })).toBeVisible()
+})
+
+test('a file view next to a terminal: its tab comes after the sessions, in Vietnamese too', async () => {
+  const user = shell()
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-01')).focus()
+  await user.keyboard('{Enter}')
+  expect(await tab(/1 web-01/)).toHaveAttribute('aria-selected', 'true')
+  expect(await tab(/2 Files web-01/)).toHaveAttribute('aria-selected', 'false')
+  // The terminal's keys, not the file view's.
+  expect(status()).toHaveTextContent('Ctrl-A')
+  await user.keyboard(`${leader}2`)
+  expect(await tab(/2 Files web-01/)).toHaveAttribute('aria-selected', 'true')
+  setLang('vi')
+  expect(await tab(/2 Tệp web-01/)).toBeInTheDocument()
+  expect(status()).toHaveTextContent('Space chọn · c sao chép · / lọc')
+  await user.keyboard(`${leader}0`)
+  expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toBeInTheDocument()
+  ;(await card('web-01')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent('f Tệp'))
 })
