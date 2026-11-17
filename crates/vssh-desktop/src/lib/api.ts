@@ -129,6 +129,16 @@ export type Shown = { class: ErrorClass; label: string; message: string; chain: 
 /** `none`: there is no vault file yet. Unlocked, it stays so until the app is closed. */
 export type VaultState = 'none' | 'locked' | 'unlocked'
 
+/**
+ * What `key-setup-step` carries. `backup` (of sshd_config) comes before
+ * `install`; `restore` only after a step failed once the host was changed.
+ */
+export type KeyStep = {
+  host: string
+  step: 'generate' | 'backup' | 'install' | 'verify' | 'disable' | 'restore'
+  state: 'running' | 'done' | 'failed'
+}
+
 /** What `pty-state:<id>` says about a session's shell. */
 export type PtyState =
   | { state: 'up' }
@@ -224,6 +234,12 @@ export const api = {
   /** Takes those of them over that `only` names, and resolves to the aliases added. */
   hostsImport: (path: string | null, only: string[]) =>
     invoke<string[]>('hosts_import_ssh_config', { path, only }),
+  /**
+   * A new key for the host, proven to open it, then its password login is
+   * turned off. Resolves to the private key's path; `key-setup-step` carries
+   * a `KeyStep` for each step meanwhile: listen first.
+   */
+  sshKeySetup: (host: string) => invoke<string>('ssh_key_setup', { host }),
   vaultState: () => invoke<VaultState>('vault_state'),
   /** Unlocks the vault; where there is none, makes it with this passphrase. */
   vaultUnlock: (passphrase: string) => invoke<void>('vault_unlock', { passphrase }),

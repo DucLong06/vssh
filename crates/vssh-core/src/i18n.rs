@@ -260,6 +260,58 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("save_this_host", "Save this host", "Lưu máy chủ này"),
     // The key setup: its steps as they are done on the host.
     ("key_setup", "Set up SSH key", "Cài khoá SSH"),
+    (
+        "key_setup_note",
+        "It needs root on the host, or sudo that asks no password.",
+        "Cần quyền root trên máy chủ, hoặc sudo không hỏi mật khẩu.",
+    ),
+    ("key_step_generate", "Create an Ed25519 key", "Tạo khoá Ed25519"),
+    (
+        "key_step_generate_note",
+        "A new key for this host alone, kept next to your ssh config.",
+        "Một khoá mới dành riêng cho máy này, nằm cạnh tệp ssh config của bạn.",
+    ),
+    (
+        "key_step_install",
+        "Add it to authorized_keys",
+        "Thêm vào authorized_keys",
+    ),
+    (
+        "key_step_install_note",
+        "sshd_config is backed up first, then the public key goes on the host.",
+        "Sao lưu sshd_config trước, rồi đưa khoá công khai lên máy chủ.",
+    ),
+    (
+        "key_step_verify",
+        "Sign in with the new key",
+        "Thử đăng nhập bằng khoá mới",
+    ),
+    (
+        "key_step_verify_note",
+        "A second connection, with the key and nothing else.",
+        "Mở một kết nối thứ hai, chỉ dùng khoá.",
+    ),
+    (
+        "key_step_disable",
+        "Turn off password login",
+        "Tắt đăng nhập bằng mật khẩu",
+    ),
+    (
+        "key_step_disable_note",
+        "Only now that the key is known to work.",
+        "Chỉ làm khi đã chắc khoá dùng được.",
+    ),
+    (
+        "key_setup_restored",
+        "sshd_config was restored as it was — your access is unchanged",
+        "Đã khôi phục sshd_config như cũ — truy cập của bạn không đổi",
+    ),
+    (
+        "key_setup_done",
+        "{name} is signed in to with its key from now on.",
+        "Từ giờ {name} đăng nhập bằng khoá.",
+    ),
+    ("start", "Start", "Bắt đầu"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

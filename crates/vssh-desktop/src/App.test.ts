@@ -1094,3 +1094,33 @@ test('a quick connect in front can be kept: Save this host opens the form with w
   expect(screen.queryByRole('button', { name: 'Save this host' })).toBeNull()
   expect(status()).toHaveTextContent('Hosts 5')
 })
+
+test('a host signed in to with a vault password is given a key from its form; afterwards the form says Key', async () => {
+  let key = ''
+  const user = editable({
+    vault_state: () => 'unlocked',
+    vault_hosts: () => ['web-02'],
+    hosts_form: ({ alias }) => ({ alias, hostname: '10.0.0.6', user: 'deploy', port: null, identity_file: key, proxy_jump: '', grp: '', tags: '', notes: '', pinned: false }),
+    ssh_key_setup: () => (key = '/home/me/.ssh/vssh_web-02_ed25519'),
+  })
+  ;(await card('web-02')).focus()
+  await user.keyboard('e')
+  await vi.waitFor(() => expect(screen.getByRole('radio', { name: 'Vault password' })).toBeChecked())
+  await user.click(screen.getByRole('button', { name: 'Set up SSH key' }))
+  const wizard = await screen.findByRole('dialog', { name: 'Set up SSH key web-02' })
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  const before = asked('list_hosts').length
+  await user.click(within(wizard).getByRole('button', { name: 'Start' }))
+  expect(asked('ssh_key_setup')).toEqual([{ host: 'web-02' }])
+  expect(await within(wizard).findByRole('status')).toHaveTextContent('web-02 is signed in to with its key from now on.')
+  await user.click(within(wizard).getByRole('button', { name: 'close' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // The config was written by the shell: it is read again.
+  await vi.waitFor(() => expect(asked('list_hosts').length).toBe(before + 1))
+
+  ;(await card('web-02')).focus()
+  await user.keyboard('e')
+  await vi.waitFor(() => expect(screen.getByRole('radio', { name: 'Key' })).toBeChecked())
+  expect(screen.getByLabelText('Key file')).toHaveValue('/home/me/.ssh/vssh_web-02_ed25519')
+  expect(screen.queryByRole('button', { name: 'Set up SSH key' })).toBeNull()
+})

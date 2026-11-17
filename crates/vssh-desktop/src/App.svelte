@@ -17,6 +17,7 @@
   import Forwards from './lib/Forwards.svelte'
   import HostDelete from './lib/HostDelete.svelte'
   import HostForm from './lib/HostForm.svelte'
+  import KeySetup from './lib/KeySetup.svelte'
   import { fromTarget } from './lib/hosts'
   import { i18n, t } from './lib/i18n.svelte'
   import { poll, relabel } from './lib/live.svelte'
@@ -59,9 +60,9 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete'
+  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys'
   let modal = $state<Dialog | null>(null)
-  /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete. */
+  /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
   let start = $state<Partial<Form>>()
   /** The quick connect that the form is to keep as a host. */
@@ -416,13 +417,16 @@
       {vault}
       onsaved={(host) => changed(host.alias)}
       ondelete={() => (modal = 'delete')}
-      onkeys={() => (modal = null)}
+      onkeys={() => (modal = 'keys')}
       onimported={(aliases) => changed(aliases[0])}
       onclose={() => (modal = null)}
     />
   {/key}
 {:else if modal === 'delete' && editing}
   <HostDelete alias={editing} ondeleted={deleted} onclose={() => (modal = null)} />
+{:else if modal === 'keys' && editing}
+  <!-- The shell names the key in the host's block: the hosts are read again. -->
+  <KeySetup host={editing} onclose={() => changed()} />
 {:else if modal === 'vault'}
   <Vault bind:vault hosts={hosts.length} onclose={() => (modal = null)} />
 {:else if modal === 'quick'}
