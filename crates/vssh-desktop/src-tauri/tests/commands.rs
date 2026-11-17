@@ -11,15 +11,20 @@ use serde_json::{json, Value};
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{get_ipc_response, mock_context, noop_assets, MockRuntime};
 use tauri::webview::InvokeRequest;
-use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Listener, Manager, WebviewWindow, WebviewWindowBuilder};
 use vssh_core::config::Lang;
 use vssh_core::conn_err::{ConnError, Fail};
-use vssh_core::ssh::Target;
+use vssh_core::ssh::{SessionCmd, Target};
 use vssh_core::stats::parse_peek;
 use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::Host;
-use vssh_desktop::{builder, Answer, Backend, Ping, Transport};
+use vssh_core::task::{Receiver, Shell};
+use vssh_desktop::{builder, Answer, Backend, Heard, Ping, Transport};
+
+/// Terminal sessions.
+#[path = "commands/session.rs"]
+mod session;
 
 const SSH_CONFIG: &str = "\
 Host web-01
@@ -75,6 +80,58 @@ impl Transport for Fake {
 
     fn known(&self, _: &Target) -> bool {
         self.known
+    }
+
+    /// A shell that says `$ `, echoes what is typed, runs `sleep` and ends
+    /// on `exit`; or refuses, if that is this network's answer to everything.
+    fn shell(
+        &self,
+        target: Target,
+        (cols, rows): (u16, u16),
+        mut keys: Receiver<SessionCmd>,
+        report: Heard,
+    ) -> Answer<()> {
+        let at = format!("{}@{}:{}", target.user, target.host, target.port);
+        let asked = self.asked.clone();
+        let note = move |line: String| asked.lock().unwrap().push(line);
+        note(format!("shell {at} {cols}x{rows}"));
+        let refusal = self.answer.clone().err();
+        Box::pin(async move {
+            // Dropped with the shell, however it ends.
+            let _gone = Gone(Box::new(note.clone()), at);
+            if let Some(refusal) = refusal {
+                return Err(refusal);
+            }
+            report(Shell::Up);
+            report(Shell::Data(b"$ ".to_vec()));
+            while let Some(cmd) = keys.recv().await {
+                match cmd {
+                    SessionCmd::Data(typed) if typed == b"exit\r" => break,
+                    SessionCmd::Data(typed) => {
+                        let running = typed.starts_with(b"sleep").then(|| "sleep".to_string());
+                        report(Shell::Data(typed));
+                        report(Shell::Busy(running));
+                    }
+                    SessionCmd::Resize(cols, rows) => note(format!("resize {cols}x{rows}")),
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn trust(&self, target: &Target, fingerprint: &str, forever: bool) {
+        let host = format!("{}:{}", target.host, target.port);
+        let line = format!("trust {host} {fingerprint} forever={forever}");
+        self.asked.lock().unwrap().push(line);
+    }
+}
+
+/// Says when a shell's connection is let go of.
+struct Gone(Box<dyn Fn(String) + Send>, String);
+
+impl Drop for Gone {
+    fn drop(&mut self) {
+        (self.0)(format!("gone {}", self.1));
     }
 }
 
@@ -318,53 +375,6 @@ fn ping_host_times_the_way_to_a_host_that_is_reached_directly() {
     };
     let (_app, down) = window(&home, net);
     assert_eq!(ping(&down, "web-01"), Ok(Value::Null));
-}
-
-#[test]
-fn connect_host_opens_a_session_to_a_host_of_the_config_only() {
-    let home = home("connect");
-    let (_app, window) = window(&home, Fake::silent());
-    let connect = |alias: &str| call(&window, "connect_host", json!({ "alias": alias }));
-    assert_eq!(connect("web-01"), Ok(json!(1)));
-    assert_eq!(connect("nope"), Err(other("no host named \"nope\"")));
-    // One counter for every kind of session.
-    let quick = call(
-        &window,
-        "quick_connect",
-        json!({ "host": "db.example.com" }),
-    );
-    assert_eq!(quick, Ok(json!(2)));
-    assert_eq!(connect("bare"), Ok(json!(3)));
-}
-
-#[test]
-fn quick_connect_gives_each_session_its_own_id_and_saves_nothing() {
-    let home = home("quick");
-    let (_app, window) = window(&home, Fake::silent());
-    let connect = |host: &str| call(&window, "quick_connect", json!({ "host": host }));
-    assert_eq!(connect("deploy@10.0.0.9:2200"), Ok(json!(1)));
-    assert_eq!(connect("db.example.com"), Ok(json!(2)));
-    assert_eq!(connect("root@[::1]:22"), Ok(json!(3)));
-    // A quick connect is not a saved host: the config is as it was.
-    assert_eq!(fs::read_to_string(home.join("config")).unwrap(), SSH_CONFIG);
-}
-
-#[test]
-fn quick_connect_refuses_what_is_not_a_host() {
-    let home = home("quick-bad");
-    let (_app, window) = window(&home, Fake::silent());
-    let connect = |host: &str| call(&window, "quick_connect", json!({ "host": host }));
-    let shape = "expected user@host or user@host:port";
-    for bad in ["", "   ", "@host", "de ploy@host", "user@"] {
-        assert_eq!(connect(bad), Err(other(shape)), "{bad:?}");
-    }
-    let err = connect("deploy@host:99999").unwrap_err();
-    assert_eq!(err["chain"][0], "port must be a number up to 65535");
-    assert!(call(&window, "quick_connect", json!({}))
-        .unwrap_err()
-        .is_string());
-    // A refused host used up no session id.
-    assert_eq!(connect("deploy@host"), Ok(json!(1)));
 }
 
 #[test]

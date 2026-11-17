@@ -260,9 +260,75 @@ pub async fn poll(h: &Handle<Client>, report: impl Fn(Option<Stats>)) {
     std::future::pending().await
 }
 
+/// Asks what runs on the terminal of the shell that shares this connection.
+/// Both descend from the connection's sshd: up from here to that sshd, and
+/// its child with a terminal is the shell (a login shell that forks before
+/// it runs a command puts itself in between, so `$PPID` alone will not do).
+const FOREGROUND: &str = "sh -c 'p=$$; \
+    while [ \"$p\" -gt 1 ] && c=$(ps -o comm= -p \"$p\") && [ \"${c#sshd}\" = \"$c\" ]; do \
+    p=$(ps -o ppid= -p \"$p\" | tr -d \" \"); done; [ \"$p\" -gt 1 ] || exit 1; \
+    t=$(ps -o tty= --ppid \"$p\" 2>/dev/null | grep -v \"?\" | head -n1); \
+    [ -n \"$t\" ] && ps -o stat=,comm= -t \"$t\"'";
+
+/// The command in the foreground of a terminal, from `ps -o stat=,comm=` of
+/// it: `+` marks the foreground, `s` the shell that leads the session.
+/// `None` when the shell is at its prompt, or the answer is not such a list.
+pub fn parse_foreground(ps: &str) -> Option<String> {
+    let rows = ps.lines().filter_map(|row| row.trim().split_once(' '));
+    let mut front = rows.filter(|(stat, _)| stat.contains('+') && !stat.contains('s'));
+    front.next().map(|(_, command)| command.trim().to_string())
+}
+
+/// Reports what a session's shell is running, whenever that changes, for as
+/// long as it is polled. Like [`poll`] it never returns, and gives up asking
+/// after three failures in a row.
+// shortcut: procps only (`--ppid`), so Linux; elsewhere nothing is reported.
+// And it is asked every two seconds over a channel of its own: read the
+// shell's OSC 133 marks instead if that ever costs too much.
+pub async fn watch(h: &Handle<Client>, report: impl Fn(Option<String>)) {
+    let mut last = None;
+    let mut failures = 0;
+    while failures < 3 {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let out = tokio::time::timeout(Duration::from_secs(4), ssh::exec(h, FOREGROUND)).await;
+        let Ok(Ok(out)) = out else {
+            failures += 1;
+            continue;
+        };
+        failures = 0;
+        let now = parse_foreground(&out);
+        if now != last {
+            report(now.clone());
+            last = now;
+        }
+    }
+    std::future::pending().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_foreground_is_what_runs_in_front_of_the_shell() {
+        // At its prompt the shell itself is in front: nothing is running.
+        assert_eq!(parse_foreground("Ss+  bash\n"), None);
+        assert_eq!(
+            parse_foreground("Ss   bash\nS+   sleep\n"),
+            Some("sleep".into())
+        );
+        // A pipeline: its first command names it. What is in the background does not count.
+        let busy = "Ss   zsh\nS    make\nR+   tar\nS+   gzip\n";
+        assert_eq!(parse_foreground(busy), Some("tar".into()));
+        // No `ps` like that (BSD), a forced command, an empty answer: not known, so not said.
+        for strange in [
+            "",
+            "[exit status 1]\n",
+            "load 0.92 0.58 0.59 1/389 12345\ncpus 4\n",
+        ] {
+            assert_eq!(parse_foreground(strange), None, "{strange:?}");
+        }
+    }
 
     const LINUX: &str = "load 0.92 0.58 0.59 1/389 12345\n\
         cpus 4\n\

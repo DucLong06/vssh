@@ -2,6 +2,8 @@
   import type { Host } from './api'
   import { address, chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
+  import SessionDot from './SessionDot.svelte'
+  import type { Tab } from './Tabs.svelte'
 
   type Props = {
     hosts: Host[]
@@ -9,16 +11,22 @@
     onselect: (alias: string) => void
     /** The tag the list is narrowed to; the dashboard follows it. */
     tag?: string | null
+    /** The open sessions, the one in front, and what a click on one does. */
+    sessions?: Tab[]
+    active?: number | null
+    onsession?: (id: number) => void
   }
-  let { hosts, selected, onselect, tag = $bindable(null) }: Props = $props()
+  let { hosts, selected, onselect, tag = $bindable(null), sessions = [], active = null, onsession }: Props = $props()
 
   let list = $state<HTMLElement>()
 
   const tags = $derived(tagCounts(hosts))
   const shown = $derived(hosts.filter((host) => tag === null || hasTag(host, tag)))
 
-  // A host chosen elsewhere (the palette) may be below the fold.
+  // A host chosen elsewhere (the palette) may be below the fold; so may the
+  // selected one once the sessions take their share of the list's height.
   $effect(() => {
+    void sessions.length
     if (selected) list?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' })
   })
 
@@ -46,6 +54,25 @@
             {#if address(host)}
               <span class="block truncate text-white">{address(host)}</span>
             {/if}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  {#if sessions.length}
+    <h2 class="{heading} border-t border-edge">{t('sessions')} <span class="text-white">{sessions.length}</span></h2>
+    <ul aria-label={t('sessions')} class="max-h-40 shrink-0 overflow-y-auto pb-1">
+      {#each sessions as session (session.id)}
+        <li>
+          <button
+            type="button"
+            aria-current={session.id === active ? 'true' : undefined}
+            onclick={() => onsession?.(session.id)}
+            class="flex w-full cursor-pointer gap-1.5 px-3 py-1 text-left hover:bg-bar aria-[current]:bg-selection"
+          >
+            <SessionDot {session} />
+            <span class="truncate">{session.title}</span>
           </button>
         </li>
       {/each}

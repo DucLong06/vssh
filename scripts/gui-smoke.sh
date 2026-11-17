@@ -13,8 +13,15 @@
 #   db-replica   a name that does not resolve  legacy      a user sshd refuses: AUTH
 #   app-internal behind a jump host            new-box     a key never seen before
 #
-# Screenshots land in docs/img/desktop-d2*.png (.vi.png: the Vietnamese UI);
-# those of the steps in between, in target/smoke/.
+# Then the terminal tabs, on hosts added to the config while the window is
+# open:
+#
+#   shell-01, shell-02  a real shell on a PTY  moved-box   a key that changed
+#   far-box             its second jump host refuses
+#
+# Screenshots land in docs/img/desktop-d2*.png and desktop-d3*.png (.vi.png:
+# the Vietnamese UI; d3-fail: a connection that fails, d3-closed: one that
+# drops); those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -51,9 +58,21 @@ ssh-keygen -q -t ed25519 -N '' -f "$home/sshd/host_key"
 cp "$home/.ssh/id_ed25519.pub" "$home/.ssh/authorized_keys"
 cp scripts/smoke-hosts/*.txt "$home/sshd/"
 # The fourth word of SSH_CONNECTION is the port the client came in on.
+# shell-01 and shell-02 (2204, 2205) are real: a shell on the PTY, each in a
+# directory of its own, and a real `ps` for the question what runs in it.
+# Asked for their metrics they print web-01's; the rest only ever print.
+ssh-keygen -q -t ed25519 -N '' -f "$home/sshd/old_key"
+for port in 2204 2205; do
+    mkdir "$home/sshd/$port"
+    cp scripts/smoke-hosts/2201.txt "$home/sshd/$port.txt"
+done
 cat >"$home/sshd/answer" <<EOF
 #!/bin/sh
 set -- \$SSH_CONNECTION
+case "\$4:\${SSH_ORIGINAL_COMMAND:-}" in
+220[45]:) cd "$home/sshd/\$4" && exec env -i PATH=/usr/bin:/bin TERM="\$TERM" PS1="shell:\$4> " bash --norc --noprofile ;;
+220[45]:*ps\ -o*) exec sh -c "\$SSH_ORIGINAL_COMMAND" ;;
+esac
 cat "$home/sshd/\$4.txt"
 EOF
 chmod +x "$home/sshd/answer"
@@ -62,6 +81,9 @@ ListenAddress 127.0.0.1:2201
 ListenAddress 127.0.0.1:2202
 ListenAddress 127.0.0.1:2203
 ListenAddress 127.0.0.2:2201
+ListenAddress 127.0.0.1:2204
+ListenAddress 127.0.0.1:2205
+ListenAddress 127.0.0.3:2201
 HostKey $home/sshd/host_key
 PidFile $home/sshd/pid
 AuthorizedKeysFile $home/.ssh/authorized_keys
@@ -243,4 +265,164 @@ xdotool key --window "$win" Return
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the palette chose a host"
+
+# --- D3: terminal tabs -------------------------------------------------------
+# Four more hosts, while the window is open. moved-box is on record with a
+# key that is not the one it has now.
+cat >>"$home/.ssh/config" <<EOF
+Host shell-01
+    HostName 127.0.0.1
+    Port 2204
+Host shell-02
+    HostName 127.0.0.1
+    Port 2205
+Host moved-box
+    HostName 127.0.0.3
+    Port 2201
+Host far-box
+    HostName 10.20.0.9
+    ProxyJump web-01,cache-01
+EOF
+old=$(cut -d' ' -f1,2 "$home/sshd/old_key.pub")
+echo "[127.0.0.3]:2201 $old" >>"$home/.ssh/known_hosts"
+sleep 6
+
+key() { xdotool key --window "$win" "$@"; sleep 0.3; }
+# What a person types at the terminal in front, and Enter.
+run() { xdotool type --window "$win" --delay 20 "$1"; key Return; sleep 1; }
+# The palette finds the host's card; Enter on the card opens its tab.
+open_tab() {
+    key ctrl+k
+    xdotool type --window "$win" "$1"
+    key Return
+    key Return
+    sleep 3
+}
+there() { [ -e "$home/sshd/$1" ] || { echo "FAIL: $2"; shot target/smoke/failed.png; exit 1; }; }
+
+open_tab shell-01
+run 'echo hello from a real pty'
+run 'touch typed'
+there 2204/typed "what was typed in the tab did not run in shell-01's shell"
+run 'stty size >size'
+there 2204/size "stty did not run"
+size=$(cat "$home/sshd/2204/size")
+[ "$size" != "24 80" ] || { echo "FAIL: the PTY is 24x80, not the size of the terminal"; exit 1; }
+step "a tab is a real shell on a PTY the size of its terminal ($size)"
+
+open_tab shell-02
+run 'touch typed'
+there 2205/typed "the second tab is not a shell of its own"
+[ ! -e "$home/sshd/2204/both" ] || { echo "FAIL: shell-01 heard what was typed in shell-02"; exit 1; }
+step "a second tab is a second shell; without broadcast each hears only itself"
+
+# Broadcast on both tabs: one line typed, two shells run it.
+key ctrl+a b
+key ctrl+a 1
+key ctrl+a b
+run 'touch both'
+there 2204/both "broadcast did not reach shell-01"
+there 2205/both "broadcast did not reach shell-02"
+step "broadcast: one line typed in tab 1 ran in both shells"
+
+# Ctrl-A y: the output of the last command is on the clipboard.
+key ctrl+a b
+run 'echo copied by the leader'
+key ctrl+a y
+sleep 1
+if command -v xclip >/dev/null; then
+    copied=$(xclip -o -selection clipboard)
+    [ "$copied" = "copied by the leader" ] || { echo "FAIL: Ctrl-A y copied '$copied'"; exit 1; }
+    step "Ctrl-A y put the last command's output on the clipboard"
+fi
+key ctrl+a b
+
+# Something that takes a while, in both: the tabs say what runs.
+run 'uname -sr'
+run 'sleep 60'
+sleep 5
+shot docs/img/desktop-d3-terminal.png
+# The language button takes the keyboard; a click gives it back to the
+# terminal, so both shots are of the same state.
+terminal() { xdotool mousemove --window "$win" 700 400 click 1; }
+language
+terminal
+shot docs/img/desktop-d3-terminal.vi.png
+language
+# The Night theme again, in the terminal itself.
+night=$(pixel docs/img/desktop-d3-terminal.png 900 500)
+[ "$night" = "1a1b26" ] || { echo "FAIL: the terminal's background is $night, not 1a1b26"; exit 1; }
+step "the terminal is the Night theme too"
+# Both tabs broadcast: the one in front has the full yellow border along its
+# top, the one behind a dimmer one.
+front=$(pixel docs/img/desktop-d3-terminal.png 450 6)
+behind=$(pixel docs/img/desktop-d3-terminal.png 700 6)
+[ "$front" = e0af68 ] && [ "$behind" != "$front" ] && [ "$behind" != 15161e ] ||
+    { echo "FAIL: broadcasting tabs' borders are $front in front and $behind behind"; exit 1; }
+step "while broadcasting, the tab in front is told apart (#$front, behind #$behind)"
+# Back into the terminal, and Ctrl-C for both sleeps.
+terminal
+key ctrl+c
+key ctrl+a B
+key ctrl+a B
+
+# A key that changed: nobody is let in before a person answers.
+logins=$(accepted)
+open_tab moved-box
+shot target/smoke/hostkey.png
+[ "$(accepted)" -eq "$logins" ] || { echo "FAIL: logged in to moved-box before the answer"; exit 1; }
+# Cancel has the focus; Accept once is next.
+key Tab
+key Return
+sleep 3
+shot target/smoke/accepted-once.png
+[ "$(accepted)" -eq $((logins + 1)) ] || { echo "FAIL: Accept once did not connect"; cat "$home/sshd/log"; exit 1; }
+[ "$(grep -F '[127.0.0.3]:2201' "$home/.ssh/known_hosts" | cut -d' ' -f2,3)" = "$old" ] || { echo "FAIL: Accept once wrote to known_hosts"; exit 1; }
+step "a changed host key: nothing before the answer; Accept once connects and writes nothing"
+# Once was once. Trust puts the key the host has now on record.
+key ctrl+w
+open_tab moved-box
+key Tab
+key Tab
+key Return
+sleep 3
+[ "$(grep -F '[127.0.0.3]:2201' "$home/.ssh/known_hosts" | cut -d' ' -f2,3)" = "$key" ] || { echo "FAIL: Trust did not replace the key on record"; cat "$home/.ssh/known_hosts"; exit 1; }
+step "Trust: the key on record is the one the host has now"
+key ctrl+w
+
+# A jump host that is down, second of two: the first is logged in to, and
+# the dialog says where it stopped.
+logins=$(accepted)
+open_tab far-box
+shot docs/img/desktop-d3-fail.png
+[ "$(accepted)" -eq $((logins + 1)) ] || { echo "FAIL: far-box's first jump host was not logged in to"; exit 1; }
+step "a jump chain that breaks at hop 2 got through hop 1"
+key Escape
+# The same in Vietnamese. The dialog is modal: the language goes first.
+key ctrl+w
+language
+open_tab far-box
+shot docs/img/desktop-d3-fail.vi.png
+key Escape
+key ctrl+w
+language
+
+# A session that ends under its tab: shell-01's shell kills what it runs
+# under. The tab keeps its screen and says so in a banner.
+key ctrl+a B
+key ctrl+a 1
+run 'kill -9 $PPID'
+sleep 2
+shot docs/img/desktop-d3-closed.png
+language
+terminal
+shot docs/img/desktop-d3-closed.vi.png
+language
+# The banner's red border, top right of the terminal.
+red=$(pixel docs/img/desktop-d3-closed.png 960 43)
+[ "$red" = f7768e ] || { echo "FAIL: no red banner on the closed tab (#$red)"; exit 1; }
+step "a session that ended leaves a red banner on its tab"
+
+kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
+step "the app is still running after the terminal tabs"
 echo "gui smoke: ok (now look at the screenshots)"

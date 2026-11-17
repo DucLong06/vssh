@@ -139,6 +139,40 @@ pub fn session(
     (task, cmd_tx)
 }
 
+/// What a shell on a PTY reports while it runs.
+pub enum Shell {
+    /// Connected and logged in; the shell is starting.
+    Up,
+    Data(Vec<u8>),
+    /// The command in the foreground changed; `None` = back at the prompt.
+    Busy(Option<String>),
+}
+
+/// A shell session for a frontend that is on the runtime itself (Tauri):
+/// awaited until either side ends it, and dropped to end it. `keys` types
+/// into it and resizes it. Keys and the agent only, as [`Peeks`].
+pub async fn shell(
+    target: Target,
+    size: (u16, u16),
+    keys: Receiver<SessionCmd>,
+    report: impl Fn(Shell) + Send + Sync,
+) -> Result<(), ConnError> {
+    let run = async {
+        let h = ssh::connect(&target, None, None).await?;
+        report(Shell::Up);
+        let login = Login {
+            command: target.remote_command.clone(),
+            script: None,
+        };
+        let data = |d: &[u8]| report(Shell::Data(d.to_vec()));
+        tokio::select! {
+            res = ssh::shell(&h, size, login, keys, data) => res,
+            () = stats::watch(&h, |busy| report(Shell::Busy(busy))) => Ok(()),
+        }
+    };
+    run.await.map_err(ConnError::from)
+}
+
 /// Opens an SFTP session and returns the channel that commands it. Its
 /// answers arrive as [`Event::Sftp`], its end like a shell session's.
 pub fn sftp(
