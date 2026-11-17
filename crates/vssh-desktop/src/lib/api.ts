@@ -96,6 +96,12 @@ export const api = {
   sessionWrite: (id: number, data: string) => invoke<void>('session_write', { id, data }),
   sessionResize: (id: number, cols: number, rows: number) => invoke<void>('session_resize', { id, cols, rows }),
   sessionClose: (id: number) => invoke<void>('session_close', { id }),
+  /**
+   * A person's yes to the host key that stopped the session (a `host_key`
+   * failure names it), good for its next start; `forever` puts it on record.
+   */
+  sessionTrust: (id: number, host: string, fingerprint: string, forever: boolean) =>
+    invoke<void>('session_trust', { id, host, fingerprint, forever }),
   /** The clipboard plugin's command: the webview's own clipboard is off in Tauri on Linux. */
   copy: (text: string) => invoke<void>('plugin:clipboard-manager|write_text', { text }),
   listSnippets: () => invoke<Snippet[]>('list_snippets'),

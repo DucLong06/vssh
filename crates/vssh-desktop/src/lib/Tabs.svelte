@@ -8,6 +8,8 @@
     state: 'connecting' | 'up' | 'closed'
     /** The command its shell is running; `null` at the prompt. */
     busy: string | null
+    /** What is typed into it goes to every broadcasting tab. */
+    broadcast: boolean
   }
   type Props = {
     sessions: Tab[]
@@ -20,7 +22,7 @@
 
   // The TUI's tab: a pill with a rounded top, filled when it is in front.
   const pill =
-    'flex shrink-0 items-center rounded-t-lg border border-b-0 border-transparent text-white hover:text-fg has-[[aria-selected=true]]:border-edge has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:text-fg'
+    'flex shrink-0 items-center rounded-t-lg border border-b-0 border-transparent text-white hover:text-fg has-[[aria-selected=true]]:border-edge has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:text-fg data-[broadcast]:border-yellow! data-[broadcast]:text-yellow!'
   const tab = 'flex cursor-pointer items-center gap-1.5 py-1 pl-3'
 </script>
 
@@ -36,7 +38,7 @@
     </button>
   </span>
   {#each sessions as session, at (session.id)}
-    <span class={pill}>
+    <span class={pill} data-broadcast={session.broadcast || undefined}>
       <button
         type="button"
         role="tab"

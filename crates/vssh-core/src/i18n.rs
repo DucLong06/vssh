@@ -72,10 +72,23 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("reconnect", "Reconnect", "Kết nối lại"),
     ("running", "running", "đang chạy"),
     ("selected", "selected", "đã chọn"),
+    // Broadcast, in the TUI's word for it.
+    ("broadcast", "broadcast", "phát"),
+    ("broadcasting", "Broadcasting: {n}", "Đang phát: {n}"),
+    // A host key that is not the one on record.
+    ("fingerprint", "Fingerprint", "Dấu vân tay"),
+    ("on_record", "On record", "Đang lưu"),
+    (
+        "host_key_warning",
+        "Someone may be listening in, or the host was reinstalled. Accept only if you know why its key changed.",
+        "Có thể có kẻ nghe lén, hoặc máy chủ vừa được cài lại. Chỉ chấp nhận nếu bạn biết vì sao khoá đổi.",
+    ),
+    ("accept_once", "Accept once", "Chấp nhận một lần"),
+    ("trust", "Trust", "Tin cậy"),
     (
         "leader_menu",
-        "0-9 tab · Tab next · y copy output · x close",
-        "0-9 tab · Tab kế tiếp · y chép kết quả · x đóng",
+        "0-9 tab · Tab next · y copy output · b broadcast · x close",
+        "0-9 tab · Tab kế tiếp · y chép kết quả · b phát · x đóng",
     ),
 ];
 

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { api, explain, type ConnError, type Host, type PtyState, type Shown, type Snippet } from './lib/api'
   import Dashboard from './lib/Dashboard.svelte'
+  import Failure from './lib/Failure.svelte'
   import { i18n, t } from './lib/i18n.svelte'
   import { poll, relabel } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
@@ -21,6 +22,9 @@
   type Session = Tab & { met: boolean; error: ConnError | null; why: Shown | null }
   const fresh = { state: 'connecting', busy: null, met: false, error: null, why: null } as const
   let sessions = $state<Session[]>([])
+  /** The session whose failure to connect is in a dialog. */
+  let failure = $state<number | null>(null)
+  const failed_session = $derived(sessions.find((session) => session.id === failure))
   /** The session whose tab is in front; `null` = the dashboard. */
   let active = $state<number | null>(null)
   /** Ctrl-A was pressed: the next key is a command, as in the TUI. */
@@ -104,13 +108,19 @@
       if (front) terms[front.id]?.copyLast()
     } else if (e.key === 'x' || e.key === 'd') {
       if (front) close(front.id)
+    } else if (e.key === 'b') {
+      if (front) front.broadcast = !front.broadcast
+    } else if (e.key === 'B') {
+      // Every tab at once, as the TUI's broadcast; off again if all are on.
+      const on = sessions.some((session) => !session.broadcast)
+      for (const session of sessions) session.broadcast = on
     }
   }
 
   // Before the terminal sees the key: these never reach the shell.
   function onkeydown(e: KeyboardEvent) {
     // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
-    if (modal !== null) return
+    if (modal !== null || failure !== null) return
     const ctrl = e.ctrlKey || e.metaKey
     const mine = () => {
       e.preventDefault()
@@ -135,7 +145,7 @@
   }
 
   function add(id: number, title: string) {
-    sessions.push({ id, title, ...fresh })
+    sessions.push({ id, title, broadcast: false, ...fresh })
     active = id
   }
 
@@ -170,18 +180,36 @@
 
   /** What was typed into a session's terminal. */
   function input(session: Session, data: string) {
-    void api.sessionWrite(session.id, data)
+    // From a broadcasting tab, to every broadcasting tab.
+    const to = session.broadcast ? sessions.filter((other) => other.broadcast) : [session]
+    for (const { id } of to) void api.sessionWrite(id, data)
   }
 
   function heard(session: Session, said: PtyState) {
     if (said.state === 'up') Object.assign(session, { state: 'up', met: true, error: null, why: null })
     else if (said.state === 'busy') session.busy = said.command
-    else Object.assign(session, { state: 'closed', busy: null, error: said.error })
+    else {
+      // One that never got through says why in a dialog; one that was up
+      // and dropped keeps its screen, and says it there.
+      if (said.error && !session.met) failure = active = session.id
+      Object.assign(session, { state: 'closed', busy: null, error: said.error })
+    }
   }
 
   function reconnect(session: Session) {
+    failure = null
     Object.assign(session, fresh)
     void terms[session.id]?.start()
+  }
+
+  /** The user's yes to a host key, then the connection it was needed for. */
+  async function trust(session: Session, host: string, fingerprint: string, forever: boolean) {
+    try {
+      await api.sessionTrust(session.id, host, fingerprint, forever)
+      reconnect(session)
+    } catch (error) {
+      session.why = await explain(error, i18n.lang)
+    }
   }
 </script>
 
@@ -235,10 +263,23 @@
     sessions={sessions.length}
     selected={hosts.find((host) => host.alias === selected)}
     terminal={active !== null}
+    broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
     onpalette={() => (modal = 'palette')}
   />
 </div>
+
+{#if failed_session?.error && failed_session.why}
+  {@const session = failed_session}
+  <Failure
+    title={session.title}
+    error={failed_session.error}
+    why={failed_session.why}
+    ontrust={(key, forever) => trust(session, key.host, key.fingerprint, forever)}
+    onretry={() => reconnect(session)}
+    onclose={() => (failure = null)}
+  />
+{/if}
 
 {#if modal === 'palette'}
   <Palette

@@ -34,6 +34,7 @@ function shell(over: Record<string, (args: Args) => unknown> = {}) {
     session_write: () => null,
     session_resize: () => null,
     session_close: () => null,
+    session_trust: () => null,
     'plugin:clipboard-manager|write_text': () => null,
     // The core's own words for a failure of that class.
     resolve_conn_error: ({ error, lang }) =>
@@ -167,7 +168,7 @@ test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second C
   await tab(/web-01/)
   const picked = () => screen.getByRole('tab', { selected: true })
   // The menu is on screen with a terminal, and lit while the next key is a command.
-  expect(status()).toHaveTextContent('Ctrl-A 0-9 tab · Tab next · y copy output')
+  expect(status()).toHaveTextContent('Ctrl-A 0-9 tab · Tab next · y copy output · b broadcast · x close')
   await user.keyboard(`${leader}0`)
   expect(picked()).toHaveTextContent('0 Hosts')
   await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
@@ -257,6 +258,129 @@ test('several marked cards open a tab each; the sidebar lists the sessions, and 
   await says(1, { state: 'busy', command: 'top' })
   await says(1, { state: 'closed', error: null })
   expect(front).not.toHaveTextContent('running')
+})
+
+// --- M3: broadcast, and failures that ask ------------------------------------
+
+/** Opens a tab on a host from wherever the window is, and waits for its terminal to connect. */
+async function connected(user: ReturnType<typeof shell>, alias: string) {
+  const before = asked('session_start').length
+  await user.keyboard(`${leader}0`)
+  await user.click(within(await card(alias)).getByRole('button', { name: 'Connect' }))
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(before + 1))
+}
+const typed = () => asked('session_write').map((args) => `${args.id}:${args.data}`)
+
+test('broadcast: what is typed in one broadcasting tab goes to every broadcasting tab, and to no other', async () => {
+  const user = shell()
+  for (const alias of ['web-01', 'web-02', 'db-primary']) await connected(user, alias)
+  for (const id of [1, 2, 3]) await says(id, { state: 'up' })
+  expect(status()).not.toHaveTextContent('Broadcasting')
+
+  // Tab 3 is in front; then tab 1.
+  await user.keyboard(`${leader}b${leader}1${leader}b`)
+  expect(status()).toHaveTextContent('Broadcasting: 2')
+  const dots = () => screen.getAllByRole('tab').slice(1).map((el) => within(el).getByRole('img').getAttribute('aria-label'))
+  expect(dots()).toEqual(['broadcast', 'connected', 'broadcast'])
+  expect((await tab(/web-01/)).parentElement).toHaveAttribute('data-broadcast')
+  expect((await tab(/web-02/)).parentElement).not.toHaveAttribute('data-broadcast')
+
+  terminals[0].type('uptime\r')
+  expect(typed()).toEqual(['1:uptime\r', '3:uptime\r'])
+  // A tab that is not broadcasting hears nothing of it, and speaks for itself only.
+  terminals[1].type('ls\r')
+  expect(typed().slice(2)).toEqual(['2:ls\r'])
+  // So do the keys after the leader.
+  await user.keyboard(`${leader}${leader}`)
+  expect(typed().slice(3)).toEqual(['1:\x01', '3:\x01'])
+
+  // A broadcasting tab that died is red, not yellow.
+  await says(3, { state: 'closed', error: null })
+  expect(dots()).toEqual(['broadcast', 'connected', 'disconnected'])
+
+  // Off for this tab; Ctrl-A B is every tab at once, and off again.
+  await user.keyboard(`${leader}b`)
+  expect(status()).toHaveTextContent('Broadcasting: 1')
+  terminals[0].type('x')
+  expect(typed().slice(5)).toEqual(['1:x'])
+  await user.keyboard(`${leader}B`)
+  expect(status()).toHaveTextContent('Broadcasting: 3')
+  await user.keyboard(`${leader}B`)
+  expect(status()).not.toHaveTextContent('Broadcasting')
+})
+
+test('a connection that fails at a jump host says which hop and why, in a dialog; a drop later does not', async () => {
+  const user = shell()
+  await connected(user, 'web-01')
+  await connected(user, 'web-02')
+  const [hostKey, jump] = [errors[5], errors[6]]
+  // The tab behind fails: it comes to the front with its reason.
+  await says(1, { state: 'closed', error: jump })
+  const dialog = await screen.findByRole('dialog', { name: 'JUMP HOST: web-01' })
+  expect(dialog).toHaveTextContent('Jump host bastion failed: Connection refused by 192.0.2.1:22 — is sshd running?')
+  expect(dialog).toHaveTextContent('jump host bastion failed: connection refused by 192.0.2.1:22: Connection refused (os error 111)')
+  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('1 web-01')
+  // The leader is not for a dialog.
+  await user.keyboard(`${leader}2`)
+  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('1 web-01')
+
+  await user.click(within(dialog).getByRole('button', { name: 'try again' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(asked('session_start').map((args) => args.id)).toEqual([1, 2, 1])
+  // Cancel leaves the tab as it is: closed, with its reason and a way back.
+  await says(1, { state: 'closed', error: jump })
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(within(screen.getByRole('tabpanel', { name: 'web-01' })).getByRole('status')).toHaveTextContent('JUMP HOST')
+
+  // A session that was up and lost its connection keeps its screen: no dialog.
+  await says(2, { state: 'up' })
+  await says(2, { state: 'closed', error: hostKey })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  await user.keyboard(`${leader}2`)
+  const badge = within(screen.getByRole('tabpanel', { name: 'web-02' })).getByRole('status')
+  await vi.waitFor(() => expect(badge).toHaveTextContent('HOST KEY'))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+test('a host key that is not the one on record stops the session and asks: accept once, trust, or cancel', async () => {
+  const user = shell()
+  await connected(user, 'web-01')
+  const hostKey = errors[5]
+  const fail = hostKey.fail as { host: string; fingerprint: string }
+  const ask = async () => {
+    await says(1, { state: 'closed', error: hostKey })
+    return screen.findByRole('dialog', { name: 'HOST KEY: web-01' })
+  }
+  const dialog = await ask()
+  expect(dialog).toHaveTextContent('Host key mismatch for 10.0.0.5')
+  expect(dialog).toHaveTextContent(`Fingerprint ${fail.fingerprint}`)
+  expect(dialog).toHaveTextContent('On record /home/me/.ssh/known_hosts:7')
+  expect(dialog).toHaveTextContent('Accept only if you know why its key changed')
+  // There is no trying again without an answer.
+  expect(within(dialog).queryByRole('button', { name: 'try again' })).not.toBeInTheDocument()
+
+  await user.click(within(dialog).getByRole('button', { name: 'Accept once' }))
+  const yes = { id: 1, host: '10.0.0.5', fingerprint: fail.fingerprint }
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(2))
+  expect(asked('session_trust')).toEqual([{ ...yes, forever: false }])
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+  await user.click(within(await ask()).getByRole('button', { name: 'Trust' }))
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(3))
+  expect(asked('session_trust')[1]).toEqual({ ...yes, forever: true })
+
+  await user.click(within(await ask()).getByRole('button', { name: 'Cancel' }))
+  expect(asked('session_trust')).toHaveLength(2)
+  expect(asked('session_start')).toHaveLength(3)
+
+  // The key of a jump host on the way: the yes is for that host.
+  await user.click(screen.getByRole('button', { name: 'Reconnect' }))
+  const bastion = { ...fail, kind: 'host_key', host: 'bastion.example.com' }
+  await says(1, { state: 'closed', error: { class: 'jump', fail: { kind: 'jump', hop: 'bastion', cause: bastion }, chain: [] } })
+  await user.click(within(await screen.findByRole('dialog', { name: 'JUMP HOST: web-01' })).getByRole('button', { name: 'Trust' }))
+  await vi.waitFor(() => expect(asked('session_trust')).toHaveLength(3))
+  expect(asked('session_trust')[2]).toEqual({ ...yes, host: 'bastion.example.com', forever: true })
 })
 
 test('a shell that ends leaves its tab red with a way back: reconnect starts the same session again', async () => {
@@ -460,12 +584,24 @@ test('in Vietnamese no English string is left anywhere: cards in every state, th
   // A session, and the quick peek of a host that answered and of one that is down.
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
   await screen.findByRole('tablist', { name: 'Phiên' })
+  await says(1, { state: 'up' })
   await says(1, { state: 'busy', command: 'top' })
   expect(await tab(/web-01/)).toHaveTextContent('đang chạy top')
   expect(english(words())).toEqual([])
   await says(1, { state: 'closed', error: refused })
   await screen.findByRole('button', { name: 'Kết nối lại' })
   expect(english(words())).toEqual([])
+  // Broadcasting, and a tab that could not connect: a changed host key, a jump host that is down.
+  await user.keyboard(`${leader}b`)
+  expect(status()).toHaveTextContent('Đang phát: 1')
+  expect(english(words())).toEqual([])
+  for (const [error, name] of [[errors[5], 'KHOÁ MÁY CHỦ: web-01'], [errors[6], 'MÁY TRUNG GIAN: web-01']] as const) {
+    await user.click(screen.getByRole('button', { name: 'Kết nối lại' }))
+    await says(1, { state: 'closed', error })
+    expect(await screen.findByRole('dialog', { name })).toBeInTheDocument()
+    expect(english(words())).toEqual([])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Huỷ' }))
+  }
   await user.keyboard(`${leader}0`)
   ;(await card('web-02')).focus()
   await user.keyboard(' ')

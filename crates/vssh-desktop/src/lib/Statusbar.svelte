@@ -12,9 +12,20 @@
     terminal?: boolean
     /** Ctrl-A was pressed and the next key is a command. */
     leader?: boolean
+    /** How many tabs are broadcasting. */
+    broadcasting?: number
     onpalette: () => void
   }
-  let { hosts, snippets, sessions, selected, terminal = false, leader = false, onpalette }: Props = $props()
+  let {
+    hosts,
+    snippets,
+    sessions,
+    selected,
+    terminal = false,
+    leader = false,
+    broadcasting = 0,
+    onpalette,
+  }: Props = $props()
 
   const button = 'cursor-pointer rounded px-1.5 hover:bg-selection'
 </script>
@@ -23,6 +34,9 @@
   <span>{t('hosts')} <span class="text-fg">{hosts}</span></span>
   <span>{t('snippets')} <span class="text-fg">{snippets}</span></span>
   <span>{t('sessions')} <span class="text-fg">{sessions}</span></span>
+  {#if broadcasting}
+    <strong class="shrink-0 text-yellow">{t('broadcasting').replace('{n}', String(broadcasting))}</strong>
+  {/if}
   {#if terminal || leader}
     <!-- The TUI's leader menu. Lit while the next key is a command. -->
     <span role="status" class="truncate {leader ? 'text-yellow' : ''}">
