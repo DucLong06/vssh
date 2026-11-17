@@ -32,11 +32,23 @@
 #                       the config: one to files-01's port, one that wants a
 #                       port sshd itself has
 #
+# Then the vault, the host form and the key setup (D6):
+#
+#   the vault           made by a passphrase, a sealed backup exported; at the
+#                       end the app is started again and asks for it
+#   smoke-new           a host added through the form, renamed, deleted
+#   bastion-x, inner-x  hosts of another ssh config, one of them imported
+#   web-01              given a password in the vault, then the key setup: it
+#                       makes a key and stops at the backup of sshd_config,
+#                       which the forced command does not run. Nothing of this
+#                       machine's sshd is touched.
+#
 # Screenshots land in docs/img/desktop-d2*.png, desktop-d3*.png,
-# desktop-d4*.png and desktop-d5*.png (.vi.png: the Vietnamese UI; d3-fail: a
-# connection that fails, d3-closed: one that drops; d4-sftp: the file view
-# with transfers under way; d5-batch: what four hosts answered to one
-# command); those of the steps in between, in target/smoke/.
+# desktop-d4*.png, desktop-d5*.png and desktop-d6*.png (.vi.png: the
+# Vietnamese UI; d3-fail: a connection that fails, d3-closed: one that drops;
+# d4-sftp: the file view with transfers under way; d5-batch: what four hosts
+# answered to one command; d6-vault: the vault's manager, d6-host: the host
+# form); those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
 # what the app leaves behind (its window, its database, sshd's log, a live
@@ -258,8 +270,8 @@ grep -q '127.0.0.2' "$home/.ssh/known_hosts" && { echo "FAIL: the dashboard reco
 step "the host nobody connected to was left alone"
 
 xdotool windowfocus "$win"
-# / is the search box; three Tabs on is the first card.
-first_card() { xdotool key --window "$win" slash Tab Tab Tab; }
+# / is the search box; four Tabs on (Group by tag, Add host, the sort) is the first card.
+first_card() { xdotool key --window "$win" slash Tab Tab Tab Tab; }
 # The language button, bottom right.
 language() { xdotool mousemove --window "$win" 1073 686 click 1; }
 
@@ -284,12 +296,12 @@ sleep 1
 shot target/smoke/hover.png
 xdotool mousemove --window "$win" 600 20
 
-# A person asking about the host nobody connected to: the last card, four
-# tab stops per card further on (the card, Forwards, Files, Connect). That is
+# A person asking about the host nobody connected to: the last card, five
+# tab stops per card further on (the card, Edit, Forwards, Files, Connect). That is
 # a decision: its key goes on record, as with `v` in the TUI, and from then
 # on it is polled like the others.
 first_card
-xdotool key --window "$win" --repeat 28 Tab
+xdotool key --window "$win" --repeat 35 Tab
 xdotool key --window "$win" v
 sleep 3
 shot target/smoke/asked.png
@@ -758,4 +770,206 @@ language
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the snippets, the batches and the forwards"
+
+# --- D6: the vault, the host form, the key setup ------------------------------
+# An action of the palette by its English name, whatever the language is; or
+# a host, whose card then has the focus.
+action() {
+    key ctrl+k
+    xdotool type --window "$win" "$1"
+    key Return
+    sleep 1
+}
+typed() { xdotool type --window "$win" --delay 20 "$1"; }
+config="$home/.ssh/config"
+# What the database has of a host: group, tags, pin.
+meta() {
+    python3 - "$home/.local/share/vssh/vssh.db" "$1" <<'EOF'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1], timeout=10).execute("SELECT grp, tags, pinned FROM hosts WHERE alias=?", (sys.argv[2],)).fetchone()
+print("|".join(map(str, row)) if row else "none")
+EOF
+}
+
+# There is no vault yet: the first passphrase makes it, typed twice the same.
+vault="$home/.local/share/vssh/vault"
+[ ! -e "$vault" ] || fail "there is a vault before anyone made one"
+action vault
+shot target/smoke/vault-none.png
+typed 'smoke master'
+key Tab
+typed 'smoke mastre'
+key Return
+sleep 1
+[ ! -e "$vault" ] || fail "a vault was made from two passphrases that differ"
+shot target/smoke/vault-mismatch.png
+# The second one again. Over a dialog Ctrl-A is the field's own: select all.
+key ctrl+a
+typed 'smoke master'
+key Return
+sleep 2
+[ "$(stat -c %a "$vault" 2>/dev/null)" = 600 ] || fail "the vault was not made, or not for its owner alone"
+step "the vault was made by a passphrase typed twice the same, for its owner alone"
+# The manager, with the focus in its first field: the two new passphrases,
+# Change, the path, Export.
+key Tab Tab Tab Tab Tab Return
+sleep 2
+[ "$(head -c 5 "$home/vssh-vault.backup" 2>/dev/null)" = VSSH1 ] || fail "no sealed backup at $home/vssh-vault.backup"
+[ "$(stat -c %a "$home/vssh-vault.backup")" = 600 ] || fail "the backup can be read by others"
+shot docs/img/desktop-d6-vault.png
+step "a sealed backup of the vault was exported to the home directory"
+key Escape
+language
+action vault
+shot docs/img/desktop-d6-vault.vi.png
+key Escape
+language
+
+# The host form. Sent empty it says what is wrong under each field and adds
+# nothing; the alias has the focus again.
+action 'add host'
+key Return
+shot target/smoke/host-invalid.png
+# Alias, host, no user, port; the agent; no jump host; two tags, a group, the
+# pin, notes.
+typed smoke-new
+key Tab
+typed 127.0.0.1
+key Tab Tab
+typed 2204
+key Tab Tab Tab
+typed 'smoke eu '
+key Tab
+typed staging
+key Tab space Tab
+typed 'added by the smoke run'
+shot docs/img/desktop-d6-host.png
+# Import, Cancel, Save.
+key Tab Tab Tab Return
+sleep 2
+block=$(grep -A2 '^Host smoke-new$' "$config" | tr -s ' \n' ' ')
+[ "$block" = "Host smoke-new HostName 127.0.0.1 Port 2204 " ] || fail "the form's host is in the config as '$block'"
+[ "$(meta smoke-new)" = "staging|smoke eu|1" ] || fail "the form's group, tags and pin are in the database as '$(meta smoke-new)'"
+step "a host added through the form is in the config and the database as it was typed"
+sleep 6
+shot target/smoke/host-added.png
+
+# Its card has the focus. e: its form, with what it has; another alias renames it.
+key e
+sleep 1
+shot target/smoke/host-edit.png
+key ctrl+a
+typed smoke-box
+key Return
+sleep 2
+grep -q '^Host smoke-new$' "$config" && fail "the renamed host is in the config under its old name too"
+grep -q '^Host smoke-box$' "$config" || fail "the renamed host is not in the config"
+[ "$(meta smoke-box)" = "staging|smoke eu|1" ] || fail "the renamed host lost its group, tags or pin: '$(meta smoke-box)'"
+step "e opened the host's form; a new alias renamed it with everything it has"
+
+# d asks first, and the question opens on Cancel: Enter is not a yes.
+action smoke-box
+key d
+shot target/smoke/host-delete.png
+key Return
+sleep 1
+grep -q '^Host smoke-box$' "$config" || fail "Enter on the question deleted the host"
+action smoke-box
+key d Tab Return
+sleep 2
+grep -q '^Host smoke-box$' "$config" && fail "Delete left the host in the config"
+[ "$(meta smoke-box)" = none ] || fail "Delete left the host in the database"
+step "d asked first: Enter kept the host, Delete took it out of the config and the database"
+
+# Another ssh config: two hosts we have not, one we have. The form's own
+# config has nothing new; of the other file's two, one is left ticked.
+cat >"$home/their_config" <<EOF
+Host bastion-x
+    HostName 127.0.0.1
+    Port 2201
+Host inner-x
+    HostName 10.30.0.9
+    ProxyJump bastion-x
+Host web-01
+    HostName elsewhere.invalid
+EOF
+action 'add host'
+key Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Return
+sleep 2
+shot target/smoke/import-none.png
+typed '~/their_config'
+key Return
+sleep 2
+# Preview, bastion-x, inner-x (unticked), Cancel, Import.
+key Tab Tab Tab space
+shot target/smoke/import-preview.png
+key Tab Tab Return
+sleep 2
+grep -q '^Host bastion-x$' "$config" || fail "the host left ticked was not imported"
+grep -q '^Host inner-x$' "$config" && fail "the host that was unticked was imported"
+grep -q 'elsewhere.invalid' "$config" && fail "the import wrote over a host that was there"
+step "an import took the one host left ticked, and left the host we had as it was"
+
+language
+action web-01
+key e
+sleep 1
+shot docs/img/desktop-d6-host.vi.png
+key Escape
+language
+
+# web-01 gets a password in the vault: alias, host, user, port, then how it is
+# signed in to, where the vault's password is two to the left of the agent.
+action web-01
+key e
+sleep 1
+key Tab Tab Tab Tab Left Left Tab
+typed 'not-a-password'
+key Return
+sleep 2
+grep -q 'not-a-password' "$config" "$home/.local/share/vssh/vssh.db" && fail "the password is outside the vault"
+grep -q 'not-a-password' "$vault" && fail "the password is in the vault in the clear"
+# Now its form offers the key setup: the last stop but two (Cancel, Save).
+# On the way: host, user, port, the sign-in, the password, the jump host, the
+# x of each of its two tags, the tag field, group, pin, notes, Delete.
+action web-01
+key e
+sleep 1
+shot target/smoke/host-password.png
+key Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Return
+sleep 1
+shot target/smoke/key-setup.png
+# Start has the focus. The key is made; the backup of sshd_config is a command
+# this sshd does not run, so the setup stops there, with nothing to restore.
+key Return
+sleep 6
+shot target/smoke/key-setup-failed.png
+[ -f "$home/.ssh/vssh_web-01_ed25519" ] && [ -f "$home/.ssh/vssh_web-01_ed25519.pub" ] || fail "the key setup made no key"
+grep -q 'vssh_web-01_ed25519' "$config" && fail "a key that was never proven is named in the config"
+step "the key setup made a key, stopped at a host it could not change, and named no key in the config"
+key Escape
+
+# The app again: the vault is there and shut, and it is asked for first thing.
+kill "$app"
+wait "$app" 2>/dev/null || true
+env -u SSH_AUTH_SOCK HOME="$home" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/release/vssh-desktop &
+app=$!
+win=$(timeout 60 xdotool search --sync --onlyvisible --name '^vssh$' | head -n 1)
+[ -n "$win" ] || fail "no window named vssh after the app was started again"
+xdotool windowfocus "$win"
+sleep 5
+shot target/smoke/vault-locked.png
+for guess in one two three; do
+    typed "$guess"
+    key Return
+    sleep 1
+done
+shot target/smoke/vault-wrong.png
+typed 'smoke master'
+key Return
+sleep 3
+shot target/smoke/vault-unlocked.png
+
+kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
+step "the app is still running after the vault, the host form and the key setup"
 echo "gui smoke: ok (now look at the screenshots)"
