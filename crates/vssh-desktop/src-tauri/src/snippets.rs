@@ -144,19 +144,15 @@ fn run<R: Runtime>(
     for host in hosts {
         // Nothing happens yet: the connection is made when this is awaited.
         let login = backend.login(&host);
-        let asking = login.map(|(target, password)| {
-            let command = command.clone();
-            backend.net.exec(target, password, command)
-        });
-        let (app, turns) = (app.clone(), turns.clone());
+        let connecting = login.map(|(target, password)| backend.net.connect(target, password));
+        let (app, turns, command) = (app.clone(), turns.clone(), command.clone());
         tauri::async_runtime::spawn(async move {
-            let answer = match asking {
-                Ok(asking) => {
-                    let _turn = turns.acquire().await;
-                    asking.await
-                }
-                Err(unknown) => Err(unknown.into()),
+            let answer = async {
+                let _turn = turns.acquire().await;
+                let run = connecting?.await?;
+                run(command).await
             };
+            let answer = answer.await;
             let (output, error) = match answer {
                 Ok(output) => (Some(output), None),
                 Err(error) => (None, Some(error)),

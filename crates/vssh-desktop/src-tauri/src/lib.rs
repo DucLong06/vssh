@@ -8,15 +8,18 @@
 
 mod files;
 mod forwards;
+mod hosts;
+mod key_setup;
 mod snippets;
+mod vault;
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::os::unix::fs::DirBuilderExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, ensure, Context, Result};
 use serde::Serialize;
@@ -31,6 +34,7 @@ use vssh_core::store::db::{Db, Snippet};
 use vssh_core::store::ssh_config::{Forward, SshConfig};
 use vssh_core::store::{self, Host};
 use vssh_core::task::{self, Event};
+use vssh_core::vault::Vault;
 use zeroize::Zeroizing;
 
 /// What a command answers: its value, or a failure the window can show.
@@ -47,6 +51,10 @@ pub type Progress = Box<dyn Fn(u64, u64) + Send + Sync>;
 
 /// Called once a forward listens.
 pub type Ready = Box<dyn FnOnce() + Send>;
+
+/// A host that is logged in to: runs one command after another over the
+/// one connection, which lasts as long as this does.
+pub type Remote = Box<dyn Fn(String) -> Answer<String> + Send + Sync>;
 
 /// The network, as far as the commands use it. The app's is [`Core`]; the
 /// contract tests put one in its place that answers from memory. Dropping
@@ -68,9 +76,13 @@ pub trait Transport: Send + Sync + 'static {
     fn forward(&self, target: Target, password: Password, fwd: Forward, ready: Ready)
         -> Answer<()>;
 
-    /// One command on a host: what it printed, and its exit status if that
-    /// is not zero.
-    fn exec(&self, target: Target, password: Password, command: String) -> Answer<String>;
+    /// Logs in to a host for commands. Each answers with what it printed,
+    /// and with its exit status if that is not zero.
+    fn connect(&self, target: Target, password: Password) -> Answer<Remote>;
+
+    /// Logs in with this key file and nothing else: the proof that the key
+    /// opens the host.
+    fn key_login(&self, target: Target, key: PathBuf) -> Answer<()>;
 }
 
 /// The real network: `vssh_core::task`, on Tauri's own tokio runtime.
@@ -116,11 +128,20 @@ impl Transport for Core {
         })
     }
 
-    fn exec(&self, target: Target, password: Password, command: String) -> Answer<String> {
+    fn connect(&self, target: Target, password: Password) -> Answer<Remote> {
         Box::pin(async move {
             let h = ssh::connect(&target, password.as_ref().map(|p| p.as_str()), None).await?;
-            Ok(ssh::exec(&h, &command).await?)
+            let h = Arc::new(h);
+            let exec = move |command: String| -> Answer<String> {
+                let h = h.clone();
+                Box::pin(async move { Ok(ssh::exec(&h, &command).await?) })
+            };
+            Ok(Box::new(exec) as Remote)
         })
+    }
+
+    fn key_login(&self, target: Target, key: PathBuf) -> Answer<()> {
+        Box::pin(async move { Ok(ssh::connect_key(&target, &key).await.map(drop)?) })
     }
 }
 
@@ -137,6 +158,8 @@ pub struct Backend {
     /// Numbers what runs in the background.
     jobs: AtomicU64,
     batch_max_parallel: usize,
+    /// The vault while it is unlocked.
+    vault: Mutex<Option<Vault>>,
 }
 
 impl Backend {
@@ -150,6 +173,7 @@ impl Backend {
             forwards: Mutex::default(),
             jobs: AtomicU64::new(0),
             batch_max_parallel: Config::<()>::default().batch_max_parallel,
+            vault: Mutex::default(),
         }
     }
 
@@ -166,13 +190,19 @@ impl Backend {
             .with_context(|| format!("cannot read {}", self.ssh_config.display()))
     }
 
-    /// The TUI's database, made on first use the way the TUI makes it.
-    fn db(&self) -> Result<Db> {
+    /// Where the database and the vault are, made on first use the way the
+    /// TUI makes it.
+    fn data_dir(&self) -> Result<&Path> {
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(&self.data_dir)?;
-        Ok(Db::open(&self.data_dir.join("vssh.db"))?)
+        Ok(&self.data_dir)
+    }
+
+    /// The TUI's database.
+    fn db(&self) -> Result<Db> {
+        Ok(Db::open(&self.data_dir()?.join("vssh.db"))?)
     }
 
     fn hosts(&self) -> Result<Vec<Host>> {
@@ -204,8 +234,10 @@ impl Backend {
     /// How to log in to a host of the config: where it is, and its password
     /// if the vault has one.
     fn login(&self, alias: &str) -> Result<(Target, Password)> {
-        // Keys and the agent only: the vault has no window yet (D6).
-        Ok((self.target(alias)?, None))
+        let target = self.target(alias)?;
+        let vault = self.vault.lock().unwrap();
+        let password = vault.as_ref().and_then(|vault| vault.get(alias));
+        Ok((target, password.map(|p| Zeroizing::new(p.to_string()))))
     }
 }
 
@@ -280,7 +312,17 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             snippets::snippets_create,
             snippets::snippets_update,
             snippets::snippets_delete,
-            snippets::snippet_run
+            snippets::snippet_run,
+            vault::vault_state,
+            vault::vault_unlock,
+            vault::vault_pass_change,
+            vault::vault_export,
+            hosts::hosts_add,
+            hosts::hosts_update,
+            hosts::hosts_delete,
+            hosts::hosts_import_ssh_config,
+            hosts::host_quick_save,
+            key_setup::ssh_key_setup
         ])
 }
 

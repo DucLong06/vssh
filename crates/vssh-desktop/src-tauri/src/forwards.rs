@@ -216,6 +216,19 @@ pub fn forward_toggle<R: Runtime>(
     Ok(toggle(app, &backend, host, kind, value)?)
 }
 
+/// Stops every forward of a host that runs: the host goes away, or gets
+/// another name.
+pub fn stop_all(backend: &Backend, host: &str) {
+    let own = format!("{host} ");
+    backend.forwards.lock().unwrap().retain(|key, run| {
+        let other = !key.starts_with(&own);
+        if !other {
+            run.task.abort();
+        }
+        other
+    });
+}
+
 fn kill(backend: &Backend, host: &str, kind: char, value: &str) -> Result<()> {
     let mut sshc = backend.config_of(host)?;
     if let Some(run) = backend

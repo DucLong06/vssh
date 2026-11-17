@@ -3,6 +3,7 @@
 //! JSON answer is what `src/lib/api.ts` declares. Nothing here opens a
 //! socket: the network is a [`Transport`] that answers from memory.
 
+use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -22,14 +23,22 @@ use vssh_core::stats::{Peek, Stats};
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::ssh_config::Forward;
 use vssh_core::store::Host;
-use vssh_desktop::{builder, Answer, Backend, Password, Progress, Ready, Transport};
+use vssh_desktop::{builder, Answer, Backend, Password, Progress, Ready, Remote, Transport};
 
 #[path = "commands/files.rs"]
 mod files;
 #[path = "commands/forwards.rs"]
 mod forwards;
+#[path = "commands/hosts.rs"]
+mod hosts;
+#[path = "commands/key_setup.rs"]
+mod key_setup;
+#[path = "commands/real.rs"]
+mod real;
 #[path = "commands/snippets.rs"]
 mod snippets;
+#[path = "commands/vault.rs"]
+mod vault;
 
 /// What a command run on a host answers.
 type Exec = dyn Fn(&Target, &str) -> Result<String, ConnError> + Send + Sync;
@@ -68,6 +77,10 @@ struct Fake {
     /// How many commands run right now, and the most there ever were.
     busy: Arc<AtomicUsize>,
     peak: Arc<AtomicUsize>,
+    /// What the next logins with a key alone answer; after these, yes.
+    key_logins: Arc<Mutex<VecDeque<Result<(), ConnError>>>>,
+    /// Why no host can be logged in to for commands; `None` = each can.
+    down: Option<ConnError>,
 }
 
 /// Says so when it is dropped.
@@ -79,8 +92,13 @@ impl Drop for Flag {
     }
 }
 
-fn at(target: &Target) -> String {
-    format!("{}@{}:{}", target.user, target.host, target.port)
+/// Whom a command went to, and the password it was given to log in with.
+fn at(target: &Target, password: &Password) -> String {
+    let at = format!("{}@{}:{}", target.user, target.host, target.port);
+    match password {
+        Some(password) => format!("{at} ({})", password.as_str()),
+        None => at,
+    }
 }
 
 impl Fake {
@@ -97,6 +115,8 @@ impl Fake {
             pace: Duration::ZERO,
             busy: Arc::default(),
             peak: Arc::default(),
+            key_logins: Arc::default(),
+            down: None,
         }
     }
 
@@ -110,8 +130,8 @@ impl Fake {
 }
 
 impl Transport for Fake {
-    fn peek(&self, alias: String, target: Target, _: Password) -> Answer<Peek> {
-        let line = format!("{alias} = {}", at(&target));
+    fn peek(&self, alias: String, target: Target, password: Password) -> Answer<Peek> {
+        let line = format!("{alias} = {}", at(&target, &password));
         self.asked.lock().unwrap().push(line);
         let answer = self.answer.clone();
         Box::pin(async move { answer })
@@ -120,11 +140,11 @@ impl Transport for Fake {
     fn sftp(
         &self,
         target: Target,
-        _: Password,
+        password: Password,
         cmd: Cmd,
         progress: Progress,
     ) -> Answer<Vec<Entry>> {
-        let line = format!("{} {cmd:?}", at(&target));
+        let line = format!("{} {cmd:?}", at(&target, &password));
         self.asked.lock().unwrap().push(line);
         let fake = self.clone();
         Box::pin(async move {
@@ -139,8 +159,19 @@ impl Transport for Fake {
         })
     }
 
-    fn forward(&self, target: Target, _: Password, fwd: Forward, ready: Ready) -> Answer<()> {
-        let line = format!("{} forward {} {}", at(&target), fwd.kind, fwd.value());
+    fn forward(
+        &self,
+        target: Target,
+        password: Password,
+        fwd: Forward,
+        ready: Ready,
+    ) -> Answer<()> {
+        let line = format!(
+            "{} forward {} {}",
+            at(&target, &password),
+            fwd.kind,
+            fwd.value()
+        );
         self.asked.lock().unwrap().push(line);
         let fake = self.clone();
         Box::pin(async move {
@@ -153,18 +184,34 @@ impl Transport for Fake {
         })
     }
 
-    fn exec(&self, target: Target, _: Password, command: String) -> Answer<String> {
+    fn connect(&self, target: Target, password: Password) -> Answer<Remote> {
         let fake = self.clone();
         Box::pin(async move {
-            // Asked only once the command really starts.
-            let line = format!("{} exec {command}", at(&target));
-            fake.asked.lock().unwrap().push(line);
-            let busy = fake.busy.fetch_add(1, Ordering::SeqCst) + 1;
-            fake.peak.fetch_max(busy, Ordering::SeqCst);
-            tokio::time::sleep(fake.pace).await;
-            fake.busy.fetch_sub(1, Ordering::SeqCst);
-            (fake.exec)(&target, &command)
+            if let Some(why) = fake.down.clone() {
+                return Err(why);
+            }
+            let exec = move |command: String| -> Answer<String> {
+                let (fake, target) = (fake.clone(), target.clone());
+                // Asked once the command really starts.
+                let line = format!("{} exec {command}", at(&target, &password));
+                Box::pin(async move {
+                    fake.asked.lock().unwrap().push(line);
+                    let busy = fake.busy.fetch_add(1, Ordering::SeqCst) + 1;
+                    fake.peak.fetch_max(busy, Ordering::SeqCst);
+                    tokio::time::sleep(fake.pace).await;
+                    fake.busy.fetch_sub(1, Ordering::SeqCst);
+                    (fake.exec)(&target, &command)
+                })
+            };
+            Ok(Box::new(exec) as Remote)
         })
+    }
+
+    fn key_login(&self, target: Target, key: PathBuf) -> Answer<()> {
+        let line = format!("{} key {}", at(&target, &None), key.display());
+        self.asked.lock().unwrap().push(line);
+        let answer = self.key_logins.lock().unwrap().pop_front();
+        Box::pin(async move { answer.unwrap_or(Ok(())) })
     }
 }
 
@@ -507,7 +554,9 @@ fn the_real_transport_reports_a_closed_port_as_refused() {
     let fwd = Forward::parse('D', "1080").unwrap();
     let answer = block_on(vssh_desktop::Core.forward(target.clone(), None, fwd, Box::new(|| {})));
     assert_eq!(fail(answer.unwrap_err()), refused);
-    let answer = block_on(vssh_desktop::Core.exec(target, None, "true".into()));
+    let answer = block_on(vssh_desktop::Core.connect(target.clone(), None));
+    assert_eq!(fail(answer.err().unwrap()), refused);
+    let answer = block_on(vssh_desktop::Core.key_login(target, "/no/such/key".into()));
     assert_eq!(fail(answer.unwrap_err()), refused);
 }
 
