@@ -6,9 +6,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use vssh::ssh::Target;
-use vssh::vault::Vault;
 use vssh_core::store::db::{Db, Meta, Snippet};
 use vssh_core::store::ssh_config::{Forward, SshConfig};
+use vssh_core::vault::Vault;
 
 /// A fresh, empty directory per test.
 fn temp(name: &str) -> PathBuf {

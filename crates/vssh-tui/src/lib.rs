@@ -6,4 +6,3 @@ pub mod sftp;
 pub mod ssh;
 pub mod theme;
 pub mod ui;
-pub mod vault;
