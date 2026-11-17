@@ -35,6 +35,8 @@
     <span class="shrink-0">
       <kbd class="text-magenta">Enter</kbd>
       {t('connect')} ·
+      <kbd class="text-magenta">Space</kbd>
+      {t('select')} ·
       <kbd class="text-magenta">v</kbd>
       {t('quick_peek')}
     </span>

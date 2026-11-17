@@ -70,6 +70,8 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("connected", "connected", "đã kết nối"),
     ("disconnected", "disconnected", "mất kết nối"),
     ("reconnect", "Reconnect", "Kết nối lại"),
+    ("running", "running", "đang chạy"),
+    ("selected", "selected", "đã chọn"),
     (
         "leader_menu",
         "0-9 tab · Tab next · y copy output · x close",

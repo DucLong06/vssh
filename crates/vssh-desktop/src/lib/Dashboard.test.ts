@@ -77,6 +77,39 @@ test('a card connects to its host: by its button, or Enter on the card', async (
   expect(onconnect).toHaveBeenCalledTimes(2)
 })
 
+test('Space marks cards, as in the TUI; Enter then connects to every marked host and to no other', async () => {
+  const user = userEvent.setup()
+  const onconnect = vi.fn()
+  render(Dashboard, props({ onconnect }))
+  const card = (alias: string) => screen.getByRole('article', { name: alias })
+  for (const alias of ['web-02', 'bare', 'db-primary', 'bare']) {
+    card(alias).focus()
+    await user.keyboard(' ')
+  }
+  // Marked twice is not marked.
+  expect(within(card('web-02')).getByRole('img', { name: 'selected' })).toBeInTheDocument()
+  expect(card('db-primary')).toHaveAttribute('data-marked')
+  expect(card('bare')).not.toHaveAttribute('data-marked')
+  expect(screen.getByRole('button', { name: 'Connect 2' })).toBeInTheDocument()
+
+  // Wherever the focus is: the marked ones, in the order on screen.
+  card('web-01').focus()
+  await user.keyboard('{Enter}')
+  const on_screen = screen.getAllByRole('article').map((el) => el.getAttribute('aria-label'))
+  expect(onconnect.mock.calls.flat()).toEqual(on_screen.filter((alias) => ['web-02', 'db-primary'].includes(alias!)))
+  // And the marks are spent: Enter is the card's own again.
+  expect(screen.queryByRole('img', { name: 'selected' })).not.toBeInTheDocument()
+  await user.keyboard('{Enter}')
+  expect(onconnect).toHaveBeenLastCalledWith('web-01')
+  expect(onconnect).toHaveBeenCalledTimes(3)
+
+  // The button does the same for the mouse.
+  await user.keyboard(' ')
+  await user.click(screen.getByRole('button', { name: 'Connect 1' }))
+  expect(onconnect).toHaveBeenCalledTimes(4)
+  expect(screen.queryByRole('button', { name: /Connect \d/ })).not.toBeInTheDocument()
+})
+
 // --- M2: group, sort, filter, order -----------------------------------------
 
 test('grouped by tag unless asked otherwise: a section per group with its count', async () => {

@@ -70,6 +70,27 @@ test('a click selects a host, and the selected one is marked', async () => {
   expect(onselect).toHaveBeenCalledExactlyOnceWith('db-primary')
 })
 
+test('open sessions are listed with their state; a click goes to the tab', async () => {
+  const user = userEvent.setup()
+  const onsession = vi.fn()
+  const sessions = [
+    { id: 1, title: 'web-01', state: 'up', busy: null },
+    { id: 4, title: 'deploy@10.0.0.9', state: 'closed', busy: null },
+  ]
+  const { rerender } = render(Sidebar, props({ sessions, active: 4, onsession }))
+  expect(screen.getByRole('heading', { name: 'Sessions 2' })).toBeInTheDocument()
+  const [first, second] = within(screen.getByRole('list', { name: 'Sessions' })).getAllByRole('button')
+  expect(first).toHaveAccessibleName('connected web-01')
+  expect(second).toHaveAccessibleName('disconnected deploy@10.0.0.9')
+  expect(second).toHaveAttribute('aria-current', 'true')
+  expect(first).not.toHaveAttribute('aria-current')
+  await user.click(first)
+  expect(onsession).toHaveBeenCalledWith(1)
+  // With none open there is nothing to list, and no heading for it.
+  await rerender(props({ sessions: [] }))
+  expect(screen.queryByRole('heading', { name: /Sessions/ })).not.toBeInTheDocument()
+})
+
 test('in Vietnamese the words are the TUI\'s', () => {
   setLang('vi')
   render(Sidebar, props({ hosts: [] }))

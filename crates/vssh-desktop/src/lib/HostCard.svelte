@@ -7,8 +7,14 @@
   import { compact, parts } from './stats'
 
   /** `info`: what is known about the host. (Not `state`: next to a rune that name reads as a store.) */
-  type Props = { host: Host; info?: Live; onconnect?: () => void } & HTMLAttributes<HTMLElement>
-  let { host, info, onconnect, class: extra = '', ...rest }: Props = $props()
+  type Props = {
+    host: Host
+    info?: Live
+    /** One of several chosen to connect to together. */
+    marked?: boolean
+    onconnect?: () => void
+  } & HTMLAttributes<HTMLElement>
+  let { host, info, marked = false, onconnect, class: extra = '', ...rest }: Props = $props()
 
   const list = $derived(info?.peek ? parts(info.peek.stats, t('mem')) : [])
   const kind = $derived(
@@ -32,7 +38,8 @@
   {...rest}
   aria-label={host.alias}
   data-state={kind}
-  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red aria-[current]:ring-1 aria-[current]:ring-blue {extra}"
+  data-marked={marked || undefined}
+  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red aria-[current]:ring-1 aria-[current]:ring-blue data-[marked]:border-magenta {extra}"
 >
   {#if onconnect}
     <!-- Over the address, and only when the card is pointed at or has the
@@ -55,6 +62,9 @@
       {kind === 'asking' || (kind === 'unchecked' && !reached) ? '○' : '●'}
     </span>
     <h3 class="truncate font-bold">{host.alias}</h3>
+    {#if marked}
+      <span role="img" aria-label={t('selected')} class="text-magenta">✓</span>
+    {/if}
     {#if host.meta.pinned}
       <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
     {/if}

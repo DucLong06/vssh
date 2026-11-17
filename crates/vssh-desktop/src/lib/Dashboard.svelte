@@ -30,6 +30,8 @@
   let query = $state('')
   /** The user's own order: aliases, as they were last dragged. */
   let order = $state<string[]>(saved())
+  /** The cards chosen to connect to together, as Space marks hosts in the TUI. */
+  let marked = $state<string[]>([])
   /** The card being dragged. */
   let dragging: string | null = null
   /** The card whose quick peek is open, and whether the pointer opened it. */
@@ -114,12 +116,23 @@
     if (!fresh) void ask(alias, false)
   }
 
+  /** Connects to every marked host, in the order on screen; to this one if none is marked. */
+  function connect(alias?: string) {
+    const all = shown.map((host) => host.alias).filter((name) => marked.includes(name))
+    marked = []
+    for (const name of all.length || !alias ? all : [alias]) onconnect(name)
+  }
+
   async function onkeydown(e: KeyboardEvent, alias: string) {
     // Not from the card's own button: there Enter is a click already.
     if (e.target !== e.currentTarget) return
     const step = e.altKey && { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key]
     if (e.key === 'Enter') {
-      onconnect(alias)
+      connect(alias)
+    } else if (e.key === ' ') {
+      // Not a scroll of the page.
+      e.preventDefault()
+      marked = marked.includes(alias) ? marked.filter((name) => name !== alias) : [...marked, alias]
     } else if (e.key === 'v') {
       peek(alias)
     } else if (step) {
@@ -206,6 +219,15 @@
       >
         {t('group_by_tag')}
       </button>
+      {#if marked.length}
+        <button
+          type="button"
+          onclick={() => connect()}
+          class="{control} cursor-pointer border-magenta text-magenta hover:bg-selection"
+        >
+          {t('connect')} {marked.length}
+        </button>
+      {/if}
       <!-- Radio buttons, drawn as one control: a native select opens the
            toolkit's own light menu over the dark window. -->
       <div role="radiogroup" aria-label={t('sort')} class="flex rounded-md border border-edge bg-panel p-0.5">
@@ -252,10 +274,11 @@
               <HostCard
                 {host}
                 info={live[host.alias]}
+                marked={marked.includes(host.alias)}
                 onconnect={() => onconnect(host.alias)}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter v Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null

@@ -19,6 +19,7 @@
   let snippets = $state<Snippet[]>([])
   /** A tab's session. `met`: its shell came up since it was last started. */
   type Session = Tab & { met: boolean; error: ConnError | null; why: Shown | null }
+  const fresh = { state: 'connecting', busy: null, met: false, error: null, why: null } as const
   let sessions = $state<Session[]>([])
   /** The session whose tab is in front; `null` = the dashboard. */
   let active = $state<number | null>(null)
@@ -134,7 +135,7 @@
   }
 
   function add(id: number, title: string) {
-    sessions.push({ id, title, state: 'connecting', met: false, error: null, why: null })
+    sessions.push({ id, title, ...fresh })
     active = id
   }
 
@@ -174,11 +175,12 @@
 
   function heard(session: Session, said: PtyState) {
     if (said.state === 'up') Object.assign(session, { state: 'up', met: true, error: null, why: null })
-    else if (said.state === 'closed') Object.assign(session, { state: 'closed', error: said.error })
+    else if (said.state === 'busy') session.busy = said.command
+    else Object.assign(session, { state: 'closed', busy: null, error: said.error })
   }
 
   function reconnect(session: Session) {
-    Object.assign(session, { state: 'connecting', met: false, error: null, why: null })
+    Object.assign(session, fresh)
     void terms[session.id]?.start()
   }
 </script>
@@ -186,7 +188,15 @@
 <svelte:window onkeydowncapture={onkeydown} />
 
 <div class="grid h-full grid-cols-[16rem_1fr] grid-rows-[1fr_auto]">
-  <Sidebar {hosts} {selected} bind:tag onselect={(alias) => (selected = alias)} />
+  <Sidebar
+    {hosts}
+    {selected}
+    bind:tag
+    onselect={(alias) => (selected = alias)}
+    {sessions}
+    {active}
+    onsession={(id) => (active = id)}
+  />
 
   <main class="flex min-h-0 flex-col">
     {#if sessions.length}

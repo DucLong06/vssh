@@ -224,6 +224,41 @@ test('text leaves a terminal for the clipboard three ways: Ctrl-A y, a selection
   expect(asked('session_write')).toEqual([])
 })
 
+test('several marked cards open a tab each; the sidebar lists the sessions, and a busy one says what it runs', async () => {
+  const user = shell()
+  for (const alias of ['web-01', 'db-primary']) {
+    ;(await card(alias)).focus()
+    await user.keyboard(' ')
+  }
+  await user.keyboard('{Enter}')
+  await vi.waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(3))
+  const opened = asked('session_open').map((args) => args.alias as string)
+  expect([...opened].sort()).toEqual(['db-primary', 'web-01'])
+  // Each connects, in front or not.
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(2))
+  expect(status()).toHaveTextContent('Sessions 2')
+  // The last one opened is in front.
+  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(`2 ${opened[1]}`)
+
+  const rows = within(screen.getByRole('list', { name: 'Sessions' })).getAllByRole('button')
+  expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(opened.map((alias) => `○ ${alias}`))
+  await user.click(rows[0])
+  const front = screen.getByRole('tab', { selected: true })
+  expect(front).toHaveTextContent(`1 ${opened[0]}`)
+  expect(rows[0]).toHaveAttribute('aria-current', 'true')
+  expect(screen.getByRole('tabpanel', { name: opened[0] })).toBeVisible()
+
+  await says(1, { state: 'up' })
+  await says(1, { state: 'busy', command: 'sleep' })
+  expect(front).toHaveTextContent(`● 1 ${opened[0]} running sleep`)
+  await says(1, { state: 'busy', command: null })
+  expect(front).not.toHaveTextContent('running')
+  // A shell that ended runs nothing.
+  await says(1, { state: 'busy', command: 'top' })
+  await says(1, { state: 'closed', error: null })
+  expect(front).not.toHaveTextContent('running')
+})
+
 test('a shell that ends leaves its tab red with a way back: reconnect starts the same session again', async () => {
   const user = shell()
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
@@ -322,9 +357,9 @@ test('a host chosen in the palette is the selected one', async () => {
   expect(status()).toHaveTextContent('db-primary postgres@db.internal.example.com')
   await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
   // What the selected card's keys do, in the window's language.
-  expect(status()).toHaveTextContent('Enter Connect · v Quick peek')
+  expect(status()).toHaveTextContent('Enter Connect · Space select · v Quick peek')
   await user.click(screen.getByRole('button', { name: 'Language: EN' }))
-  expect(status()).toHaveTextContent('Enter Kết nối · v Xem nhanh')
+  expect(status()).toHaveTextContent('Enter Kết nối · Space chọn · v Xem nhanh')
 })
 
 test('quick connect from the palette opens a session and saves no host', async () => {
@@ -425,10 +460,18 @@ test('in Vietnamese no English string is left anywhere: cards in every state, th
   // A session, and the quick peek of a host that answered and of one that is down.
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
   await screen.findByRole('tablist', { name: 'Phiên' })
+  await says(1, { state: 'busy', command: 'top' })
+  expect(await tab(/web-01/)).toHaveTextContent('đang chạy top')
+  expect(english(words())).toEqual([])
   await says(1, { state: 'closed', error: refused })
   await screen.findByRole('button', { name: 'Kết nối lại' })
   expect(english(words())).toEqual([])
   await user.keyboard(`${leader}0`)
+  ;(await card('web-02')).focus()
+  await user.keyboard(' ')
+  expect(await card('web-02')).toHaveAttribute('data-marked')
+  expect(english(words())).toEqual([])
+  await user.keyboard(' ')
   ;(await card('web-01')).focus()
   await user.keyboard('v')
   expect(screen.getByRole('dialog', { name: 'Xem nhanh: web-01' })).toHaveTextContent('Đã chạy')

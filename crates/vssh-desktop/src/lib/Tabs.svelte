@@ -1,7 +1,14 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
+  import SessionDot from './SessionDot.svelte'
 
-  export type Tab = { id: number; title: string; state: 'connecting' | 'up' | 'closed' }
+  export type Tab = {
+    id: number
+    title: string
+    state: 'connecting' | 'up' | 'closed'
+    /** The command its shell is running; `null` at the prompt. */
+    busy: string | null
+  }
   type Props = {
     sessions: Tab[]
     /** The session in front; `null` = the dashboard. */
@@ -11,8 +18,6 @@
   }
   let { sessions, active, onpick, onclose }: Props = $props()
 
-  const said = $derived({ connecting: t('connecting'), up: t('connected'), closed: t('disconnected') })
-  const tone = { connecting: 'text-dim', up: 'text-green', closed: 'text-red' }
   // The TUI's tab: a pill with a rounded top, filled when it is in front.
   const pill =
     'flex shrink-0 items-center rounded-t-lg border border-b-0 border-transparent text-white hover:text-fg has-[[aria-selected=true]]:border-edge has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:text-fg'
@@ -39,11 +44,13 @@
         onclick={() => onpick(session.id)}
         class="{tab} pr-1"
       >
-        <span role="img" aria-label={said[session.state]} class={tone[session.state]}>
-          {session.state === 'connecting' ? '○' : '●'}
-        </span>
+        <SessionDot {session} />
         <span class="text-magenta">{at + 1}</span>
         {session.title}
+        {#if session.busy}
+          <!-- Closing is at once, as in the TUI: this is the warning there is. -->
+          <span class="rounded-full bg-bar px-1.5 text-xs text-yellow">{t('running')} {session.busy}</span>
+        {/if}
       </button>
       <button
         type="button"
