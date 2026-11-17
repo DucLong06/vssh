@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { Host, VaultState } from './api'
-  import { address, chip, hasTag, tagCounts } from './hosts'
+  import { chip, hasTag, tagCounts } from './hosts'
   import { t } from './i18n.svelte'
   import SessionDot from './SessionDot.svelte'
+import { addr } from './streamer.svelte'
   import type { Tab } from './Tabs.svelte'
 
   type Props = {
@@ -64,8 +65,8 @@
               {/if}
               <span class="truncate">{host.alias}</span>
             </span>
-            {#if address(host)}
-              <span class="block truncate text-white">{address(host)}</span>
+            {#if addr(host)}
+              <span class="block truncate text-white">{addr(host)}</span>
             {/if}
           </button>
         </li>

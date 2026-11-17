@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Host } from './api'
-  import { address } from './hosts'
   import { i18n, setLang, t } from './i18n.svelte'
+  import { addr, setStreamer, streamer } from './streamer.svelte'
 
   type Props = {
     hosts: number
@@ -68,7 +68,7 @@
       {t('right_click_more')}
     </span>
   {:else if selected}
-    <span class="truncate"><span class="text-cyan">{selected.alias}</span> {address(selected)}</span>
+    <span class="truncate"><span class="text-cyan">{selected.alias}</span> {addr(selected)}</span>
     <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
     <span class="shrink-0">
       <kbd class="text-magenta">Enter</kbd>
@@ -92,6 +92,23 @@
   {/if}
   <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto shrink-0 text-magenta">
     Ctrl-K
+  </button>
+  <!-- An eye, struck through while the addresses on screen are made up. -->
+  <button
+    type="button"
+    onclick={() => setStreamer(!streamer.on)}
+    aria-pressed={streamer.on}
+    aria-label={t('streamer_mode')}
+    title={t('streamer_mode')}
+    class="{button} shrink-0 aria-pressed:bg-selection aria-pressed:text-magenta"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-none stroke-current stroke-2">
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="3" />
+      {#if streamer.on}
+        <path d="M4 4l16 16" />
+      {/if}
+    </svg>
   </button>
   <button
     type="button"

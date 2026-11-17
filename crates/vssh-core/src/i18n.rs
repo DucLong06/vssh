@@ -42,6 +42,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("connect", "Connect", "Kết nối"),
     ("cancel", "Cancel", "Huỷ"),
     ("language", "Language", "Ngôn ngữ"),
+    (
+        "streamer_mode",
+        "Streamer mode (made-up addresses)",
+        "Chế độ phát trực tiếp (địa chỉ giả)",
+    ),
     // The dashboard. A host's states are the TUI's words for them.
     ("not_checked", "not checked", "chưa kiểm tra"),
     ("down", "down", "mất kết nối"),

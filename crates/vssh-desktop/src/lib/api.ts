@@ -3,6 +3,7 @@
 // `src-tauri/tests/commands.rs` asserts these shapes on the Rust side and
 // reads `fixtures/*.json`, so the two cannot drift apart unnoticed.
 import { invoke } from '@tauri-apps/api/core'
+import { scrub } from './streamer.svelte'
 
 export type Lang = 'en' | 'vi'
 
@@ -252,13 +253,15 @@ export const api = {
     invoke<Shown>('resolve_conn_error', { error, lang }),
 }
 
-/** Whatever a command rejected with, in words. Never rejects itself. */
+/** Whatever a command rejected with, in words; in streamer mode, without the addresses. Never rejects itself. */
 export async function explain(error: unknown, lang: Lang): Promise<Shown> {
+  let shown: Shown
   try {
-    return await api.resolveConnError(error as ConnError, lang)
+    shown = await api.resolveConnError(error as ConnError, lang)
   } catch {
     // Not a ConnError: Tauri's own words about a call it could not make.
     const words = String(error)
-    return { class: 'other', label: 'ERROR', message: words, chain: words }
+    shown = { class: 'other', label: 'ERROR', message: words, chain: words }
   }
+  return { ...shown, message: scrub(shown.message), chain: scrub(shown.chain) }
 }

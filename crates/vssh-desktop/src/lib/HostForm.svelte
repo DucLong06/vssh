@@ -5,6 +5,7 @@
   import { chip } from './hosts'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
+  import { streamer } from './streamer.svelte'
 
   type Props = {
     /** The hosts there are: an alias is taken once, and one of them may be the jump host. */
@@ -188,6 +189,7 @@
             {t('host')}
             <input
               bind:value={form.hostname}
+              type={streamer.on ? 'password' : 'text'}
               oninput={() => (wrong.hostname = undefined)}
               {...plain}
               aria-invalid={wrong.hostname ? 'true' : undefined}

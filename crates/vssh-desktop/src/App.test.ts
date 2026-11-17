@@ -15,6 +15,7 @@ import shown from './lib/fixtures/shown.json'
 import { terminals } from './lib/fixtures/xterm'
 import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
+import { fake, setStreamer } from './lib/streamer.svelte'
 import strings from './lib/strings.json'
 
 type Args = Record<string, unknown>
@@ -1190,4 +1191,107 @@ test('in Vietnamese no English string is left in the vault, the host form, the i
   ;(await card('web-02')).focus()
   await user.keyboard('d')
   await said('Xoá web-02?')
+})
+
+// --- D7: streamer mode --------------------------------------------------------
+
+test('streamer mode: every address in the window is a made-up one, and nothing but what is shown changes', async () => {
+  const user = editable({
+    get_host_stats: ({ alias }) => {
+      if (alias === 'web-02') throw refused
+      return peek
+    },
+    forwards_list: () => [...forwards, { ...forwards[0], host: 'db.internal.example.com', hport: 5432, port: 15432, value: '15432 db.internal.example.com:5432' }],
+    forward_toggle: () => true,
+    quick_connect: () => 7,
+  })
+  const real = /10\.0\.0\.\d|db\.internal/
+  const [one, two] = ['web-01', 'web-02'].map(fake)
+  await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent('REFUSED Connection refused by 10.0.0.5:2222'))
+  expect(words()).toMatch(real)
+
+  const toggle = within(status()).getByRole('button', { name: /Streamer mode/ })
+  expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await user.click(toggle)
+  expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  expect(localStorage.getItem('vssh.streamer_mode')).toBe('true')
+
+  // The cards, a failure's words on one, the sidebar, the status bar.
+  expect(await card('web-01')).toHaveTextContent(`deploy@${one}:2222`)
+  await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent(`REFUSED Connection refused by ${one}:2222`))
+  expect(await card('web-02')).toHaveTextContent(`deploy@${two}`)
+  expect(screen.getByRole('navigation')).toHaveTextContent(`postgres@${fake('db-primary')}`)
+  ;(await card('web-01')).focus()
+  await vi.waitFor(() => expect(status()).toHaveTextContent(`web-01 deploy@${one}:2222`))
+  expect(words()).not.toMatch(real)
+
+  // The quick peek, the palette, a host's forwards.
+  await user.keyboard('v')
+  expect(screen.getByRole('dialog', { name: 'Quick peek: web-01' })).toHaveTextContent(`Host ${one}System`)
+  await user.keyboard('{Escape}{Control>}k{/Control}')
+  expect(screen.getByRole('option', { name: /web-01/ })).toHaveTextContent(`deploy@${one}:2222`)
+  expect(words()).not.toMatch(real)
+  await shut()
+  ;(await card('web-02')).focus()
+  await user.keyboard('L')
+  const tunnels = await screen.findByRole('dialog', { name: 'Forwards web-02' })
+  // This machine is nobody's secret; where a forward leads on the far side is.
+  expect(await within(tunnels).findByRole('switch', { name: 'L 8080 localhost:80' })).toBeInTheDocument()
+  expect(within(tunnels).getByRole('switch', { name: `L 15432 ${fake('db.internal.example.com')}:5432` })).toBeInTheDocument()
+  expect(words()).not.toMatch(real)
+  await user.click(within(tunnels).getByRole('switch', { name: /15432/ }))
+  expect(asked('forward_toggle')).toEqual([{ host: 'web-02', kind: 'L', value: '15432 db.internal.example.com:5432' }])
+  await shut()
+
+  // The host form: the host is there to be changed, and cannot be read.
+  ;(await card('web-01')).focus()
+  await user.keyboard('e')
+  const form = await screen.findByRole('dialog', { name: 'Edit host' })
+  await vi.waitFor(() => expect(within(form).getByLabelText('Host')).toHaveValue('10.0.0.5'))
+  expect(within(form).getByLabelText('Host')).toHaveAttribute('type', 'password')
+  await user.click(within(form).getByRole('button', { name: 'Save' }))
+  expect(asked('hosts_update')[0].form).toMatchObject({ alias: 'web-01', hostname: '10.0.0.5' })
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  // A quick connect: typed unseen, sent as typed, and its tab is named for an address that is nobody's.
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'qc{Enter}')
+  const quick = await screen.findByRole('dialog', { name: 'Quick connect' })
+  expect(within(quick).getByLabelText('Host')).toHaveAttribute('type', 'password')
+  await user.type(within(quick).getByLabelText('Host'), '10.0.0.9')
+  await user.type(within(quick).getByLabelText('User'), 'deploy')
+  await user.click(within(quick).getByRole('button', { name: 'Connect' }))
+  expect(asked('quick_connect')).toEqual([{ host: 'deploy@10.0.0.9' }])
+  expect(await tab(new RegExp(`deploy@${fake('10.0.0.9').replaceAll('.', '\\.')}`))).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tabpanel', { name: `deploy@${fake('10.0.0.9')}` })).toBeInTheDocument()
+  expect(words()).not.toMatch(real)
+  // A host's own tab is named for the host, which is no address.
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-01')).focus()
+  await user.keyboard('{Enter}')
+  expect(await tab(/web-01/)).toHaveAttribute('aria-selected', 'true')
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }])
+
+  // Off again: the real ones, everywhere.
+  await user.click(toggle)
+  expect(localStorage.getItem('vssh.streamer_mode')).toBe('false')
+  expect(await tab(/deploy@10\.0\.0\.9/)).toBeInTheDocument()
+  await user.keyboard(`${leader}0`)
+  // (The fixture's shell saved the form without its user.)
+  expect(await card('web-01')).toHaveTextContent('10.0.0.5')
+  expect(await card('web-01')).not.toHaveTextContent(one)
+  await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent('REFUSED Connection refused by 10.0.0.5:2222'))
+})
+
+test('streamer mode that was left on is on when the app opens, in Vietnamese too', async () => {
+  localStorage.setItem('vssh.streamer_mode', 'true')
+  vi.resetModules()
+  const { streamer, fake } = await import('./lib/streamer.svelte')
+  expect(streamer.on).toBe(true)
+  setStreamer(true)
+  setLang('vi')
+  shell()
+  expect(await card('web-01')).toHaveTextContent(`deploy@${fake('web-01')}:2222`)
+  expect(within(status()).getByRole('button', { name: /Chế độ phát trực tiếp/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(english(words())).toEqual([])
 })

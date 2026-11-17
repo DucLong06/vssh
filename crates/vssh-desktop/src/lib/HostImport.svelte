@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { api, explain, type Host, type Shown } from './api'
-  import { address } from './hosts'
   import { i18n, t } from './i18n.svelte'
+  import { addr } from './streamer.svelte'
 
   type Props = {
     /** The aliases that were taken over. */
@@ -84,7 +84,7 @@
           <label class="flex cursor-pointer items-baseline gap-2 rounded px-2 py-1 hover:bg-selection/50">
             <input type="checkbox" bind:group={ticked} value={host.alias} class="accent-blue" />
             <span class="text-fg">{host.alias}</span>
-            <span class="truncate">{address(host)}</span>
+            <span class="truncate">{addr(host)}</span>
           </label>
         </li>
       {/each}
