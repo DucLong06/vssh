@@ -16,6 +16,7 @@
     leader?: boolean
     /** How many tabs are broadcasting. */
     broadcasting?: number
+    onsnippets: () => void
     onpalette: () => void
   }
   let {
@@ -27,6 +28,7 @@
     files = false,
     leader = false,
     broadcasting = 0,
+    onsnippets,
     onpalette,
   }: Props = $props()
 
@@ -35,7 +37,10 @@
 
 <footer class="col-span-2 flex items-center gap-4 border-t border-edge bg-bar px-3 py-1 text-white">
   <span>{t('hosts')} <span class="text-fg">{hosts}</span></span>
-  <span>{t('snippets')} <span class="text-fg">{snippets}</span></span>
+  <!-- The way to them for the pointer; `s` on the dashboard is the key. -->
+  <button type="button" onclick={onsnippets} aria-keyshortcuts="s" class="{button} -mx-1.5">
+    {t('snippets')} <span class="text-fg">{snippets}</span>
+  </button>
   <span>{t('sessions')} <span class="text-fg">{sessions}</span></span>
   {#if broadcasting}
     <strong class="shrink-0 text-yellow">{t('broadcasting').replace('{n}', String(broadcasting))}</strong>

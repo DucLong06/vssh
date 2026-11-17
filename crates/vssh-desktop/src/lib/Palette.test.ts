@@ -9,7 +9,7 @@ import Palette from './Palette.svelte'
 const hosts: Host[] = fixture
 
 function open(over = {}) {
-  const props = { hosts, onhost: vi.fn(), onquick: vi.fn(), onclose: vi.fn(), ...over }
+  const props = { hosts, onhost: vi.fn(), onquick: vi.fn(), onsnippets: vi.fn(), onclose: vi.fn(), ...over }
   render(Palette, props)
   return { ...props, user: userEvent.setup(), input: screen.getByRole('combobox') }
 }
@@ -17,12 +17,25 @@ function open(over = {}) {
 const options = () => screen.getAllByRole('option').map((o) => o.firstElementChild?.textContent)
 const chosen = () => screen.getByRole('option', { selected: true })
 
-test('with nothing typed: the action, then every host', () => {
+test('with nothing typed: the actions, then every host', () => {
   open()
   expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
-  expect(screen.getAllByRole('option')).toHaveLength(5)
+  expect(options()).toEqual(['Quick connect', 'Snippets', 'web-01', 'web-02', 'db-primary', 'bare'])
   expect(chosen()).toHaveTextContent('Quick connect')
-  expect(screen.getAllByRole('option')[1]).toHaveTextContent('web-01')
+})
+
+test('"snip" finds the snippets, in either language', async () => {
+  const { user, input, onsnippets, onhost } = open()
+  await user.type(input, 'snip')
+  expect(options()).toEqual(['Snippets'])
+  await user.keyboard('{Enter}')
+  expect(onsnippets).toHaveBeenCalledOnce()
+  expect(onhost).not.toHaveBeenCalled()
+  setLang('vi')
+  expect(await screen.findByRole('option', { name: /Đoạn lệnh/ })).toBeInTheDocument()
+  await user.clear(input)
+  await user.type(input, 'doan')
+  expect(chosen()).toHaveTextContent('Đoạn lệnh')
 })
 
 test('typing filters the hosts, best match first', async () => {
@@ -94,9 +107,9 @@ test('nothing matches: it says so, and enter does nothing', async () => {
   expect(onquick).not.toHaveBeenCalled()
 })
 
-test('with no hosts at all the action is still there', () => {
+test('with no hosts at all the actions are still there', () => {
   open({ hosts: [] })
-  expect(options()).toEqual(['Quick connect'])
+  expect(options()).toEqual(['Quick connect', 'Snippets'])
 })
 
 test('closing the dialog tells the app', () => {

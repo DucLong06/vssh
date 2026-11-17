@@ -20,9 +20,25 @@
     onconnect: (alias: string) => void
     /** Opens a host's files. */
     onfiles?: (alias: string) => void
+    /** `s`: the snippets. */
+    onsnippets?: () => void
     onpalette: () => void
+    /** The cards chosen to act on together, as Space marks hosts in the TUI. */
+    marked?: string[]
   }
-  let { hosts, error = null, tag = null, selected = null, hidden = false, onselect, onconnect, onfiles, onpalette }: Props = $props()
+  let {
+    hosts,
+    error = null,
+    tag = null,
+    selected = null,
+    hidden = false,
+    onselect,
+    onconnect,
+    onfiles,
+    onsnippets,
+    onpalette,
+    marked = $bindable([]),
+  }: Props = $props()
 
   /** How long the pointer rests on a card before its quick peek opens, and how long an answer is good for. */
   const REST = 600
@@ -34,8 +50,6 @@
   let query = $state('')
   /** The user's own order: aliases, as they were last dragged. */
   let order = $state<string[]>(saved())
-  /** The cards chosen to connect to together, as Space marks hosts in the TUI. */
-  let marked = $state<string[]>([])
   /** The card being dragged. */
   let dragging: string | null = null
   /** The card whose quick peek is open, and whether the pointer opened it. */
@@ -162,6 +176,8 @@
     if (e.key === '/') {
       e.preventDefault()
       search?.focus()
+    } else if (e.key === 's') {
+      onsnippets?.()
     } else if (peeking && e.key === 'Escape') {
       peeking = null
     } else if (peeking && e.key === 'r') {

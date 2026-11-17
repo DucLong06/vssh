@@ -729,3 +729,75 @@ test('a file view next to a terminal: its tab comes after the sessions, in Vietn
   ;(await card('web-01')).focus()
   await vi.waitFor(() => expect(status()).toHaveTextContent('f Tệp'))
 })
+
+// --- D5: snippets, batches, forwards -----------------------------------------
+
+test('s on the dashboard, or the palette\'s Snippets, opens the snippets; one added there is counted in the status bar', async () => {
+  let list = snippets
+  const user = shell({
+    list_snippets: () => list,
+    snippets_create: (args) => {
+      const made = { id: 2, ...args } as (typeof snippets)[0]
+      list = [...list, made]
+      return made
+    },
+  })
+  await card('web-01')
+  await user.keyboard('s')
+  const dialog = await screen.findByRole('dialog', { name: 'Snippets' })
+  expect(within(dialog).getByRole('listitem')).toHaveTextContent('up all hosts uptime')
+  await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+  // A letter typed into the form is a letter: no key of the dashboard's.
+  await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'disks')
+  await user.type(within(dialog).getByRole('textbox', { name: 'Command' }), 'df -h /')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await vi.waitFor(() => expect(status()).toHaveTextContent('Snippets 2'))
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'snip{Enter}')
+  expect(await screen.findByRole('dialog', { name: 'Snippets' })).toBeInTheDocument()
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // And for the pointer, their count in the status bar.
+  await user.click(within(status()).getByRole('button', { name: 'Snippets 2' }))
+  expect(await screen.findByRole('dialog', { name: 'Snippets' })).toBeInTheDocument()
+  setLang('vi')
+  await vi.waitFor(() => expect(status()).toHaveTextContent('Đoạn lệnh 2'))
+})
+
+test('a snippet is run on the hosts marked on the dashboard, and each one\'s answer comes in a dialog of its own', async () => {
+  const user = shell({ snippet_run: () => 1 })
+  ;(await card('db-primary')).focus()
+  await user.keyboard(' ')
+  ;(await card('web-01')).focus()
+  await user.keyboard(' s')
+  const dialog = await screen.findByRole('dialog', { name: 'Snippets' })
+  await user.click(within(dialog).getByRole('button', { name: 'Run up' }))
+  expect(within(dialog).getByRole('checkbox', { name: 'web-01' })).toBeChecked()
+  expect(within(dialog).getByRole('checkbox', { name: 'db-primary' })).toBeChecked()
+  expect(within(dialog).getByRole('checkbox', { name: 'web-02' })).not.toBeChecked()
+  await user.click(within(dialog).getByRole('button', { name: 'Run' }))
+
+  const batch = await screen.findByRole('dialog', { name: 'Run on 2 host(s)' })
+  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  await vi.waitFor(() =>
+    expect(asked('snippet_run')).toEqual([{ hosts: ['web-01', 'db-primary'], command: 'uptime', params: {} }]),
+  )
+  await emit('batch-progress', { id: 1, host: 'web-01', output: 'up 3 days\n', error: null })
+  await emit('batch-progress', { id: 1, host: 'db-primary', output: null, error: refused })
+  await vi.waitFor(() => expect(batch).toHaveTextContent('up 3 days'))
+  await vi.waitFor(() => expect(within(batch).getByRole('alert')).toHaveTextContent('✗ REFUSED'))
+})
+
+test('with nothing marked, a snippet is for the selected host', async () => {
+  const user = shell()
+  ;(await card('web-02')).focus()
+  await user.keyboard('s')
+  const dialog = await screen.findByRole('dialog', { name: 'Snippets' })
+  await user.click(within(dialog).getByRole('button', { name: 'Run up' }))
+  expect(within(dialog).getByRole('checkbox', { name: 'web-02' })).toBeChecked()
+  expect(within(dialog).getByRole('checkbox', { name: 'web-01' })).not.toBeChecked()
+})

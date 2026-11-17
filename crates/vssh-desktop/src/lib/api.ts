@@ -53,7 +53,11 @@ export type Entry = {
   mtime: number
 }
 
+/** `host` empty: for every host. */
 export type Snippet = { id: number; host: string; name: string; command: string }
+
+/** One host's answer in a batch: what the command printed, or why it could not be run. */
+export type Answered = { id: number; host: string; output: string | null; error: ConnError | null }
 
 export type ErrorClass =
   | 'dns'
@@ -136,7 +140,22 @@ export const api = {
     invoke<void>('sftp_download', { host, remote, local, id }),
   /** Stops a transfer, which then rejects; what was written so far stays. */
   sftpCancel: (id: string) => invoke<boolean>('sftp_cancel', { id }),
+  /** Those for every host first (`host` empty), then by host and name. */
   listSnippets: () => invoke<Snippet[]>('list_snippets'),
+  /** Rejects for a snippet without a name or a command, or for a host that is not in the config. */
+  snippetsCreate: (name: string, command: string, host: string) =>
+    invoke<Snippet>('snippets_create', { name, command, host }),
+  snippetsUpdate: (id: number, name: string, command: string, host: string) =>
+    invoke<Snippet>('snippets_update', { id, name, command, host }),
+  snippetsDelete: (id: number) => invoke<void>('snippets_delete', { id }),
+  /**
+   * One command on every host named, `{{name}}` in it replaced by
+   * `params.name`. Resolves at once to the batch's id; each host then answers
+   * with an `Answered` on `batch-progress`, maybe before the id is here:
+   * listen first.
+   */
+  snippetRun: (hosts: string[], command: string, params: Record<string, string>) =>
+    invoke<number>('snippet_run', { hosts, command, params }),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),
 }

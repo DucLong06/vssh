@@ -9,6 +9,8 @@
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
   import Sidebar from './lib/Sidebar.svelte'
+  import Batch from './lib/Batch.svelte'
+  import Snippets from './lib/Snippets.svelte'
   import Statusbar from './lib/Statusbar.svelte'
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
@@ -37,7 +39,13 @@
   let selected = $state<string | null>(null)
   /** The tag the sidebar narrowed the hosts to. */
   let tag = $state<string | null>(null)
-  let modal = $state<'palette' | 'quick' | null>(null)
+  /** The hosts marked on the dashboard. */
+  let marked = $state<string[]>([])
+  /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
+  const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
+  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | null>(null)
+  /** The command the batch dialog runs, and where. */
+  let job = $state<{ hosts: Host[]; command: string; params: Record<string, string> }>()
   /** Why the hosts could not be read. */
   let failed = $state<Shown | null>(null)
 
@@ -257,7 +265,9 @@
       onselect={(alias) => (selected = alias)}
       onconnect={open}
       onfiles={browse}
+      onsnippets={() => (modal = 'snippets')}
       onpalette={() => (modal = 'palette')}
+      bind:marked
     />
     {#each sessions as session (session.id)}
       <Terminal
@@ -286,6 +296,7 @@
     files={active !== null && !front}
     broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
+    onsnippets={() => (modal = 'snippets')}
     onpalette={() => (modal = 'palette')}
   />
 </div>
@@ -312,8 +323,22 @@
       modal = null
     }}
     onquick={() => (modal = 'quick')}
+    onsnippets={() => (modal = 'snippets')}
     onclose={() => (modal = null)}
   />
 {:else if modal === 'quick'}
   <QuickConnect onconnect={connect} onclose={() => (modal = null)} />
+{:else if modal === 'snippets'}
+  <Snippets
+    bind:snippets
+    {hosts}
+    picked={picked.map((host) => host.alias)}
+    onrun={(names, command, params) => {
+      job = { hosts: hosts.filter((host) => names.includes(host.alias)), command, params }
+      modal = 'batch'
+    }}
+    onclose={() => (modal = null)}
+  />
+{:else if modal === 'batch' && job}
+  <Batch {...job} onclose={() => (modal = null)} />
 {/if}

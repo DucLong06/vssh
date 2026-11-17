@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
 
-  type Props = { label: string; onclose: () => void; children: Snippet }
-  let { label, onclose, children }: Props = $props()
+  /** `wide`: for what is read in it more than typed, a batch's answers. */
+  type Props = { label: string; wide?: boolean; onclose: () => void; children: Snippet }
+  let { label, wide = false, onclose, children }: Props = $props()
   let dialog: HTMLDialogElement
 
   // A modal <dialog> brings the focus trap, Esc and the inert page with it.
@@ -16,7 +17,7 @@
   aria-label={label}
   {onclose}
   onclick={(e) => e.target === dialog && dialog.close()}
-  class="m-auto mt-[14vh] w-[36rem] max-w-[90vw] rounded-xl border border-edge bg-black p-0 text-fg shadow-2xl backdrop:bg-bg/70"
+  class="m-auto mt-[14vh] {wide ? 'w-[52rem]' : 'w-[36rem]'} max-w-[90vw] rounded-xl border border-edge bg-black p-0 text-fg shadow-2xl backdrop:bg-bg/70"
 >
   {@render children()}
 </dialog>
