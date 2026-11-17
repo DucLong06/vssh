@@ -187,6 +187,8 @@ pub struct Keys {
     pub pin: char,
     pub mark: char,
     pub ping: char,
+    /// Run one command on every marked host.
+    pub batch: char,
     /// Quick peek: the selected host's uptime, load, memory and disk, without a session.
     pub peek: char,
     pub password: char,
@@ -215,6 +217,7 @@ impl Default for Keys {
             pin: 'p',
             mark: ' ',
             ping: 'r',
+            batch: 'x',
             peek: 'v',
             password: 'P',
             vault: 'V',

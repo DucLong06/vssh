@@ -165,3 +165,17 @@ free row there would cost every pane a line of terminal.
   config that names `y` for duplicate still wins, because duplicate is
   matched first. The change errs on the harmless side: an old habit now
   copies a line instead of creating a host.
+
+## Batch exec (brief 9, M3)
+
+- **One runner.** `App::batch` connects to every host in its own task and
+  sends each answer back as `Event::Batch`. Running a snippet on marked hosts
+  goes through it too, so there is one results view, not two.
+- **State lives in the popup.** `Batch` holds the rows (host, outcome), the
+  scroll, the host filter and the task handles. Dropping it aborts the tasks:
+  closing the results never leaves a `tail -f` running somewhere. Answers
+  carry the batch id, so one from a closed batch cannot land in the next.
+- **`batch_lines`** is the pure part: rows in, lines out, hosts in the order
+  asked. A host that is running, silent or failed still gets a line.
+- **Per-host errors** are `conn_err` reports, the same wording as everywhere.
+- No cap on parallel connections yet (marked in the code).

@@ -76,6 +76,7 @@ Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng đ�
 - **Chuyển khung:** `Alt-h/j/k/l` di chuyển giữa các khung như cửa sổ vim (hoặc `Ctrl-a` + phím mũi tên). `Ctrl-a d` đóng phiên đang chọn.
 - **Phát (broadcast):** `Alt-b` (hoặc `Ctrl-a b`). Khi bật, những gì bạn gõ hay dán sẽ được gửi tới *mọi* phiên đang kết nối, kể cả phiên không hiện trên màn hình. Thanh trạng thái chuyển sang màu cam và cho biết có bao nhiêu phiên đang nhận, các khung đó có viền cam. Nhấn `Alt-b` lần nữa để tắt.
 - **Snippet:** `Ctrl-a s` gõ một snippet đã lưu vào phiên, hoặc vào mọi phiên khi đang phát.
+- **Một lệnh, nhiều máy:** đánh dấu các máy bằng `Space`, nhấn `x`, gõ một lệnh. Lệnh chạy cùng lúc trên mọi máy đã đánh dấu, mỗi máy một kết nối riêng, không mở phiên nào. Kết quả hiện dần khi các máy trả lời, mỗi dòng dạng `máy │ kết quả`, tên máy mang màu thẻ của nó; máy còn đang chạy hiện vòng xoay, máy lỗi hiện lý do. `j`/`k` để cuộn, `/` chỉ hiện những máy có tên chứa chữ bạn gõ, `Esc` để đóng và bỏ các máy chưa trả lời. Phát (broadcast) dành cho việc gõ vào các phiên đang mở; `x` dành cho lệnh chạy một lần. Snippet chạy trên các máy đã đánh dấu cũng dùng màn hình này.
 
 ## Thanh trạng thái
 
@@ -178,6 +179,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Enter` / `s` | mở shell / trình duyệt SFTP |
 | | `Space`, rồi `Enter` | đánh dấu các máy, rồi mở phiên trên mọi máy đã đánh dấu |
 | | `T` | kết nối mọi máy có cùng thẻ hoặc nhóm |
+| | `x` | chạy một lệnh trên mọi máy đã đánh dấu (máy đang chọn nếu chưa đánh dấu máy nào) |
 | | `c` | kết nối nhanh; `Ctrl-s` trong biểu mẫu để lưu máy chủ và mật khẩu |
 | | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm); `Esc` để xoá |
 | | `a` `e` `d` `Y` | thêm, sửa, xoá, nhân bản máy chủ |
@@ -249,7 +251,7 @@ accent = "cyan"         # còn có: border, text, dim, selection, ok, error, war
 
 [keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
 leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, peek, password, vault, help
+quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
 ```
 
 Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hình viết cho phiên bản cũ vẫn dùng được. Cũng có thể chọn ngôn ngữ cho từng lần chạy bằng `vssh --lang vi` hoặc `VSSH_LANG=vi`; các biểu mẫu và thông báo lỗi vẫn bằng tiếng Anh.

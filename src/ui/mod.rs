@@ -29,7 +29,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
 
-use crate::config::{data_dir, ssh_config_path, Config};
+use crate::config::{data_dir, ssh_config_path, Config, Lang};
 use crate::conn_err::{self, Fail, Report};
 use crate::sftp;
 use crate::ssh::{self, forward, Login, SessionCmd, Target};
@@ -55,8 +55,8 @@ pub enum Event {
     Ping(String, Option<u128>),
     /// Forward key; `Ok(true)` = now listening, anything else = it ended.
     Forward(String, Result<bool>),
-    /// Host alias and command output.
-    Snippet(String, Result<String>),
+    /// One host's answer in a batch: batch id, host alias, command output.
+    Batch(u64, String, Result<String>),
     /// Tab title or host alias and its metrics; `None` = it stopped answering.
     Stats(String, Option<Stats>),
     /// Host alias and the answer to a quick peek.
@@ -121,6 +121,8 @@ enum After {
     VaultCreate(Option<String>, Option<Zeroizing<String>>),
     VaultSet(String),
     AddForward(String),
+    /// Run the typed command on these hosts.
+    Batch(Vec<String>),
     SaveSnippet(i64),
     DeleteSnippet(i64),
     SftpMkdir,
@@ -149,8 +151,65 @@ impl Form {
     }
 }
 
+/// What one host of a batch answered: `None` while it is still running.
+type Outcome = Option<Result<String, Report>>;
+
+/// One command run on several hosts at once, and what came back so far.
+struct Batch {
+    id: u64,
+    command: String,
+    /// In the order the hosts were asked, not the order they answered.
+    rows: Vec<(String, Outcome)>,
+    scroll: u16,
+    /// Only hosts whose name contains this are shown.
+    filter: String,
+    /// The filter is being typed.
+    typing: bool,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+/// Closing the results gives up on the hosts that have not answered.
+impl Drop for Batch {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+/// What a line of batch results is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Row {
+    Running,
+    Out,
+    Failed,
+}
+
+/// The lines a batch shows: every line of every host's output, each with its
+/// host, hosts in the order they were asked. A host still running, one that
+/// said nothing and one that failed get one line each, so none goes missing.
+fn batch_lines(rows: &[(String, Outcome)], filter: &str, lang: Lang) -> Vec<(String, String, Row)> {
+    let mut lines = vec![];
+    for (host, outcome) in rows.iter().filter(|(host, _)| host.contains(filter)) {
+        let mut line = |text: &str, row| lines.push((host.clone(), text.to_string(), row));
+        match outcome {
+            None => line(lang.pick("running…", "đang chạy…"), Row::Running),
+            Some(Err(fail)) => {
+                let text = format!("✗ {} {}", fail.class.label(lang), fail.message);
+                line(&text, Row::Failed);
+            }
+            Some(Ok(out)) if out.trim().is_empty() => {
+                line(lang.pick("(no output)", "(không có kết quả)"), Row::Out)
+            }
+            Some(Ok(out)) => out.lines().for_each(|l| line(l, Row::Out)),
+        }
+    }
+    lines
+}
+
 enum Popup {
     Form(Form),
+    Batch(Batch),
     Confirm(String, After),
     Text {
         title: String,
@@ -872,6 +931,7 @@ impl App {
     fn waiting(&self) -> bool {
         match &self.popup {
             Some(Popup::Peek(alias)) => matches!(self.peeks.get(alias), Some(None)),
+            Some(Popup::Batch(batch)) => batch.rows.iter().any(|row| row.1.is_none()),
             _ => false,
         }
     }
@@ -903,24 +963,39 @@ impl App {
         } else {
             vec![alias.to_string()]
         };
-        self.popup = Some(Popup::Text {
-            title: format!("{} on {} host(s)", s.name, hosts.len()),
-            body: String::new(),
-            scroll: 0,
-        });
-        for host in hosts {
-            let target = Target::from_config(&self.sshc, &host);
-            let password = self.vault_password(&host);
-            let (tx, command) = (self.tx.clone(), s.command.clone());
+        self.batch(hosts, &s.command);
+    }
+
+    /// Runs one command on every host, each over its own connection, all at
+    /// once, and opens the results: they fill in as the hosts answer.
+    // shortcut: no cap on how many connect at once; add a semaphore if
+    // batches grow to hundreds of hosts.
+    fn batch(&mut self, hosts: Vec<String>, command: &str) {
+        let id = self.next_id;
+        self.next_id += 1;
+        let tasks = hosts.iter().map(|host| {
+            let target = Target::from_config(&self.sshc, host);
+            let password = self.vault_password(host);
+            let (tx, host, command) = (self.tx.clone(), host.clone(), command.to_string());
             tokio::spawn(async move {
                 let res = async {
                     let pw = password.as_ref().map(|p| p.as_str());
                     let h = ssh::connect(&target?, pw, None).await?;
                     ssh::exec(&h, &command).await
                 };
-                let _ = tx.send(Event::Snippet(host, res.await));
-            });
-        }
+                let _ = tx.send(Event::Batch(id, host, res.await));
+            })
+        });
+        let tasks = tasks.collect();
+        self.popup = Some(Popup::Batch(Batch {
+            id,
+            command: command.to_string(),
+            rows: hosts.into_iter().map(|host| (host, None)).collect(),
+            scroll: 0,
+            filter: String::new(),
+            typing: false,
+            tasks,
+        }));
     }
 
     // ── events ──────────────────────────────────────────────────────────
@@ -1043,22 +1118,16 @@ impl App {
                 };
                 self.msg = format!("forward {key}: {why}");
             }
-            Event::Snippet(host, out) => {
-                let out = out.unwrap_or_else(|e| {
-                    let report = conn_err::classify(&e, self.cfg.lang);
-                    let class = report.class.label(self.cfg.lang);
-                    format!("✗ {class}: {}\n", report.message)
-                });
-                let block = format!("── {host} ──\n{}\n", clean(&out));
-                match &mut self.popup {
-                    Some(Popup::Text { body, .. }) => body.push_str(&block),
-                    _ => {
-                        self.popup = Some(Popup::Text {
-                            title: "Snippet output".into(),
-                            body: block,
-                            scroll: 0,
-                        })
-                    }
+            Event::Batch(id, host, out) => {
+                // An answer to a batch that was closed has nowhere to go.
+                let Some(Popup::Batch(batch)) = &mut self.popup else {
+                    return;
+                };
+                let out = out.map(|o| clean(&o));
+                let out = out.map_err(|e| conn_err::classify(&e, self.cfg.lang));
+                let row = batch.rows.iter_mut().find(|(h, _)| *h == host);
+                if let Some(row) = row.filter(|_| batch.id == id) {
+                    row.1 = Some(out);
                 }
             }
         }
@@ -1371,6 +1440,19 @@ impl App {
             self.msg = format!("created {copy}");
         } else if c == keys.copy {
             self.copy(&format!("ssh {alias}"));
+        } else if c == keys.batch {
+            // Every marked host, or the selected one when nothing is marked.
+            let hosts: Vec<String> = match self.marked.is_empty() {
+                true => vec![alias.to_string()],
+                false => self.marked.iter().cloned().collect(),
+            };
+            let lang = self.cfg.lang;
+            let title = match lang {
+                Lang::En => format!("Run on {} host(s)", hosts.len()),
+                Lang::Vi => format!("Chạy trên {} máy", hosts.len()),
+            };
+            let label = lang.pick("Command", "Lệnh");
+            self.prompt(&title, label, false, After::Batch(hosts));
         } else if c == keys.pin {
             let mut meta = self.meta.get(alias).cloned().unwrap_or_default();
             meta.pinned ^= true;
@@ -1643,6 +1725,7 @@ impl App {
              \x20 {copy}            copy `ssh <host>` to the clipboard (OSC 52)\n\
              \x20 {pin}            pin / unpin       {ping}       check reachability\n\
              \x20 {peek}            quick peek: uptime, load, memory, disk, without a session\n\
+             \x20 {batch}            run one command on every marked host (/ filters the results)\n\
              \x20 {forwards}            port forwards     {snippets}       snippets\n\
              \x20 {password}            store password    {vault}       unlock / lock vault\n\
              \x20 {quit}            quit              Q       quit (from SFTP too)\n\n\
@@ -1678,6 +1761,7 @@ impl App {
             pin = k.pin,
             ping = k.ping,
             peek = k.peek,
+            batch = k.batch,
             forwards = k.forwards,
             snippets = k.snippets,
             password = k.password,
@@ -1699,6 +1783,7 @@ impl App {
              \x20 {copy}            chép `ssh <máy>` vào clipboard (OSC 52)\n\
              \x20 {pin}            ghim / bỏ ghim    {ping}       kiểm tra kết nối\n\
              \x20 {peek}            xem nhanh: uptime, tải, bộ nhớ, đĩa, không cần mở phiên\n\
+             \x20 {batch}            chạy một lệnh trên mọi máy đã đánh dấu (/ để lọc kết quả)\n\
              \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
              \x20 {password}            lưu mật khẩu      {vault}       mở / khoá kho mật khẩu\n\
              \x20 {quit}            thoát             Q       thoát (cả từ SFTP)\n\n\
@@ -1734,6 +1819,7 @@ impl App {
             pin = k.pin,
             ping = k.ping,
             peek = k.peek,
+            batch = k.batch,
             forwards = k.forwards,
             snippets = k.snippets,
             password = k.password,
@@ -1771,6 +1857,31 @@ impl App {
                         send_input(&mut self.tabs, i, self.broadcast, &input);
                     }
                 }
+            }
+            (Popup::Batch(mut batch), code) => {
+                match code {
+                    // While the filter is typed every key belongs to it.
+                    KeyCode::Esc if batch.typing => {
+                        batch.filter.clear();
+                        batch.typing = false;
+                    }
+                    KeyCode::Enter if batch.typing => batch.typing = false,
+                    KeyCode::Backspace if batch.typing => drop(batch.filter.pop()),
+                    KeyCode::Char(c) if batch.typing => batch.filter.push(c),
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => return,
+                    KeyCode::Char('/') => batch.typing = true,
+                    KeyCode::Down | KeyCode::Char('j') => batch.scroll += 1,
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        batch.scroll = batch.scroll.saturating_sub(1)
+                    }
+                    KeyCode::PageDown => batch.scroll += 10,
+                    KeyCode::PageUp => batch.scroll = batch.scroll.saturating_sub(10),
+                    _ => {}
+                }
+                if batch.typing {
+                    batch.scroll = 0;
+                }
+                self.popup = Some(Popup::Batch(batch));
             }
             (Popup::Pick { .. } | Popup::Peek(_), KeyCode::Esc | KeyCode::Char('q')) => {}
             (Popup::Peek(alias), KeyCode::Char('r') | KeyCode::Enter) => self.peek(&alias, true),
@@ -1986,6 +2097,10 @@ impl App {
                 )?;
                 self.sshc.add(alias, fwd.key(), &fwd.value());
                 self.save_config()?;
+            }
+            After::Batch(hosts) => {
+                ensure!(!text(0).is_empty(), "type a command to run");
+                self.batch(hosts.clone(), &text(0));
             }
             After::SaveSnippet(id) => {
                 ensure!(
@@ -2268,6 +2383,54 @@ mod tests {
             then: After::QuickConnect,
         };
         assert_eq!((form(None).rows(), form(Some(false)).rows()), (2, 3));
+    }
+
+    #[test]
+    fn batch_results_keep_every_host_and_every_line() {
+        let refused = Report {
+            class: conn_err::Class::Refused,
+            message: "Connection refused by 10.0.0.3:22 — is sshd running?".into(),
+            chain: String::new(),
+        };
+        let rows = vec![
+            (
+                "web-01".to_string(),
+                Some(Ok("up 3 days\nload 0.5\n".to_string())),
+            ),
+            ("web-02".to_string(), None),
+            ("db-01".to_string(), Some(Err(refused))),
+            ("db-02".to_string(), Some(Ok(" \n".to_string()))),
+        ];
+        let lines = batch_lines(&rows, "", Lang::En);
+        let shown: Vec<(&str, &str, Row)> = lines
+            .iter()
+            .map(|(host, text, row)| (host.as_str(), text.as_str(), *row))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("web-01", "up 3 days", Row::Out),
+                ("web-01", "load 0.5", Row::Out),
+                ("web-02", "running…", Row::Running),
+                (
+                    "db-01",
+                    "✗ REFUSED Connection refused by 10.0.0.3:22 — is sshd running?",
+                    Row::Failed
+                ),
+                ("db-02", "(no output)", Row::Out),
+            ]
+        );
+        // Filtering by host keeps whole hosts, never part of one's output.
+        let hosts = |filter| {
+            let lines = batch_lines(&rows, filter, Lang::Vi);
+            let mut hosts: Vec<String> = lines.into_iter().map(|l| l.0).collect();
+            hosts.dedup();
+            hosts
+        };
+        assert_eq!(hosts("db"), ["db-01", "db-02"]);
+        assert_eq!(hosts("-01"), ["web-01", "db-01"]);
+        assert!(hosts("nope").is_empty());
+        assert_eq!(batch_lines(&rows, "web-02", Lang::Vi)[0].1, "đang chạy…");
     }
 
     #[test]

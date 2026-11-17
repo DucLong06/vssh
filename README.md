@@ -77,6 +77,7 @@ A plain `S` cannot be the toggle while the cursor is in a text field, because it
 - **Focus:** `Alt-h/j/k/l` moves between panes like vim windows (also `Ctrl-a` + arrow). `Ctrl-a d` closes the focused session.
 - **Broadcast:** `Alt-b` (or `Ctrl-a b`). While it is on, what you type or paste goes to *every* connected session, including ones not on screen. The status line turns orange and shows how many sessions are listening, and their panes get an orange border. Press `Alt-b` again to stop.
 - **Snippets:** `Ctrl-a s` types a saved snippet into the session, or into all of them while broadcasting.
+- **One command, many hosts:** mark hosts with `Space`, press `x`, type a command. It runs on every marked host at once, each over its own connection, with no session opened. The results fill in as hosts answer, one `host │ output` line per line, the host in the colour of its tag; a host still running shows a spinner, a host that failed shows why. `j`/`k` scroll, `/` shows only hosts whose name contains what you type, `Esc` closes and drops the hosts that have not answered. Broadcast is for typing into live sessions; `x` is for a one-off. A snippet run on marked hosts uses the same view.
 
 ## Status bar
 
@@ -179,6 +180,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Enter` / `s` | open shell / SFTP browser |
 | | `Space`, then `Enter` | mark hosts, then open a session on every marked host |
 | | `T` | connect to every host with a tag or group |
+| | `x` | run one command on every marked host (the selected one if none is marked) |
 | | `c` | quick connect; `Ctrl-s` in the form saves the host and its password |
 | | `/` | search (`#tag` for a tag or group); `Esc` clears |
 | | `a` `e` `d` `Y` | add, edit, delete, duplicate host |
@@ -250,7 +252,7 @@ accent = "cyan"         # also: border, text, dim, selection, ok, error, warn, b
 
 [keys]                  # one character each; leader is pressed with Ctrl
 leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, peek, password, vault, help
+quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
 ```
 
 Entries you leave out keep their defaults, so a config written for an older version still works. The language can also be set per run with `vssh --lang vi` or `VSSH_LANG=vi`; forms and error messages stay in English.

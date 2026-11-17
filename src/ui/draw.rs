@@ -16,7 +16,7 @@ use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
 use super::panes::Shape;
 use super::stats::Level;
-use super::{clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Tab};
+use super::{batch_lines, clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Row, Tab};
 use crate::config::{Lang, Theme};
 use crate::ssh::SessionCmd;
 use crate::store::db::Meta;
@@ -888,6 +888,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
             connect.extend([
                 hint(&key(k.sftp), "sftp", "sftp", host),
                 hint(&key(k.mark), "mark", "đánh dấu", host),
+                hint(&key(k.batch), "run", "chạy lệnh", host),
                 hint(&key(k.connect_tag), "by tag", "theo thẻ", host),
                 hint(&key(k.connect), "quick", "nhanh", true),
             ]);
@@ -1337,6 +1338,51 @@ fn popup(popup: &Popup, app: &App, f: &mut Frame) {
     let (th, lang) = (&app.cfg.theme, app.cfg.lang);
     let screen = f.area();
     match popup {
+        Popup::Batch(batch) => {
+            let area = centered(screen, screen.width * 9 / 10, screen.height * 9 / 10);
+            let lines = batch_lines(&batch.rows, &batch.filter, lang);
+            let width = lines.iter().map(|l| l.0.chars().count()).max().unwrap_or(0);
+            let text: Vec<Line> = lines
+                .into_iter()
+                .map(|(host, text, row)| {
+                    // A host has the colour of its first tag, or its group, everywhere.
+                    let meta = app.meta.get(&host);
+                    let tag = meta.and_then(|m| tags(m).next().or(Some(m.grp.as_str())));
+                    let colour = chip(tag.filter(|t| !t.is_empty()).unwrap_or(&host));
+                    let (lead, style) = match row {
+                        Row::Running => (format!("{} ", spinner()), Style::new().fg(th.dim)),
+                        Row::Failed => (String::new(), Style::new().fg(RED)),
+                        Row::Out => (String::new(), Style::new()),
+                    };
+                    Line::from(vec![
+                        Span::styled(format!("{host:<width$}"), Style::new().fg(colour).bold()),
+                        Span::styled(" │ ", Style::new().fg(th.border)),
+                        Span::styled(format!("{lead}{text}"), style),
+                    ])
+                })
+                .collect();
+            let done = batch.rows.iter().filter(|row| row.1.is_some()).count();
+            let mut title = format!("{} — {done}/{}", clean(&batch.command), batch.rows.len());
+            if batch.typing {
+                title.push_str(&format!("  /{}▏", batch.filter));
+            } else if !batch.filter.is_empty() {
+                title.push_str(&format!("  /{}", batch.filter));
+            }
+            let block = panel(&title, true, th);
+            let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
+                .areas(block.inner(area));
+            let scroll = batch.scroll.min(text.len().saturating_sub(1) as u16);
+            let text = Paragraph::new(text).wrap(Wrap { trim: false });
+            f.render_widget(Clear, area);
+            f.render_widget(block, area);
+            f.render_widget(text.scroll((scroll, 0)), body);
+            let hints = [
+                ("j/k", lang.pick("scroll", "cuộn")),
+                ("/", lang.pick("filter by host", "lọc theo máy")),
+                ("esc", lang.pick("close", "đóng")),
+            ];
+            f.render_widget(foot(th, &hints), keys);
+        }
         Popup::Peek(alias) => {
             let lines = peek_lines(app, alias);
             // A long failure message wraps: count the rows it takes inside the frame.
