@@ -129,6 +129,13 @@ test('what is wrong is said under its field, and nothing is sent until it is rig
   // The first of them has the focus.
   expect(field('Alias')).toHaveFocus()
 
+  // What is being put right is no longer called wrong; the other field still is.
+  await user.type(field('Alias'), 'x')
+  expect(field('Alias')).toBeValid()
+  expect(field('Alias')).toHaveAccessibleDescription('')
+  expect(field('Host')).toBeInvalid()
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+
   for (const alias of ['two words', 'web-*', 'a=b']) {
     await user.clear(field('Alias'))
     await user.type(field('Alias'), alias)

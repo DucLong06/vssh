@@ -12,7 +12,7 @@ const asked = (cmd: string) => calls.filter((call) => call[0] === cmd).map((call
 const other = (words: string) => ({ class: 'other', fail: null, chain: [words] })
 
 /** The shell over a vault whose passphrase is `master`; `over` replaces single commands. */
-function shell(state: 'none' | 'locked' | 'unlocked', over: Record<string, (args: Args) => unknown> = {}) {
+function shell(state: 'none' | 'locked' | 'unlocked', over: Record<string, (args: Args) => unknown> = {}, once = false) {
   let master = 'master'
   const open = (given: unknown) => {
     if (given !== master) throw other('wrong passphrase or damaged vault')
@@ -37,7 +37,7 @@ function shell(state: 'none' | 'locked' | 'unlocked', over: Record<string, (args
     return commands[cmd](args as Args)
   })
   const onclose = vi.fn()
-  render(Vault, { vault: state, hosts: 4, onclose })
+  render(Vault, { vault: state, hosts: 4, once, onclose })
   return { onclose, user: userEvent.setup() }
 }
 const field = (name: string) => screen.getByLabelText(name)
@@ -171,6 +171,21 @@ test('an export that is refused says why', async () => {
   await user.click(button('Export backup'))
   expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR /home/me/vssh-vault.backup already exists')
   expect(screen.queryByRole('status')).not.toBeInTheDocument()
+})
+
+test('opened only to ask, it closes once it is unlocked; a wrong passphrase keeps it open', async () => {
+  const { user, onclose } = shell('locked', {}, true)
+  await user.type(field('Vault passphrase'), 'mastre{Enter}')
+  expect(await screen.findByRole('alert')).toBeInTheDocument()
+  expect(onclose).not.toHaveBeenCalled()
+  await user.type(field('Vault passphrase'), 'master{Enter}')
+  await vi.waitFor(() => expect(onclose).toHaveBeenCalledOnce())
+})
+
+test('unlocked for the manager, the focus is in its first field, not lost with the form that went', async () => {
+  const { user } = shell('locked')
+  await user.type(field('Vault passphrase'), 'master{Enter}')
+  await vi.waitFor(() => expect(field('Current passphrase')).toHaveFocus())
 })
 
 test('cancel closes it, and it stays locked', async () => {

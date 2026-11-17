@@ -69,6 +69,8 @@
   let keeping: Session | undefined
   /** Unlocked, the vault stays so until the app is closed: the shell holds it, and nothing of it is written down. */
   let vault = $state<VaultState>('none')
+  /** The vault's dialog is the question the app opens with, not the manager someone asked for. */
+  let greeting = $state(false)
   /** The host whose forwards are open. */
   let forwarding = $state('')
   /** The command the batch dialog runs, and where. */
@@ -105,7 +107,8 @@
     // A vault that is there is asked to be opened first thing; it may be left shut.
     api.vaultState().then((now) => {
       vault = now
-      if (now === 'locked') modal ??= 'vault'
+      greeting = now === 'locked' && modal === null
+      if (greeting) modal = 'vault'
     }, fail)
     const timer = setInterval(tick, EVERY)
     return () => clearInterval(timer)
@@ -428,7 +431,15 @@
   <!-- The shell names the key in the host's block: the hosts are read again. -->
   <KeySetup host={editing} onclose={() => changed()} />
 {:else if modal === 'vault'}
-  <Vault bind:vault hosts={hosts.length} onclose={() => (modal = null)} />
+  <Vault
+    bind:vault
+    hosts={hosts.length}
+    once={greeting}
+    onclose={() => {
+      modal = null
+      greeting = false
+    }}
+  />
 {:else if modal === 'quick'}
   <QuickConnect onconnect={connect} onclose={() => (modal = null)} />
 {:else if modal === 'snippets'}

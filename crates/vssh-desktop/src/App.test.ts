@@ -889,13 +889,14 @@ test('a locked vault asks for its passphrase as the app opens; unlocked, it stay
   expect(await vaultButton('Vault locked')).toBeInTheDocument()
   await user.type(within(dialog).getByLabelText('Vault passphrase'), 'master{Enter}')
   expect(asked('vault_unlock')).toEqual([{ passphrase: 'master' }])
+  // That was all it asked for: the way to the hosts is free.
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(await vaultButton('Vault unlocked')).toBeInTheDocument()
-  await vi.waitFor(() => expect(dialog).toHaveTextContent('Hosts 4 Passwords 1'))
-  await shut()
 
-  // The manager again, from the sidebar and from the palette.
+  // The manager, from the sidebar and from the palette.
   await user.click(await vaultButton('Vault unlocked'))
-  expect(await screen.findByRole('dialog', { name: 'Vault' })).toHaveTextContent('Vault unlocked')
+  const manager = await screen.findByRole('dialog', { name: 'Vault' })
+  await vi.waitFor(() => expect(manager).toHaveTextContent('Vault unlocked Hosts 4 Passwords 1'))
   await shut()
   await user.keyboard('{Control>}k{/Control}')
   await user.type(palette(), 'vault{Enter}')
@@ -1123,4 +1124,70 @@ test('a host signed in to with a vault password is given a key from its form; af
   await vi.waitFor(() => expect(screen.getByRole('radio', { name: 'Key' })).toBeChecked())
   expect(screen.getByLabelText('Key file')).toHaveValue('/home/me/.ssh/vssh_web-02_ed25519')
   expect(screen.queryByRole('button', { name: 'Set up SSH key' })).toBeNull()
+})
+
+test('in Vietnamese no English string is left in the vault, the host form, the import, the question and the key setup', async () => {
+  setLang('vi')
+  let open = false
+  const user = editable({
+    vault_state: () => (open ? 'unlocked' : 'locked'),
+    vault_unlock: ({ passphrase }) => {
+      if (passphrase !== 'master') throw errors[7]
+      open = true
+    },
+    vault_hosts: () => ['web-02'],
+    vault_export: () => null,
+    hosts_import_preview: () => [hosts[3]],
+    ssh_key_setup: () => new Promise(() => {}),
+  })
+  const said = async (name: string) => {
+    const dialog = await screen.findByRole('dialog', { name })
+    expect(english(words())).toEqual([])
+    return within(dialog)
+  }
+
+  // The vault: locked, wrong three times, unlocked, a backup written.
+  const vault = await said('Kho')
+  for (let i = 0; i < 3; i++) await user.type(vault.getByLabelText('Mật khẩu kho'), 'x{Enter}')
+  expect(await vault.findByRole('status')).toHaveTextContent('Đã sai 3 lần.')
+  expect(english(words())).toEqual([])
+  await user.type(vault.getByLabelText('Mật khẩu kho'), 'master{Enter}')
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await user.click(await vaultButton('Kho đã mở'))
+  const manager = await said('Kho')
+  await user.click(await manager.findByRole('button', { name: 'Xuất bản sao lưu' }))
+  expect(await manager.findByRole('status')).toHaveTextContent('Đã lưu vào /home/me/vssh-vault.backup')
+  expect(english(words())).toEqual([])
+  await shut()
+
+  // A new host with everything wrong, then what another config has.
+  await card('web-01')
+  await user.keyboard('a')
+  const add = await said('Thêm máy chủ')
+  await user.type(add.getByLabelText('Cổng'), 'x')
+  await user.click(add.getByRole('radio', { name: 'Khoá' }))
+  await user.click(add.getByRole('button', { name: 'Lưu' }))
+  expect(add.getAllByRole('alert')).toHaveLength(3)
+  expect(english(words())).toEqual([])
+  await user.click(add.getByRole('button', { name: 'Nhập từ ssh config' }))
+  expect(await screen.findByRole('button', { name: 'Nhập 1' })).toBeInTheDocument()
+  await said('Nhập từ ssh config')
+  await shut()
+
+  // A host with a password in the vault: its form, its key setup under way, the question before it goes.
+  ;(await card('web-02')).focus()
+  await user.keyboard('e')
+  const edit = await said('Sửa máy chủ')
+  await vi.waitFor(() => expect(edit.getByLabelText('Mật khẩu')).toHaveAttribute('placeholder', 'đã lưu mật khẩu'))
+  expect(english(words())).toEqual([])
+  await user.click(edit.getByRole('button', { name: 'Cài khoá SSH' }))
+  const keys = await said('Cài khoá SSH web-02')
+  await user.click(keys.getByRole('button', { name: 'Bắt đầu' }))
+  await emit('key-setup-step', { host: 'web-02', step: 'generate', state: 'running' })
+  expect(await keys.findByRole('progressbar', { name: 'đang chạy' })).toBeInTheDocument()
+  expect(english(words())).toEqual([])
+  await shut()
+  ;(await card('web-02')).focus()
+  await user.keyboard('d')
+  await said('Xoá web-02?')
 })

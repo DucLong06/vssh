@@ -10,9 +10,11 @@
     vault: VaultState
     /** How many hosts the config has. */
     hosts: number
+    /** It was opened to ask for the passphrase and for nothing else: unlocked, it closes. */
+    once?: boolean
     onclose: () => void
   }
-  let { vault = $bindable(), hosts, onclose }: Props = $props()
+  let { vault = $bindable(), hosts, once = false, onclose }: Props = $props()
 
   /** The passphrase fields: the vault's own, a new one, and that again. They are emptied once sent. */
   let pass = $state('')
@@ -30,6 +32,7 @@
   /** Where a backup goes. */
   let path = $state('')
   let first = $state<HTMLInputElement>()
+  let root = $state<HTMLElement>()
 
   /** Does what was asked, unless the new passphrase was not typed the same twice. */
   async function attempt(twice: boolean, act: () => Promise<string>) {
@@ -55,11 +58,11 @@
     if (mismatch) return
     pass = again = ''
     if (opened) vault = 'unlocked'
-    else {
-      wrong++
-      await tick()
-      first?.focus()
-    }
+    else wrong++
+    if (opened && once) return onclose()
+    // The field that had the focus is gone or emptied: the first one there is now gets it.
+    await tick()
+    root?.querySelector('input')?.focus()
   }
 
   async function change(e: SubmitEvent) {
@@ -122,7 +125,7 @@
 {/snippet}
 
 <Modal label={t('vault')} {onclose}>
-  <div class="grid gap-3 p-4">
+  <div bind:this={root} class="grid gap-3 p-4">
     <p class="flex flex-wrap gap-x-4">
       <span>
         <span class="text-cyan">{t('vault')}</span>

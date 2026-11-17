@@ -49,7 +49,7 @@
   let password = $state('')
   /** The vault has a password for this host. */
   let had = $state(false)
-  /** What is wrong, by field. */
+  /** What is wrong, by field, since the form was last sent; a field that is typed in is not called wrong meanwhile. */
   let wrong = $state<{ alias?: string; hostname?: string; port?: string }>({})
   let failed = $state<Shown | null>(null)
   let importing = $state(false)
@@ -161,18 +161,20 @@
   {/if}
 {/snippet}
 
-<Modal label={importing ? t('import_ssh_config') : title} {onclose}>
+<!-- Wide, with four fields to a row: all of it is in view in a window 700 px high. -->
+<Modal label={importing ? t('import_ssh_config') : title} wide {onclose}>
   {#if importing}
     <HostImport {onimported} oncancel={() => (importing = false)} />
   {:else}
     <form bind:this={root} novalidate onsubmit={save} class="grid gap-3 p-4 text-white">
       <p class="text-cyan">{title}</p>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-[1fr_1.5fr_1fr_6rem] gap-2">
         <div>
           <label>
             {t('alias')}
             <input
               bind:value={form.alias}
+              oninput={() => (wrong.alias = undefined)}
               {...plain}
               aria-invalid={wrong.alias ? 'true' : undefined}
               aria-describedby="host-form-alias"
@@ -186,6 +188,7 @@
             {t('host')}
             <input
               bind:value={form.hostname}
+              oninput={() => (wrong.hostname = undefined)}
               {...plain}
               aria-invalid={wrong.hostname ? 'true' : undefined}
               aria-describedby="host-form-hostname"
@@ -203,6 +206,7 @@
             {t('port')}
             <input
               bind:value={port}
+              oninput={() => (wrong.port = undefined)}
               inputmode="numeric"
               placeholder="22"
               {...plain}
@@ -218,7 +222,8 @@
       <div class="grid grid-cols-[auto_1fr] items-end gap-2">
         <div>
           <span id="host-form-method">{t('sign_in_with')}</span>
-          <!-- Radio buttons, drawn as one control: as the dashboard's sort. -->
+          <!-- Radio buttons, drawn as one control: as the dashboard's sort. Named: nameless, the webview takes
+               this group and the jump hosts for one, and Tab stops at one of the two only. -->
           <div
             role="radiogroup"
             aria-labelledby="host-form-method"
@@ -226,7 +231,7 @@
           >
             {#each methods as [value, label] (value)}
               <label class={choice}>
-                <input type="radio" bind:group={method} {value} class="sr-only" />
+                <input type="radio" name="host-form-method" bind:group={method} {value} class="sr-only" />
                 {label}
               </label>
             {/each}
@@ -262,52 +267,51 @@
         <div
           role="radiogroup"
           aria-labelledby="host-form-jump"
-          class="mt-1 flex max-h-20 flex-wrap gap-1 overflow-y-auto"
+          class="mt-1 flex max-h-14 flex-wrap gap-1 overflow-y-auto"
         >
           {#each jumps as name (name)}
             <label
               class="cursor-pointer rounded-full border border-edge px-2 py-0.5 hover:text-fg has-checked:border-blue has-checked:bg-selection has-checked:text-blue has-focus-visible:outline-2 has-focus-visible:outline-blue"
             >
-              <input type="radio" bind:group={form.proxy_jump} value={name} class="sr-only" />
+              <input type="radio" name="host-form-jump" bind:group={form.proxy_jump} value={name} class="sr-only" />
               {name || t('none')}
             </label>
           {/each}
         </div>
       </div>
 
-      <div>
-        <span>{t('tags')}</span>
-        <div class="mt-1 flex flex-wrap items-center gap-1 rounded-md border border-edge bg-bg px-2 py-1">
-          <ul aria-label={t('tags')} class="contents">
-            {#each tags as name (name)}
-              <li
-                class="flex items-center gap-1 rounded-full border px-2 text-xs leading-5"
-                style="color: {chip(name)}; border-color: color-mix(in srgb, {chip(name)} 40%, transparent)"
-              >
-                <span>{name}</span>
-                <button
-                  type="button"
-                  aria-label="{t('delete')} {name}"
-                  onclick={() => (tags = tags.filter((other) => other !== name))}
-                  class="cursor-pointer hover:text-red"
+      <div class="grid grid-cols-[1fr_12rem_auto] items-end gap-3">
+        <div>
+          <span>{t('tags')}</span>
+          <div class="mt-1 flex flex-wrap items-center gap-1 rounded-md border border-edge bg-bg px-2 py-1">
+            <ul aria-label={t('tags')} class="contents">
+              {#each tags as name (name)}
+                <li
+                  class="flex items-center gap-1 rounded-full border px-2 text-xs leading-5"
+                  style="color: {chip(name)}; border-color: color-mix(in srgb, {chip(name)} 40%, transparent)"
                 >
-                  ×
-                </button>
-              </li>
-            {/each}
-          </ul>
-          <input
-            bind:value={tag}
-            onkeydown={tagKey}
-            aria-label={t('add_tag')}
-            placeholder={t('add_tag')}
-            {...plain}
-            class="min-w-24 flex-1 bg-transparent py-0.5 text-fg outline-none placeholder:text-dim"
-          />
+                  <span>{name}</span>
+                  <button
+                    type="button"
+                    aria-label="{t('delete')} {name}"
+                    onclick={() => (tags = tags.filter((other) => other !== name))}
+                    class="cursor-pointer hover:text-red"
+                  >
+                    ×
+                  </button>
+                </li>
+              {/each}
+            </ul>
+            <input
+              bind:value={tag}
+              onkeydown={tagKey}
+              aria-label={t('add_tag')}
+              placeholder={t('add_tag')}
+              {...plain}
+              class="min-w-24 flex-1 bg-transparent py-0.5 text-fg outline-none placeholder:text-dim"
+            />
+          </div>
         </div>
-      </div>
-
-      <div class="grid grid-cols-[1fr_auto] items-end gap-3">
         <label>
           {t('group')}
           <input bind:value={form.grp} {...plain} class={field} />
