@@ -102,3 +102,28 @@ free row there would cost every pane a line of terminal.
 - SFTP tabs do not poll; they show numbers only if the host list or a shell
   session of the same host has them.
 - macOS parsing is covered by fixtures only, not by a run against a real Mac.
+
+## Connection errors (brief 9, M6)
+
+- **Tag at the source, classify in one place.** `ssh::connect` is three
+  steps: `dial` (name lookup, then TCP to each address), `handshake` (SSH over
+  the open stream, host key check included) and `login`. Each step puts a
+  `conn_err::Fail` into the error it returns, with what it knew: the host that
+  did not resolve, the `ip:port` that refused or timed out, how many keys and
+  whether a password were tried, the fingerprint and the `known_hosts` line.
+  `conn_err::classify` is the only place that reads it back.
+- **Why `dial` resolves by itself.** A lookup failure and a connect failure
+  are the same `io::Error` kind once they come out of
+  `TcpStream::connect(name)`; telling them apart there would mean matching on
+  message text. Resolving first makes the class a fact, and gives the address
+  for the message.
+- **No guessing.** Without a `Fail`, a known library type still gives the
+  class (`io::ErrorKind`, `russh::Error`, tokio's `Elapsed`), but the message
+  is the chain as it is. Anything else is `ERROR` with the chain as it is.
+- **Two texts per failure.** `Fail`'s `Display` is English and goes into the
+  chain; `Fail::message` is the line for people, in the interface language.
+- **Where it shows.** A tab that never connected is closed and its report goes
+  to the `! Connection failed` popup (several failures share it) and to
+  `App::fails`, which the details pane shows until a connection succeeds. An
+  auth failure opens the password prompt, titled with what was refused. A
+  session that drops later keeps its tab, with the classified reason in it.

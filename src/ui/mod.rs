@@ -30,8 +30,9 @@ use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
 
 use crate::config::{data_dir, ssh_config_path, Config};
+use crate::conn_err::{self, Fail, Report};
 use crate::sftp;
-use crate::ssh::{self, forward, AuthFailed, Login, SessionCmd, Target};
+use crate::ssh::{self, forward, Login, SessionCmd, Target};
 use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
@@ -45,17 +46,17 @@ pub enum Event {
     Input(Input),
     /// Output of a shell session.
     Data(u64, Vec<u8>),
-    /// A tab's connection ended, with the reason.
-    Closed(u64, String),
+    /// A tab's connection ended: cleanly, or with the error that ended it.
+    Closed(u64, Option<anyhow::Error>),
     /// A tab could not authenticate; ask for a password and retry.
-    AuthFailed(u64),
+    AuthFailed(u64, anyhow::Error),
     Sftp(u64, sftp::Reply),
     /// Host alias and TCP connect time in ms, `None` if unreachable.
     Ping(String, Option<u128>),
     /// Forward key; `Ok(true)` = now listening, anything else = it ended.
-    Forward(String, Result<bool, String>),
+    Forward(String, Result<bool>),
     /// Host alias and command output.
-    Snippet(String, String),
+    Snippet(String, Result<String>),
     /// Tab title or host alias and its metrics; `None` = it stopped answering.
     Stats(String, Option<Stats>),
 }
@@ -63,9 +64,11 @@ pub enum Event {
 impl Event {
     fn ended(id: u64, res: Result<()>) -> Self {
         match res {
-            Ok(()) => Self::Closed(id, "connection closed".into()),
-            Err(e) if e.is::<AuthFailed>() => Self::AuthFailed(id),
-            Err(e) => Self::Closed(id, format!("{e:#}")),
+            Ok(()) => Self::Closed(id, None),
+            Err(e) if matches!(e.downcast_ref(), Some(Fail::Auth { .. })) => {
+                Self::AuthFailed(id, e)
+            }
+            Err(e) => Self::Closed(id, Some(e)),
         }
     }
 }
@@ -195,6 +198,8 @@ pub struct App {
     sub_sel: usize,
     marked: BTreeSet<String>,
     reach: HashMap<String, Option<u128>>,
+    /// Why the last connection to a host failed, until one succeeds.
+    fails: HashMap<String, Report>,
     /// Latest server metrics, by tab title or host alias. `None`: it was
     /// asked and had no answer, so the host list does not ask it again.
     stats: HashMap<String, Option<Stats>>,
@@ -363,6 +368,7 @@ impl App {
             sub_sel: 0,
             marked: BTreeSet::new(),
             reach: HashMap::new(),
+            fails: HashMap::new(),
             stats: HashMap::new(),
             probe: (None, None),
             fwds: HashMap::new(),
@@ -802,8 +808,7 @@ impl App {
             let pw = password.as_ref().map(|p| p.as_str());
             let ready = || drop(tx.send(Event::Forward(k.clone(), Ok(true))));
             let res = forward::run(&target, pw, fwd, ready).await;
-            let res = res.map(|()| false).map_err(|e| format!("{e:#}"));
-            let _ = tx.send(Event::Forward(k.clone(), res));
+            let _ = tx.send(Event::Forward(k.clone(), res.map(|()| false)));
         });
         self.fwds.insert(key, (task, false));
         Ok(())
@@ -831,8 +836,7 @@ impl App {
                     let h = ssh::connect(&target?, pw, None).await?;
                     ssh::exec(&h, &command).await
                 };
-                let out = res.await.unwrap_or_else(|e| format!("error: {e:#}\n"));
-                let _ = tx.send(Event::Snippet(host, out));
+                let _ = tx.send(Event::Snippet(host, res.await));
             });
         }
     }
@@ -880,9 +884,23 @@ impl App {
                     }
                 }
             }
-            Event::Closed(id, why) => {
+            Event::Closed(id, err) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
+                };
+                let lang = self.cfg.lang;
+                let report = err.map(|e| conn_err::classify(&e, lang));
+                let why = match report {
+                    // It never got through: there is no session to keep on
+                    // screen, only the reason to show.
+                    Some(report) if !self.tabs[i].connected => {
+                        let tab = self.close_tab(i);
+                        return self.failed(&tab.alias, report);
+                    }
+                    Some(report) => report.message,
+                    None => lang
+                        .pick("connection closed", "kết nối đã đóng")
+                        .to_string(),
                 };
                 self.tabs[i].closed = true;
                 self.stats.remove(&self.tabs[i].alias);
@@ -897,19 +915,21 @@ impl App {
                     Kind::Sftp(_) => self.msg = why,
                 }
             }
-            Event::AuthFailed(id) => {
+            Event::AuthFailed(id, err) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
                 let tab = self.close_tab(i);
+                let report = conn_err::classify(&err, self.cfg.lang);
                 let then = After::Password {
                     sftp: matches!(tab.kind, Kind::Sftp(_)),
                     alias: tab.alias.clone(),
                     target: tab.target.clone(),
                     saved: tab.saved,
                 };
-                let title = format!("Keys were refused. Password for {}", tab.alias);
-                self.prompt(&title, "Password", true, then);
+                // The title says what was refused: a key, a password, or nothing to offer.
+                self.prompt(&report.message, "Password", true, then);
+                self.fails.insert(tab.alias, report);
             }
             Event::Ping(alias, ms) => {
                 self.reach.insert(alias, ms);
@@ -924,10 +944,18 @@ impl App {
             }
             Event::Forward(key, res) => {
                 self.fwds.remove(&key);
-                let why = res.err().unwrap_or_else(|| "stopped".into());
+                let why = match res {
+                    Err(e) => conn_err::classify(&e, self.cfg.lang).message,
+                    Ok(_) => "stopped".into(),
+                };
                 self.msg = format!("forward {key}: {why}");
             }
             Event::Snippet(host, out) => {
+                let out = out.unwrap_or_else(|e| {
+                    let report = conn_err::classify(&e, self.cfg.lang);
+                    let class = report.class.label(self.cfg.lang);
+                    format!("✗ {class}: {}\n", report.message)
+                });
                 let block = format!("── {host} ──\n{}\n", clean(&out));
                 match &mut self.popup {
                     Some(Popup::Text { body, .. }) => body.push_str(&block),
@@ -943,9 +971,44 @@ impl App {
         }
     }
 
+    /// A connection that never got through: remembered for the host's
+    /// details, and shown at once with the full chain. Several failures (a
+    /// tag of hosts opened together) share one popup; a form or a question
+    /// that is open is not replaced, the message line carries it instead.
+    fn failed(&mut self, alias: &str, report: Report) {
+        let lang = self.cfg.lang;
+        let heading = lang.pick("! Connection failed", "! Kết nối thất bại");
+        let mut block = format!(
+            "{alias}  [{}]\n  {}\n",
+            report.class.label(lang),
+            clean(&report.message)
+        );
+        if report.chain != report.message {
+            block.push_str(&format!("  {}\n", clean(&report.chain)));
+        }
+        match &mut self.popup {
+            Some(Popup::Text { title, body, .. }) if title == heading => {
+                body.push_str(&format!("\n{block}"));
+            }
+            Some(_) => self.msg = format!("{alias}: {}", report.message),
+            None => {
+                self.popup = Some(Popup::Text {
+                    title: heading.into(),
+                    body: block,
+                    scroll: 0,
+                })
+            }
+        }
+        self.fails.insert(alias.to_string(), report);
+    }
+
     /// Records a successful connection the first time a tab hears back.
     fn mark_connected(&mut self, i: usize) {
-        if !mem::replace(&mut self.tabs[i].connected, true) && self.tabs[i].saved {
+        if mem::replace(&mut self.tabs[i].connected, true) {
+            return;
+        }
+        self.fails.remove(&self.tabs[i].alias);
+        if self.tabs[i].saved {
             let res = self.db.touch(&self.tabs[i].alias);
             let res = res.and_then(|()| self.db.metas().map(|m| self.meta = m));
             self.check(res.map_err(Into::into));

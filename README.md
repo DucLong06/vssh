@@ -94,6 +94,22 @@ The bottom line shows the mode, the focused host and pane, then its tags, group 
 - **Rounded badges:** the mode, the latency and the `vssh` mark are pills with half-circle ends (`◖NORMAL◗`). With a Nerd Font, `nerd_font = true` uses its full-height Powerline caps instead; without such a font those would show as empty boxes, so it is off by default.
 - **Tab switches:** the tab you switch to slides in from the right over three frames (120 ms). Remote terminals are not resized while it moves. On a slow link three redraws are three round trips: `transitions = false` turns it off.
 
+## When a connection fails
+
+vssh says why, not only that it failed. A popup shows the reason and the full error chain; the host's details keep the last failure, in red, until a connection to it succeeds.
+
+| Shown | What happened |
+|-------|---------------|
+| `DNS` Cannot resolve db.internal: … | the name lookup failed; the resolver's own words follow |
+| `TIMEOUT` Connection timed out after 10s (203.0.113.7:22) | nothing answered at that address |
+| `REFUSED` Connection refused by 203.0.113.7:22 — is sshd running? | the machine answered, nothing listens on the port |
+| `UNREACHABLE` Cannot reach 203.0.113.7:22: … | no route; the system's own words follow |
+| `AUTH` Wrong password / Public key rejected / No way to log in | which method the server refused; you are then asked for a password |
+| `HOST KEY` Host key mismatch … | the fingerprint the server sent, and the line of `known_hosts` it conflicts with |
+| `ERROR` … | anything else, shown word for word |
+
+Snippets run on several hosts and port forwards report failures with the same wording.
+
 ## Session logs and login scripts
 
 - **Log a session:** `Ctrl-a l` starts and stops a log in `~/.local/share/vssh/logs/<host>-<date>-<time>.log` (mode 0600). It holds everything the terminal shows, raw and unmasked, so passwords that are printed end up in it; read it with `less -R`. `log_sessions = true` in the config logs every session.

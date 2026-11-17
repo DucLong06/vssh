@@ -2,6 +2,7 @@
 //! the modules live here so integration tests can reach them.
 
 pub mod config;
+pub mod conn_err;
 pub mod proto;
 pub mod sftp;
 pub mod ssh;

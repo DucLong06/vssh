@@ -565,6 +565,18 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     let mut lines = vec![
         Line::styled(address(app, alias), Style::new().fg(th.text).bold()),
         Line::styled(format!("{dot} {state}"), Style::new().fg(colour)),
+    ];
+    // Why the last attempt failed, until one succeeds.
+    if let Some(fail) = app.fails.get(alias) {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("✗ {} ", fail.class.label(lang)),
+                Style::new().fg(RED).bold(),
+            ),
+            Span::styled(clean(&fail.message), dim),
+        ]));
+    }
+    lines.extend([
         Line::default(),
         section(t("CONNECTION", "KẾT NỐI")),
         row(t("Address", "Địa chỉ"), text(or(get("HostName"), alias))),
@@ -583,7 +595,7 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
                 t("(agent / default keys)", "(agent / khoá mặc định)"),
             )),
         ),
-    ];
+    ]);
     for key in ["ProxyJump", "ProxyCommand"] {
         if !get(key).is_empty() {
             let note = Span::styled("  not supported", Style::new().fg(th.error));

@@ -3,12 +3,12 @@
 pub mod forward;
 
 use std::borrow::Cow;
-use std::fmt;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::known_hosts::{known_host_keys_path, learn_known_hosts_path};
@@ -17,23 +17,12 @@ use russh::keys::{
     PublicKeyOrCertificate,
 };
 use russh::{Channel, ChannelMsg};
-use tokio::io::copy_bidirectional;
-use tokio::net::TcpStream;
+use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
+use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use crate::conn_err::Fail;
 use crate::store::ssh_config::SshConfig;
-
-/// Every offered method was refused; the caller may retry with a password.
-#[derive(Debug)]
-pub struct AuthFailed;
-
-impl fmt::Display for AuthFailed {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("authentication failed")
-    }
-}
-
-impl std::error::Error for AuthFailed {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
@@ -207,11 +196,13 @@ pub fn verify_host_key(host: &str, port: u16, key: &PublicKey, known_hosts: &Pat
         return Ok(());
     }
     if let Some((line, _)) = known.first() {
-        bail!(
-            "HOST KEY MISMATCH for {host}: the server's key is not the one on line {line} \
-             of {}. Refusing to connect; fix that file if the key really changed",
-            known_hosts.display()
-        );
+        return Err(Fail::HostKey {
+            host: host.to_string(),
+            fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
+            line: *line,
+            file: known_hosts.to_path_buf(),
+        }
+        .into());
     }
     learn_known_hosts_path(host, port, key, known_hosts)
         .with_context(|| format!("cannot write {}", known_hosts.display()))
@@ -243,31 +234,74 @@ fn host_key_algorithms(known: &[PublicKey]) -> Vec<Algorithm> {
     all
 }
 
-/// Connects and authenticates: agent, then key files, then the password.
-pub async fn connect(
+/// How long a TCP connect, and then the SSH handshake, may take.
+const PATIENCE: Duration = Duration::from_secs(10);
+
+/// Resolves the name and opens the TCP connection. The error says which of
+/// the two failed, and at which address.
+async fn dial(host: &str, port: u16) -> Result<TcpStream> {
+    let dns = || Fail::Dns {
+        host: host.to_string(),
+    };
+    let addrs = lookup_host((host, port))
+        .await
+        .map_err(|e| anyhow::Error::new(e).context(dns()))?;
+    // Every address is tried; the last failure is the one reported.
+    let mut last = anyhow::Error::new(dns());
+    for addr in addrs {
+        let at = addr.to_string();
+        last = match tokio::time::timeout(PATIENCE, TcpStream::connect(addr)).await {
+            Ok(Ok(sock)) => return Ok(sock),
+            Ok(Err(e)) if e.kind() == ErrorKind::ConnectionRefused => {
+                anyhow::Error::new(e).context(Fail::Refused { addr: at })
+            }
+            Ok(Err(e)) => anyhow::Error::new(e).context(Fail::Unreachable { addr: at }),
+            Err(_) => Fail::Timeout {
+                addr: at,
+                secs: PATIENCE.as_secs(),
+            }
+            .into(),
+        };
+    }
+    Err(last)
+}
+
+/// The SSH handshake over an open stream, host key check included.
+async fn handshake<S>(
     t: &Target,
-    password: Option<&str>,
+    stream: S,
     remote_fwd: Option<(String, u16)>,
-) -> Result<Handle<Client>> {
+) -> Result<Handle<Client>>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     let mut config = client::Config {
         keepalive_interval: Some(Duration::from_secs(30)),
-        nodelay: true,
         ..Default::default()
     };
     let known = known_host_keys_path(&t.host, t.port, known_hosts_path()).unwrap_or_default();
     let known: Vec<PublicKey> = known.into_iter().map(|(_, key)| key).collect();
     config.preferred.key = Cow::Owned(host_key_algorithms(&known));
-    let config = Arc::new(config);
     let handler = Client {
         host: t.host.clone(),
         port: t.port,
         remote_fwd,
     };
-    let connecting = client::connect(config, (t.host.as_str(), t.port), handler);
-    let mut h = tokio::time::timeout(Duration::from_secs(10), connecting)
+    let shaking = client::connect_stream(Arc::new(config), stream, handler);
+    let slow = |_| Fail::Timeout {
+        addr: format!("{}:{}", t.host, t.port),
+        secs: PATIENCE.as_secs(),
+    };
+    tokio::time::timeout(PATIENCE, shaking)
         .await
-        .map_err(|_| anyhow!("connection to {}:{} timed out", t.host, t.port))??;
+        .map_err(slow)?
+}
+
+/// Authenticates: agent, then key files, then the password. If all of it is
+/// refused the error says what was tried (`Fail::Auth`).
+async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Result<()> {
     let rsa_hash = h.best_supported_rsa_hash().await?.flatten();
+    let mut keys = 0;
 
     if let Ok(mut agent) = AgentClient::connect_env().await {
         let mut ids = agent.request_identities().await.unwrap_or_default();
@@ -285,11 +319,12 @@ pub async fn connect(
         });
         for id in ids {
             let key = id.public_key().into_owned();
+            keys += 1;
             let res = h
                 .authenticate_publickey_with(&t.user, key, rsa_hash, &mut agent)
                 .await;
             if res.is_ok_and(|r| r.success()) {
-                return Ok(h);
+                return Ok(());
             }
         }
     }
@@ -299,16 +334,37 @@ pub async fn connect(
             continue;
         };
         let key = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+        keys += 1;
         if h.authenticate_publickey(&t.user, key).await?.success() {
-            return Ok(h);
+            return Ok(());
         }
     }
     if let Some(pw) = password {
         if h.authenticate_password(&t.user, pw).await?.success() {
-            return Ok(h);
+            return Ok(());
         }
     }
-    Err(AuthFailed.into())
+    Err(Fail::Auth {
+        user: t.user.clone(),
+        host: t.host.clone(),
+        keys,
+        password: password.is_some(),
+    }
+    .into())
+}
+
+/// Connects and authenticates. A failure carries a `Fail` saying which step
+/// it was: name lookup, TCP, host key, or login.
+pub async fn connect(
+    t: &Target,
+    password: Option<&str>,
+    remote_fwd: Option<(String, u16)>,
+) -> Result<Handle<Client>> {
+    let sock = dial(&t.host, t.port).await?;
+    let _ = sock.set_nodelay(true);
+    let mut h = handshake(t, sock, remote_fwd).await?;
+    login(&mut h, t, password).await?;
+    Ok(h)
 }
 
 pub enum SessionCmd {

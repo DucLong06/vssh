@@ -93,6 +93,22 @@ Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi
 - **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
 - **Chuyển tab:** tab được chuyển tới trượt vào từ bên phải trong ba khung hình (120 ms). Terminal từ xa không bị đổi kích thước trong lúc trượt. Trên đường truyền chậm, ba lần vẽ lại là ba lượt gửi nhận: đặt `transitions = false` để tắt.
 
+## Khi kết nối thất bại
+
+vssh cho biết vì sao, không chỉ báo là thất bại. Một hộp thoại hiện lý do cùng toàn bộ chuỗi lỗi; phần chi tiết của máy chủ giữ lỗi gần nhất, màu đỏ, cho tới khi kết nối được.
+
+| Hiển thị | Chuyện gì đã xảy ra |
+|----------|---------------------|
+| `DNS` Không phân giải được tên db.internal: … | tra tên thất bại; theo sau là nguyên văn lỗi của bộ phân giải |
+| `HẾT GIỜ` Hết thời gian kết nối sau 10 giây (203.0.113.7:22) | không có gì trả lời ở địa chỉ đó |
+| `BỊ TỪ CHỐI` 203.0.113.7:22 từ chối kết nối — sshd có đang chạy không? | máy có trả lời, nhưng không có gì nghe ở cổng đó |
+| `KHÔNG TỚI ĐƯỢC` Không tới được 203.0.113.7:22: … | không có đường đi; theo sau là nguyên văn lỗi của hệ thống |
+| `XÁC THỰC` Sai mật khẩu / Khoá công khai bị từ chối / Không có cách đăng nhập | máy chủ từ chối cách nào; sau đó bạn được hỏi mật khẩu |
+| `KHOÁ MÁY CHỦ` Khoá máy chủ … không khớp | dấu vân tay máy chủ gửi, và dòng trong `known_hosts` mà nó xung đột |
+| `LỖI` … | mọi lỗi khác, hiện nguyên văn |
+
+Snippet chạy trên nhiều máy và chuyển tiếp cổng báo lỗi bằng cùng cách diễn đạt.
+
 ## Ghi log phiên và script đăng nhập
 
 - **Ghi log một phiên:** `Ctrl-a l` bật và tắt việc ghi vào `~/.local/share/vssh/logs/<máy>-<ngày>-<giờ>.log` (quyền 0600). File chứa mọi thứ terminal hiển thị, nguyên văn và không che gì, nên mật khẩu nào bị in ra cũng nằm trong đó; đọc bằng `less -R`. Đặt `log_sessions = true` trong file cấu hình để ghi mọi phiên.
