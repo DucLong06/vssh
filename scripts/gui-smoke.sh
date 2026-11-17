@@ -679,6 +679,7 @@ fi
 key slash
 xdotool type --window "$win" shell-02
 shot target/smoke/batch-filter.png
+key Return
 key Escape
 # The same in Vietnamese. The dialog is modal: the language goes first.
 language
