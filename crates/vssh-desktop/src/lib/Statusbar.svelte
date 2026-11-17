@@ -18,6 +18,8 @@
     broadcasting?: number
     onsnippets: () => void
     onpalette: () => void
+    /** The session in front is a quick connect: keeps it as a host. */
+    onsave?: () => void
   }
   let {
     hosts,
@@ -30,6 +32,7 @@
     broadcasting = 0,
     onsnippets,
     onpalette,
+    onsave,
   }: Props = $props()
 
   const button = 'cursor-pointer rounded px-1.5 hover:bg-selection'
@@ -79,8 +82,13 @@
       <kbd class="text-magenta">x</kbd>
       {t('run')} ·
       <kbd class="text-magenta">L</kbd>
-      {t('forwards')}
+      {t('forwards')} ·
+      <kbd class="text-magenta">e</kbd>
+      {t('edit')}
     </span>
+  {/if}
+  {#if onsave}
+    <button type="button" onclick={onsave} class="{button} shrink-0 text-cyan">{t('save_this_host')}</button>
   {/if}
   <button type="button" onclick={onpalette} aria-label={t('palette')} class="{button} ml-auto shrink-0 text-magenta">
     Ctrl-K

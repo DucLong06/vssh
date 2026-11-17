@@ -305,3 +305,143 @@ fn a_quick_connect_is_saved_as_a_host_and_its_password_only_in_the_vault() {
     let vault = Vault::open(&home.join("data/vault"), "master").unwrap();
     assert_eq!(vault.get("db.example"), Some("s3cret"));
 }
+
+#[test]
+fn the_window_form_adds_the_jump_host_the_pin_and_the_vault_password() {
+    let home = home("hosts-form");
+    let (_app, window) = window(&home, Fake::silent());
+    let read = |alias: &str| call(&window, "hosts_form", json!({ "alias": alias }));
+    let update = |alias: &str, form: Value| {
+        call(
+            &window,
+            "hosts_update",
+            json!({ "alias": alias, "form": form }),
+        )
+    };
+
+    // What the host's own block says, and nothing a pattern adds to it.
+    assert_eq!(
+        read("web-01"),
+        Ok(json!({
+            "alias": "web-01", "hostname": "10.0.0.5", "user": "deploy", "port": 2222,
+            "identity_file": "", "proxy_jump": "", "grp": "", "tags": "", "notes": "",
+            "pinned": false,
+        }))
+    );
+    assert_eq!(read("nobody"), Err(other("no host named \"nobody\"")));
+
+    // A password needs the vault open, before anything is written.
+    let mut form = read("web-01").unwrap();
+    form["proxy_jump"] = json!("bare");
+    form["pinned"] = json!(true);
+    form["password"] = json!("hunter2");
+    let before = fs::read_to_string(home.join("config")).unwrap();
+    assert_eq!(
+        update("web-01", form.clone()),
+        Err(other("the vault is locked"))
+    );
+    assert_eq!(fs::read_to_string(home.join("config")).unwrap(), before);
+
+    call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
+    let host = update("web-01", form).unwrap();
+    assert_eq!(host["meta"]["pinned"], true);
+    let config = fs::read_to_string(home.join("config")).unwrap();
+    assert!(config.contains("    ProxyJump bare\n"), "{config}");
+    assert!(!config.contains("hunter2"));
+    let stored = || call(&window, "vault_hosts", json!({})).unwrap();
+    assert_eq!(stored(), json!(["web-01"]));
+    // What was saved is what the form reads back, the password apart.
+    let form = read("web-01").unwrap();
+    assert_eq!(
+        (&form["proxy_jump"], &form["pinned"]),
+        (&json!("bare"), &json!(true))
+    );
+    assert_eq!(form.get("password"), None);
+
+    // A form that says nothing of them leaves all three as they are; the
+    // password follows the host to its new name.
+    let mut renamed = form.clone();
+    renamed["alias"] = json!("web-09");
+    for key in ["proxy_jump", "pinned"] {
+        renamed.as_object_mut().unwrap().remove(key);
+    }
+    let host = update("web-01", renamed).unwrap();
+    assert_eq!(host["meta"]["pinned"], true);
+    assert_eq!(read("web-09").unwrap()["proxy_jump"], "bare");
+    assert_eq!(stored(), json!(["web-09"]));
+    let vault = || Vault::open(&home.join("data/vault"), "master").unwrap();
+    assert_eq!(vault().get("web-09"), Some("hunter2"));
+
+    // Emptied: the jump host goes, the pin, and the stored password.
+    let mut plain = read("web-09").unwrap();
+    plain["proxy_jump"] = json!("");
+    plain["pinned"] = json!(false);
+    plain["password"] = json!("");
+    let host = update("web-09", plain).unwrap();
+    assert_eq!(host["meta"]["pinned"], false);
+    let config = fs::read_to_string(home.join("config")).unwrap();
+    assert!(!config.contains("ProxyJump"), "{config}");
+    assert_eq!(stored(), json!([]));
+
+    // A deleted host's password does not wait for the next host of that name.
+    let mut again = read("bare").unwrap();
+    again["password"] = json!("s3cret");
+    update("bare", again).unwrap();
+    assert_eq!(vault().get("bare"), Some("s3cret"));
+    call(&window, "hosts_delete", json!({ "alias": "bare" })).unwrap();
+    assert_eq!(vault().get("bare"), None);
+}
+
+#[test]
+fn an_import_is_previewed_and_takes_only_the_hosts_chosen() {
+    let home = home("hosts-preview");
+    let theirs = home.join("their_config");
+    fs::write(
+        &theirs,
+        "Host bastion\n  HostName 203.0.113.1\n  User jump\n\n\
+         Host inner\n  HostName 10.0.0.5\n  ProxyJump bastion\n\n\
+         Host web-01\n  HostName elsewhere\n\n\
+         Host *\n  User ops\n  Port 2200\n",
+    )
+    .unwrap();
+    let (_app, window) = window(&home, Fake::silent());
+    let preview = || call(&window, "hosts_import_preview", json!({ "path": theirs }));
+    let meta = json!({
+        "grp": "", "tags": "", "notes": "", "pinned": false, "last_connected": 0, "connects": 0,
+    });
+
+    // Those we have not: as they are reached there, patterns and all.
+    let before = fs::read_to_string(home.join("config")).unwrap();
+    assert_eq!(
+        preview(),
+        Ok(json!([
+            { "alias": "bastion", "hostname": "203.0.113.1", "user": "jump", "port": 2200, "meta": meta },
+            { "alias": "inner", "hostname": "10.0.0.5", "user": "ops", "port": 2200, "meta": meta },
+        ]))
+    );
+    assert_eq!(fs::read_to_string(home.join("config")).unwrap(), before);
+
+    // Only what was ticked comes over, and a host we have is never a choice.
+    let only = json!({ "path": theirs, "only": ["inner", "web-01"] });
+    assert_eq!(
+        call(&window, "hosts_import_ssh_config", only),
+        Ok(json!(["inner"]))
+    );
+    let hosts = call(&window, "list_hosts", json!({})).unwrap();
+    assert_eq!(hosts[0]["hostname"], "10.0.0.5");
+    assert_eq!(hosts.as_array().unwrap().len(), 3);
+    assert_eq!(preview().unwrap().as_array().unwrap().len(), 1);
+
+    let err = call(
+        &window,
+        "hosts_import_preview",
+        json!({ "path": "~/no/such/config" }),
+    )
+    .unwrap_err();
+    let words = err["chain"][0].as_str().unwrap();
+    // The `~` is the user's home, not a directory of that name.
+    assert!(
+        words.starts_with("cannot read /") && !words.contains('~'),
+        "{err}"
+    );
+}

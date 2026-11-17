@@ -7,6 +7,15 @@ export function address(host: Host): string {
   return host.hostname ? `${user}${host.hostname}${port}` : ''
 }
 
+/** What the host form opens with for a quick connect's `[user@]host[:port]`: the host is its own alias. */
+export function fromTarget(target: string) {
+  const at = target.lastIndexOf('@')
+  const rest = target.slice(at + 1)
+  // An IPv6 address wears brackets where a port follows; bare, all its colons are its own.
+  const [, host, port] = /^\[(.*)\](?::(\d+))?$/.exec(rest) ?? /^([^:]*)(?::(\d+))?$/.exec(rest) ?? [, rest]
+  return { alias: host, hostname: host, user: at < 0 ? '' : target.slice(0, at), port: port ? Number(port) : null }
+}
+
 /** A host's tags and its group, as the TUI counts them: one namespace. */
 export function tagsOf(host: Host): string[] {
   return [...host.meta.tags.split(/[ ,]/), host.meta.grp].filter(Boolean)

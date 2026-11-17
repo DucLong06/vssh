@@ -26,6 +26,27 @@ export type Host = {
   meta: Meta
 }
 
+/**
+ * The host form: what a host's own block of the config says, and its
+ * metadata. Text left empty is taken out of the host.
+ */
+export type HostForm = {
+  alias: string
+  hostname: string
+  user: string
+  port: number | null
+  identity_file: string
+  /** The alias of the host it is reached through. */
+  proxy_jump: string
+  grp: string
+  /** Space separated. */
+  tags: string
+  notes: string
+  pinned: boolean
+  /** Only ever sent: for the unlocked vault. Empty takes the stored one out; left out, it stays. */
+  password?: string
+}
+
 export type Stats = {
   /** 1-minute load per core, in per cent. */
   cpu: number | null
@@ -104,6 +125,19 @@ export type ConnError = { class: ErrorClass; fail: Fail | null; chain: string[] 
 
 /** A failure put into words. */
 export type Shown = { class: ErrorClass; label: string; message: string; chain: string }
+
+/** `none`: there is no vault file yet. Unlocked, it stays so until the app is closed. */
+export type VaultState = 'none' | 'locked' | 'unlocked'
+
+/**
+ * What `key-setup-step` carries. `backup` (of sshd_config) comes before
+ * `install`; `restore` only after a step failed once the host was changed.
+ */
+export type KeyStep = {
+  host: string
+  step: 'generate' | 'backup' | 'install' | 'verify' | 'disable' | 'restore'
+  state: 'running' | 'done' | 'failed'
+}
 
 /** What `pty-state:<id>` says about a session's shell. */
 export type PtyState =
@@ -187,6 +221,33 @@ export const api = {
   /** Stops it if it runs, and takes it out of the config. */
   forwardKill: (host: string, kind: Forward['kind'], value: string) =>
     invoke<void>('forward_kill', { host, kind, value }),
+  /** A host's form as it stands. */
+  hostsForm: (alias: string) => invoke<HostForm>('hosts_form', { alias }),
+  /** Rejects for an alias that is taken or is not one word, and for a password while the vault is locked. */
+  hostsAdd: (form: HostForm) => invoke<Host>('hosts_add', { form }),
+  /** Saves the form over the host `alias`; another alias in the form renames it. */
+  hostsUpdate: (alias: string, form: HostForm) => invoke<Host>('hosts_update', { alias, form }),
+  /** With its metadata, its snippets, its forwards and its password in the unlocked vault. */
+  hostsDelete: (alias: string) => invoke<void>('hosts_delete', { alias }),
+  /** The hosts of another ssh config (`null`: `~/.ssh/config`) that the app does not have yet. */
+  hostsImportPreview: (path: string | null) => invoke<Host[]>('hosts_import_preview', { path }),
+  /** Takes those of them over that `only` names, and resolves to the aliases added. */
+  hostsImport: (path: string | null, only: string[]) =>
+    invoke<string[]>('hosts_import_ssh_config', { path, only }),
+  /**
+   * A new key for the host, proven to open it, then its password login is
+   * turned off. Resolves to the private key's path; `key-setup-step` carries
+   * a `KeyStep` for each step meanwhile: listen first.
+   */
+  sshKeySetup: (host: string) => invoke<string>('ssh_key_setup', { host }),
+  vaultState: () => invoke<VaultState>('vault_state'),
+  /** Unlocks the vault; where there is none, makes it with this passphrase. */
+  vaultUnlock: (passphrase: string) => invoke<void>('vault_unlock', { passphrase }),
+  /** The hosts the unlocked vault has a password for; none while it is locked. */
+  vaultHosts: () => invoke<string[]>('vault_hosts'),
+  vaultPassChange: (old: string, next: string) => invoke<void>('vault_pass_change', { old, new: next }),
+  /** A sealed copy of the unlocked vault, in a file that must not exist yet. */
+  vaultExport: (path: string) => invoke<void>('vault_export', { path }),
   resolveConnError: (error: ConnError, lang: Lang) =>
     invoke<Shown>('resolve_conn_error', { error, lang }),
 }

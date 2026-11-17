@@ -69,7 +69,9 @@ fn an_unlocked_vault_gives_each_host_its_password() {
         std::mem::take(&mut *net.asked.lock().unwrap())
     };
 
-    // Locked: keys and the agent only.
+    let stored = || call(&window, "vault_hosts", json!({}));
+    // Locked: keys and the agent only, and nothing is said of what it holds.
+    assert_eq!(stored(), Ok(json!([])));
     assert_eq!(
         ask(),
         [
@@ -83,6 +85,7 @@ fn an_unlocked_vault_gives_each_host_its_password() {
         ]
     );
     call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
+    assert_eq!(stored(), Ok(json!(["web-01"])));
     let asked = ask();
     assert_eq!(asked[0], "web-01 = deploy@10.0.0.5:2222 (hunter2)");
     // A host the vault has nothing for gets nothing.

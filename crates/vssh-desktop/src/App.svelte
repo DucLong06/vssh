@@ -1,10 +1,24 @@
 <script lang="ts">
   import { onMount, tick as rendered } from 'svelte'
-  import { api, explain, type ConnError, type Host, type PtyState, type Shown, type Snippet } from './lib/api'
+  import {
+    api,
+    explain,
+    type ConnError,
+    type Host,
+    type HostForm as Form,
+    type PtyState,
+    type Shown,
+    type Snippet,
+    type VaultState,
+  } from './lib/api'
   import Dashboard from './lib/Dashboard.svelte'
   import Failure from './lib/Failure.svelte'
   import Files from './lib/Files.svelte'
   import Forwards from './lib/Forwards.svelte'
+  import HostDelete from './lib/HostDelete.svelte'
+  import HostForm from './lib/HostForm.svelte'
+  import KeySetup from './lib/KeySetup.svelte'
+  import { fromTarget } from './lib/hosts'
   import { i18n, t } from './lib/i18n.svelte'
   import { poll, relabel } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
@@ -15,6 +29,7 @@
   import Statusbar from './lib/Statusbar.svelte'
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
+  import Vault from './lib/Vault.svelte'
 
   /** How often the hosts are asked for their figures, and every how many rounds pinged. */
   const EVERY = 5000
@@ -22,8 +37,8 @@
 
   let hosts = $state<Host[]>([])
   let snippets = $state<Snippet[]>([])
-  /** A tab's session. `met`: its shell came up since it was last started. */
-  type Session = Tab & { met: boolean; error: ConnError | null; why: Shown | null }
+  /** A tab's session. `met`: its shell came up since it was last started. `quick`: on no host of the config. */
+  type Session = Tab & { met: boolean; error: ConnError | null; why: Shown | null; quick: boolean }
   const fresh = { state: 'connecting', busy: null, met: false, error: null, why: null } as const
   let sessions = $state<Session[]>([])
   /** The session whose failure to connect is in a dialog. */
@@ -45,7 +60,17 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  let modal = $state<'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | null>(null)
+  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys'
+  let modal = $state<Dialog | null>(null)
+  /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
+  let editing = $state<string>()
+  let start = $state<Partial<Form>>()
+  /** The quick connect that the form is to keep as a host. */
+  let keeping: Session | undefined
+  /** Unlocked, the vault stays so until the app is closed: the shell holds it, and nothing of it is written down. */
+  let vault = $state<VaultState>('none')
+  /** The vault's dialog is the question the app opens with, not the manager someone asked for. */
+  let greeting = $state(false)
   /** The host whose forwards are open. */
   let forwarding = $state('')
   /** The command the batch dialog runs, and where. */
@@ -79,6 +104,12 @@
     }
     void tick()
     api.listSnippets().then((list) => (snippets = list), fail)
+    // A vault that is there is asked to be opened first thing; it may be left shut.
+    api.vaultState().then((now) => {
+      vault = now
+      greeting = now === 'locked' && modal === null
+      if (greeting) modal = 'vault'
+    }, fail)
     const timer = setInterval(tick, EVERY)
     return () => clearInterval(timer)
   })
@@ -159,8 +190,8 @@
     }
   }
 
-  function add(id: number, title: string) {
-    sessions.push({ id, title, broadcast: false, ...fresh })
+  function add(id: number, title: string, quick = false) {
+    sessions.push({ id, title, broadcast: false, quick, ...fresh })
     active = id
   }
 
@@ -176,7 +207,7 @@
   /** Rejects with the refusal in words, for the form to show. */
   async function connect(target: string) {
     try {
-      add(await api.quickConnect(target), target)
+      add(await api.quickConnect(target), target, true)
       modal = null
     } catch (error) {
       throw await explain(error, i18n.lang)
@@ -204,6 +235,32 @@
     }
     // `tabs` is the tabs that are left now.
     if (active === id) active = tabs[at] ?? tabs[at - 1] ?? null
+  }
+
+  /** Opens the host form: on a host, or empty, or with what a quick connect was typed as. */
+  function edit(alias?: string, from?: Session) {
+    editing = alias
+    start = from && fromTarget(from.title)
+    keeping = from
+    modal = 'host'
+  }
+
+  /** The hosts changed here and now: read at once, and this one is the selected one. */
+  async function changed(alias?: string) {
+    modal = null
+    // The quick connect is a host's session from now on.
+    if (keeping) keeping.quick = false
+    await reload()
+    if (alias) selected = alias
+  }
+
+  /** A host is gone: so are its sessions and its files, as the tabs of a host that is not there. */
+  async function deleted(alias: string) {
+    for (const session of sessions.filter((session) => !session.quick && session.title === alias)) close(session.id)
+    for (const view of files.filter((view) => view.host === alias)) close(view.id)
+    marked = marked.filter((name) => name !== alias)
+    if (selected === alias) selected = null
+    await changed()
   }
 
   /** What was typed into a session's terminal. */
@@ -252,6 +309,8 @@
     {sessions}
     {active}
     onsession={(id) => (active = id)}
+    {vault}
+    onvault={() => (modal = 'vault')}
   />
 
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
@@ -281,6 +340,12 @@
         modal = 'batch'
       }}
       onpalette={() => (modal = 'palette')}
+      onadd={() => edit()}
+      onedit={edit}
+      ondelete={(alias) => {
+        editing = alias
+        modal = 'delete'
+      }}
       bind:marked
     />
     {#each sessions as session (session.id)}
@@ -312,6 +377,7 @@
     {leader}
     onsnippets={() => (modal = 'snippets')}
     onpalette={() => (modal = 'palette')}
+    onsave={front?.quick ? () => edit(undefined, front) : undefined}
   />
 </div>
 
@@ -340,7 +406,39 @@
     }}
     onquick={() => (modal = 'quick')}
     onsnippets={() => (modal = 'snippets')}
+    onadd={() => edit()}
+    onvault={() => (modal = 'vault')}
     onclose={() => (modal = null)}
+  />
+{:else if modal === 'host'}
+  <!-- Keyed: the form of another host is another form. -->
+  {#key editing}
+    <HostForm
+      {hosts}
+      alias={editing}
+      {start}
+      {vault}
+      onsaved={(host) => changed(host.alias)}
+      ondelete={() => (modal = 'delete')}
+      onkeys={() => (modal = 'keys')}
+      onimported={(aliases) => changed(aliases[0])}
+      onclose={() => (modal = null)}
+    />
+  {/key}
+{:else if modal === 'delete' && editing}
+  <HostDelete alias={editing} ondeleted={deleted} onclose={() => (modal = null)} />
+{:else if modal === 'keys' && editing}
+  <!-- The shell names the key in the host's block: the hosts are read again. -->
+  <KeySetup host={editing} onclose={() => changed()} />
+{:else if modal === 'vault'}
+  <Vault
+    bind:vault
+    hosts={hosts.length}
+    once={greeting}
+    onclose={() => {
+      modal = null
+      greeting = false
+    }}
   />
 {:else if modal === 'quick'}
   <QuickConnect onconnect={connect} onclose={() => (modal = null)} />

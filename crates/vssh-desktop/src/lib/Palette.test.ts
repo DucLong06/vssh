@@ -8,7 +8,7 @@ import Palette from './Palette.svelte'
 
 const hosts: Host[] = fixture
 
-function open(over = {}) {
+function open<Over extends object>(over = {} as Over) {
   const props = { hosts, onhost: vi.fn(), onquick: vi.fn(), onsnippets: vi.fn(), onclose: vi.fn(), ...over }
   render(Palette, props)
   return { ...props, user: userEvent.setup(), input: screen.getByRole('combobox') }
@@ -116,4 +116,16 @@ test('closing the dialog tells the app', () => {
   const { onclose } = open()
   screen.getByRole<HTMLDialogElement>('dialog').close()
   expect(onclose).toHaveBeenCalledOnce()
+})
+
+test('the vault and a new host are actions too, where the window has them', async () => {
+  const { user, input, onvault, onadd } = open({ onvault: vi.fn(), onadd: vi.fn() })
+  expect(options().slice(0, 4)).toEqual(['Quick connect', 'Snippets', 'Add host', 'Vault'])
+  await user.type(input, 'vault{Enter}')
+  expect(onvault).toHaveBeenCalledOnce()
+  await user.clear(input)
+  await user.type(input, 'add host{Enter}')
+  expect(onadd).toHaveBeenCalledOnce()
+  setLang('vi')
+  expect(await screen.findByRole('option', { name: /Thêm máy chủ/ })).toBeInTheDocument()
 })
