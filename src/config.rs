@@ -59,7 +59,7 @@ pub enum Orientation {
     Portrait,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub theme: Theme,
@@ -76,6 +76,24 @@ pub struct Config {
     /// TCP-probe every host at startup. Off by default: it touches every
     /// machine in the ssh config on each launch.
     pub ping_on_start: bool,
+    /// Load, memory and disk of the focused host in the status line. On by
+    /// default; off, no session opens a second channel to ask for them.
+    pub status_stats: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            keys: Keys::default(),
+            lang: Lang::default(),
+            layout: Orientation::default(),
+            log_sessions: false,
+            exec: HashMap::new(),
+            ping_on_start: false,
+            status_stats: true,
+        }
+    }
 }
 
 fn color<'de, D: Deserializer<'de>>(d: D) -> Result<Color, D::Error> {
@@ -264,6 +282,14 @@ mod tests {
         assert_eq!(c.exec["db.prod"], "psql");
         let none: Config = toml::from_str("").unwrap();
         assert!(!none.log_sessions && none.exec.is_empty());
+    }
+
+    #[test]
+    fn status_bar_switches_default_to_on() {
+        let none: Config = toml::from_str("").unwrap();
+        assert!(none.status_stats);
+        let off: Config = toml::from_str("status_stats = false").unwrap();
+        assert!(!off.status_stats);
     }
 
     #[test]

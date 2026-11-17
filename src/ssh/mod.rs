@@ -217,6 +217,12 @@ pub fn verify_host_key(host: &str, port: u16, key: &PublicKey, known_hosts: &Pat
         .with_context(|| format!("cannot write {}", known_hosts.display()))
 }
 
+/// True if `known_hosts` already has a key for this target: it has been
+/// connected to before, so talking to it again trusts nothing new.
+pub fn is_known(t: &Target) -> bool {
+    known_host_keys_path(&t.host, t.port, known_hosts_path()).is_ok_and(|known| !known.is_empty())
+}
+
 /// Host key algorithms to offer, the types already on record first (as
 /// OpenSSH does), so a known host proves the key we know.
 fn host_key_algorithms(known: &[PublicKey]) -> Vec<Algorithm> {
@@ -330,9 +336,10 @@ impl Login {
     }
 }
 
-/// Runs an interactive session on a PTY until either side closes it.
+/// Runs an interactive session on a PTY until either side closes it. The
+/// connection is only borrowed, so other channels can run next to the shell.
 pub async fn shell(
-    h: Handle<Client>,
+    h: &Handle<Client>,
     (cols, rows): (u16, u16),
     login: Login,
     mut rx: UnboundedReceiver<SessionCmd>,

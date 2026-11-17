@@ -77,6 +77,20 @@ Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng đ�
 - **Phát (broadcast):** `Alt-b` (hoặc `Ctrl-a b`). Khi bật, những gì bạn gõ hay dán sẽ được gửi tới *mọi* phiên đang kết nối, kể cả phiên không hiện trên màn hình. Thanh trạng thái chuyển sang màu cam và cho biết có bao nhiêu phiên đang nhận, các khung đó có viền cam. Nhấn `Alt-b` lần nữa để tắt.
 - **Snippet:** `Ctrl-a s` gõ một snippet đã lưu vào phiên, hoặc vào mọi phiên khi đang phát.
 
+## Thanh trạng thái
+
+Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi tới thẻ, nhóm và độ trễ. Ở cửa sổ rộng, nó còn cho biết tình trạng của máy chủ:
+
+```
+ TERMINAL  single          web-01 : khung 1/1          CPU ▂ 23% · RAM ▂ 4.2/16G · / ▅ 61%   web  prod  12 ms
+```
+
+- **CPU** là tải trung bình 1 phút chia cho số nhân (trên 100% nghĩa là việc đang phải xếp hàng), **RAM** là bộ nhớ đã dùng / tổng, **/** là mức đầy của phân vùng gốc. Mỗi số chuyển sang vàng rồi đỏ: CPU trên 50% / 80%, bộ nhớ trên 70% / 85%, đĩa trên 80% / 90%.
+- **Trong một phiên**, số liệu được đọc mỗi 5 giây qua một kênh thứ hai của chính kết nối đang mở: không đăng nhập thêm lần nào. Hỗ trợ máy chủ Linux (`/proc`) và macOS (`uptime`, `vm_stat`); máy không trả lời thì không hiện gì.
+- **Ở danh sách máy chủ**, dừng con trỏ trên một máy trong giây lát thì máy đó được hỏi một lần. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`), và chỉ dùng agent hoặc file khoá: mật khẩu trong kho không bao giờ được gửi cho việc này. Máy đang có phiên mở thì dùng số liệu của phiên đó.
+- **Khi thiếu chỗ:** bỏ thanh nhỏ trước, rồi tới đĩa, rồi bộ nhớ. Màn hình dọc và cửa sổ nhỏ chỉ giữ chế độ và máy chủ.
+- `status_stats = false` trong file cấu hình sẽ tắt toàn bộ.
+
 ## Ghi log phiên và script đăng nhập
 
 - **Ghi log một phiên:** `Ctrl-a l` bật và tắt việc ghi vào `~/.local/share/vssh/logs/<máy>-<ngày>-<giờ>.log` (quyền 0600). File chứa mọi thứ terminal hiển thị, nguyên văn và không che gì, nên mật khẩu nào bị in ra cũng nằm trong đó; đọc bằng `less -R`. Đặt `log_sessions = true` trong file cấu hình để ghi mọi phiên.
@@ -184,6 +198,7 @@ Chuyển tiếp cổng được gõ giống cờ của `ssh`: `L 8080 localhost:
 lang = "vi"             # "vi": gợi ý phím, menu và trợ giúp bằng tiếng Việt; mặc định "en"
 ping_on_start = false   # kiểm tra mọi máy chủ khi khởi động
 log_sessions = false    # ghi log mọi phiên ngay từ đầu
+status_stats = true     # tải, bộ nhớ và đĩa của máy đang chọn trên thanh trạng thái
 
 [exec]                  # script đăng nhập: được gõ vào shell sau khi đăng nhập
 web-01 = "cd /srv/app && git status"

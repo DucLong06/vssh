@@ -78,6 +78,20 @@ A plain `S` cannot be the toggle while the cursor is in a text field, because it
 - **Broadcast:** `Alt-b` (or `Ctrl-a b`). While it is on, what you type or paste goes to *every* connected session, including ones not on screen. The status line turns orange and shows how many sessions are listening, and their panes get an orange border. Press `Alt-b` again to stop.
 - **Snippets:** `Ctrl-a s` types a saved snippet into the session, or into all of them while broadcasting.
 
+## Status bar
+
+The bottom line shows the mode, the focused host and pane, then its tags, group and latency. In a wide window it also shows how the server is doing:
+
+```
+ TERMINAL  single          web-01 : pane 1/1          CPU ▂ 23% · MEM ▂ 4.2/16G · / ▅ 61%   web  prod  12 ms
+```
+
+- **CPU** is the 1-minute load average per core (over 100% means work is queueing), **MEM** is used / total memory, **/** is how full the root file system is. Each turns yellow, then red: CPU above 50% / 80%, memory above 70% / 85%, disk above 80% / 90%.
+- **In a session** the numbers are read every 5 seconds over a second channel of the connection that is already open: no extra login. Linux servers (`/proc`) and macOS servers (`uptime`, `vm_stat`) are understood; a host that does not answer shows nothing.
+- **On the host list**, resting on a host for a moment asks it once. Only a host you have connected to before (its key is in `known_hosts`) is asked, and only with your agent or key files: a vault password is never sent for this. A host with a session open uses that session's numbers.
+- **Little room:** the bars go first, then disk, then memory. Portrait and small windows keep to mode and host.
+- `status_stats = false` in the config turns all of it off.
+
 ## Session logs and login scripts
 
 - **Log a session:** `Ctrl-a l` starts and stops a log in `~/.local/share/vssh/logs/<host>-<date>-<time>.log` (mode 0600). It holds everything the terminal shows, raw and unmasked, so passwords that are printed end up in it; read it with `less -R`. `log_sessions = true` in the config logs every session.
@@ -185,6 +199,7 @@ A forward is typed like the `ssh` flags: `L 8080 localhost:80`, `R 9000 localhos
 lang = "en"             # "vi" for Vietnamese key hints, menus and help
 ping_on_start = false   # check every host at launch
 log_sessions = false    # log every session from the start
+status_stats = true     # load, memory and disk of the focused host in the status bar
 
 [exec]                  # login scripts: typed into the shell after login
 web-01 = "cd /srv/app && git status"

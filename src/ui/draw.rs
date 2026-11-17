@@ -15,6 +15,7 @@ use ratatui::Frame;
 use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
 use super::panes::Shape;
+use super::stats::Level;
 use super::{clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Tab};
 use crate::config::{Lang, Theme};
 use crate::ssh::SessionCmd;
@@ -152,6 +153,7 @@ const GREEN: Color = Color::Rgb(158, 206, 106);
 const TEAL: Color = Color::Rgb(26, 188, 156);
 const YELLOW: Color = Color::Rgb(224, 175, 104);
 const MAGENTA: Color = Color::Rgb(187, 154, 247);
+const RED: Color = Color::Rgb(247, 118, 142);
 /// Also the border of the panes that receive broadcast input.
 const BROADCAST: Color = Color::Rgb(255, 158, 100);
 /// Text on the coloured segments.
@@ -1035,13 +1037,14 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     }
 
     let mut right = vec![];
+    let mut tail = vec![];
     if let Some(meta) = meta {
         let all: Vec<&str> = tags(meta).collect();
         if !all.is_empty() {
-            right.push(Span::styled(format!("{} ", all.join(" ")), plain));
+            tail.push(Span::styled(format!("{} ", all.join(" ")), plain));
         }
         if !meta.grp.is_empty() {
-            right.push(Span::styled(format!(" {} ", meta.grp), section));
+            tail.push(Span::styled(format!(" {} ", meta.grp), section));
         }
     }
     let reach = match app
@@ -1053,7 +1056,30 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         Some(None) => lang.pick("down", "mất kết nối").to_string(),
         None => "—".to_string(),
     };
-    right.push(Span::styled(format!(" {reach} "), badge));
+    tail.push(Span::styled(format!(" {reach} "), badge));
+
+    // Server metrics, in what is free between the centred text and the tags:
+    // they never push anything else off the line.
+    let free = usize::from(area.width).saturating_sub(middle.chars().count()) / 2;
+    let taken: usize = tail.iter().map(Span::width).sum();
+    let room = free.saturating_sub(taken + 4);
+    let mem = lang.pick("MEM", "RAM");
+    let stats = app.stats.get(&alias);
+    let parts = stats.map(|s| s.compact(mem, room, app.shape));
+    for (i, (label, value, level)) in parts.unwrap_or_default().into_iter().enumerate() {
+        let colour = match level {
+            Level::Ok => GREEN,
+            Level::Warn => YELLOW,
+            Level::Crit => RED,
+        };
+        let lead = if i == 0 { "" } else { " · " };
+        right.push(Span::styled(format!("{lead}{label} "), plain));
+        right.push(Span::styled(value, plain.fg(colour)));
+    }
+    if !right.is_empty() {
+        right.push(Span::styled("  ", plain));
+    }
+    right.extend(tail);
 
     f.render_widget(
         Line::styled(middle, plain).alignment(Alignment::Center),

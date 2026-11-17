@@ -3,6 +3,7 @@
 mod draw;
 mod files;
 mod panes;
+mod stats;
 mod term;
 
 use std::collections::{BTreeSet, HashMap};
@@ -36,6 +37,7 @@ use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
 use panes::{Layout, Shape};
+use stats::Stats;
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -54,6 +56,8 @@ pub enum Event {
     Forward(String, Result<bool, String>),
     /// Host alias and command output.
     Snippet(String, String),
+    /// Tab title or host alias and its metrics; `None` = it stopped answering.
+    Stats(String, Option<Stats>),
 }
 
 impl Event {
@@ -191,6 +195,11 @@ pub struct App {
     sub_sel: usize,
     marked: BTreeSet<String>,
     reach: HashMap<String, Option<u128>>,
+    /// Latest server metrics, by tab title or host alias.
+    stats: HashMap<String, Stats>,
+    /// The host-list selection whose metrics were last asked for, and the
+    /// task asking; replaced, and the task aborted, when the selection moves.
+    probe: (Option<String>, Option<JoinHandle<()>>),
     /// Running forwards by key, with whether they are listening yet.
     fwds: HashMap<String, (JoinHandle<()>, bool)>,
     tabs: Vec<Tab>,
@@ -351,6 +360,8 @@ impl App {
             sub_sel: 0,
             marked: BTreeSet::new(),
             reach: HashMap::new(),
+            stats: HashMap::new(),
+            probe: (None, None),
             fwds: HashMap::new(),
             tabs: vec![],
             active: 0,
@@ -606,12 +617,18 @@ impl App {
             (Kind::Sftp(Box::new(SftpView::new(cmd_tx))), task)
         } else {
             let (cmd_tx, cmd_rx) = unbounded_channel();
+            let (title, with_stats) = (alias.to_string(), self.cfg.status_stats);
             let task = tokio::spawn(async move {
                 let res = async {
                     let pw = password.as_ref().map(|p| p.as_str());
                     let h = ssh::connect(&target, pw, None).await?;
                     let data = |d: &[u8]| drop(tx.send(Event::Data(id, d.to_vec())));
-                    ssh::shell(h, size, login, cmd_rx, data).await
+                    let report = |s| drop(tx.send(Event::Stats(title.clone(), s)));
+                    // The metrics ride on the session's own connection and end with it.
+                    tokio::select! {
+                        res = ssh::shell(&h, size, login, cmd_rx, data) => res,
+                        () = stats::poll(&h, report), if with_stats => Ok(()),
+                    }
                 };
                 let _ = tx.send(Event::ended(id, res.await));
             });
@@ -700,6 +717,7 @@ impl App {
     fn close_tab(&mut self, i: usize) -> Tab {
         let tab = self.tabs.remove(i);
         tab.task.abort();
+        self.stats.remove(&tab.alias);
         self.active = match self.active {
             a if a == i + 1 => 0,
             a if a > i + 1 => a - 1,
@@ -723,6 +741,44 @@ impl App {
             });
         }
         self.msg = "checking reachability…".into();
+    }
+
+    /// On the host list, asks the selected host for its metrics once the
+    /// selection has rested on it. A host with a live session is left to that
+    /// session. Called once per frame; does nothing until the selection (or
+    /// the tab) changes.
+    fn probe_selected(&mut self) {
+        let on_list = self.active == 0 && self.cfg.status_stats;
+        let alias = self.alias().filter(|_| on_list);
+        if alias == self.probe.0 {
+            return;
+        }
+        if let Some(task) = self.probe.1.take() {
+            task.abort();
+        }
+        self.probe.0 = alias.clone();
+        let Some(alias) = alias else { return };
+        let live = |t: &Tab| t.alias == alias && !t.closed && matches!(t.kind, Kind::Term { .. });
+        if self.tabs.iter().any(live) || self.reach.get(&alias) == Some(&None) {
+            return;
+        }
+        let Ok(target) = Target::from_config(&self.sshc, &alias) else {
+            return;
+        };
+        let tx = self.tx.clone();
+        self.probe.1 = Some(tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            // Resting on a row is not a decision to connect: only hosts whose
+            // key is already on record, and keys only, never a vault password.
+            if !ssh::is_known(&target) {
+                return;
+            }
+            let stats = match ssh::connect(&target, None, None).await {
+                Ok(h) => stats::fetch(&h).await,
+                Err(_) => None,
+            };
+            let _ = tx.send(Event::Stats(alias, stats));
+        }));
     }
 
     fn toggle_forward(&mut self, alias: &str, kind: char, value: &str) -> Result<()> {
@@ -822,6 +878,7 @@ impl App {
                     return;
                 };
                 self.tabs[i].closed = true;
+                self.stats.remove(&self.tabs[i].alias);
                 match &mut self.tabs[i].kind {
                     Kind::Term { parser, .. } => {
                         let leader = self.cfg.keys.leader;
@@ -849,6 +906,12 @@ impl App {
             }
             Event::Ping(alias, ms) => {
                 self.reach.insert(alias, ms);
+            }
+            Event::Stats(alias, Some(stats)) => {
+                self.stats.insert(alias, stats);
+            }
+            Event::Stats(alias, None) => {
+                self.stats.remove(&alias);
             }
             Event::Forward(key, Ok(true)) => {
                 if let Some(state) = self.fwds.get_mut(&key) {
@@ -1800,6 +1863,7 @@ pub async fn run(cfg: Config) -> Result<()> {
     let res = async {
         while !app.quit {
             terminal.draw(|f| draw::draw(&mut app, f))?;
+            app.probe_selected();
             let Some(ev) = rx.recv().await else { break };
             app.on_event(ev);
             // Coalesce bursts (fast output, transfer progress) into one redraw.
