@@ -381,7 +381,9 @@
       {#each [['CPU', fleet.cpu, 'text-blue'], [t('mem'), fleet.mem, 'text-teal']] as const as [label, past, colour] (label)}
         <div class="{tile} overflow-hidden">
           <p class="text-[13px] text-white">{label}</p>
-          <p class={figure}>{past.at(-1) ?? '—'}<span class="text-sm font-medium text-dim">%</span></p>
+          <p class={figure}>
+            {#if past.length}{past.at(-1)}<span class="text-sm font-medium text-dim">%</span>{:else}—{/if}
+          </p>
           <Sparkline points={[...past]} class="-mx-4 w-[calc(100%+2rem)] {colour}" />
         </div>
       {/each}

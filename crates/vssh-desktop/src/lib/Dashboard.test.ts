@@ -359,7 +359,7 @@ test('the figures over the cards: how many answer, the hosts\' CPU and memory as
 test('before anything is known the figures are dashes, not noughts', () => {
   const { container } = render(Dashboard, props())
   const strip = container.querySelector('[aria-hidden=true].grid-cols-4')!
-  expect(strip).toHaveTextContent('reachable 0 / 4 CPU —% MEM —% down 0')
+  expect(strip).toHaveTextContent('reachable 0 / 4 CPU — MEM — down 0')
   expect(strip.querySelectorAll('path')).toHaveLength(0)
 })
 

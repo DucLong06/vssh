@@ -85,7 +85,8 @@
   {@render item('dashboard', 'grid', t('status'))}
   <h2>{@render item('hosts', 'server', t('hosts'), shown.length)}</h2>
   {#if hosts.length}
-    <ul bind:this={list} aria-label={t('hosts')} class="min-h-12 flex-1 overflow-y-auto">
+    <!-- As tall as its hosts, and no taller than there is room: what follows it follows it. -->
+    <ul bind:this={list} aria-label={t('hosts')} class="min-h-12 overflow-y-auto">
       {#each shown as host (host.alias)}
         <li>
           <button
