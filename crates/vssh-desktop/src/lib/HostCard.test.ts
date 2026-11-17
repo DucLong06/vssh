@@ -82,7 +82,7 @@ test('a host that answered nothing usable shows three dashes and no bar', () => 
 })
 
 test.each(errors.map((error, i) => [error.class, error, shown.en[i]] as const))(
-  'offline, %s: the card is dimmed and says which kind of failure, with the whole chain behind it',
+  'offline, %s: the card says which kind of failure, with the whole chain behind it, and nothing on it is dimmed',
   (_, error, words) => {
     const el = card({ ms: null, error: error as ConnError, shown: words as Shown })
     expect(el).toHaveAttribute('data-state', 'down')
@@ -90,8 +90,11 @@ test.each(errors.map((error, i) => [error.class, error, shown.en[i]] as const))(
     expect(why.parentElement).toHaveTextContent(`✗ ${words.label} ${words.message}`)
     expect(why.parentElement).toHaveAttribute('title', words.chain)
     expect(screen.queryByRole('meter')).not.toBeInTheDocument()
-    // Still the same host.
+    // Still the same host. Its address and tags are what one reads when it is
+    // down: a blue tag is 5.0:1 as it is and under 4.5:1 at any opacity below 90%.
     expect(within(el).getByRole('heading', { name: 'web-01' })).toBeInTheDocument()
+    expect(within(el).getByText('deploy@10.0.0.5:2222').className).not.toContain('opacity')
+    expect(within(el).getByRole('list', { name: 'Tags' }).className).not.toContain('opacity')
   },
 )
 

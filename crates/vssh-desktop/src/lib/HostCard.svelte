@@ -19,8 +19,6 @@
     info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
   )
   const reached = $derived(typeof info?.ms === 'number')
-  // An offline card dims what is about the host, not its name or the line that says why.
-  const dim = $derived(kind === 'down' ? 'opacity-60' : '')
   const [green, yellow, red] = ['green', 'yellow', 'red'].map((name) => `var(--color-${name})`)
   const fill = {
     ok: green,
@@ -65,10 +63,10 @@
     </span>
   </header>
   {#if address(host)}
-    <p class="truncate pl-4 text-white {dim}">{address(host)}</p>
+    <p class="truncate pl-4 text-white">{address(host)}</p>
   {/if}
   {#if tagsOf(host).length}
-    <ul aria-label={t('tags')} class="flex flex-wrap gap-1 pt-2 pl-4 {dim}">
+    <ul aria-label={t('tags')} class="flex flex-wrap gap-1 pt-2 pl-4">
       {#each tagsOf(host) as tag (tag)}
         <li
           class="rounded-full border px-2 text-xs leading-5"
