@@ -7,6 +7,10 @@ chi tiết hoặc phiên làm việc bên phải, dùng phím kiểu vim ở m�
 được lưu ngay trong `~/.ssh/config` quen thuộc, nên lệnh `ssh` thông thường
 vẫn dùng được mọi thứ vssh chỉnh sửa.
 
+Một lõi Rust, hai giao diện: ứng dụng terminal và ứng dụng desktop bên dưới đọc
+chung cấu hình, chung cơ sở dữ liệu và chung kho mật khẩu, cùng theme
+TokyoNight.
+
 ![vssh: danh sách máy chủ, lọc theo thẻ, ba máy cạnh nhau với chế độ phát, menu leader, kết nối nhanh và SFTP](docs/img/demo.vi.gif)
 
 - Nhiều phiên SSH trong các tab, có sẵn trình giả lập terminal
@@ -48,9 +52,9 @@ cargo build --release
 
 Vẫn những máy chủ đó, trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, snippet, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu. Đây là giao diện thứ hai trên cùng một lõi với ứng dụng terminal, nên cả hai đọc chung `~/.ssh/config`, chung cơ sở dữ liệu và chung kho mật khẩu.
 
-| Bảng điều khiển | Tab terminal |
+| Bảng điều khiển với thanh điều hướng | Tab terminal |
 |---|---|
-| ![Bảng điều khiển gồm các thẻ máy chủ với thanh CPU, bộ nhớ và ổ đĩa trực tiếp](docs/img/desktop-d2.vi.png) | ![Một shell trong tab terminal của ứng dụng desktop](docs/img/desktop-d3-terminal.vi.png) |
+| ![Thanh điều hướng bên trái, các thẻ máy chủ kèm sparkline và thanh ổ đĩa](docs/img/desktop-d9-rail.vi.png) | ![Một shell trong tab terminal của ứng dụng desktop](docs/img/desktop-d3-terminal.vi.png) |
 
 Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/DucLong06/vssh/releases) có ba gói; chọn một:
 
