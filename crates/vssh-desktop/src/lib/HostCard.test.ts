@@ -160,3 +160,37 @@ test('a card that can open the host\'s files has a button for it, next to Connec
   expect(onfiles).toHaveBeenCalledOnce()
   expect(onconnect).not.toHaveBeenCalled()
 })
+
+// --- D9: the concept's card ----------------------------------------------------
+
+test('CPU and memory have a sparkline each, drawn from the minute behind the figure; the disk has its bar alone', () => {
+  const { container } = render(HostCard, { host: web01, info: { ms: 12, peek }, trail: { cpu: [0, 50, 100], mem: [25, 75] } })
+  const lines = [...container.querySelectorAll('svg path[stroke]')].map((path) => path.getAttribute('d'))
+  expect(lines).toEqual(['M0,30 C30,30 30,16 60,16 S90,2 120,2', 'M0,23 C60,23 60,9 120,9'])
+  // Blue for CPU, teal for memory, as the concept has them.
+  expect([...container.querySelectorAll('svg')].map((svg) => svg.classList.contains('text-blue'))).toEqual([true, false])
+  expect(container.querySelectorAll('svg')[1]).toHaveClass('text-teal')
+})
+
+test('with no minute behind it yet, a figure is its own level; one the host did not give draws nothing', () => {
+  const { container } = render(HostCard, { host: web01, info: stats(50, null, 61) })
+  const [cpu, mem] = container.querySelectorAll('svg')
+  expect(cpu.querySelector('path[stroke]')).toHaveAttribute('d', 'M0,16 L120,16')
+  expect(mem.querySelectorAll('path')).toHaveLength(0)
+})
+
+test('a host that is down can be asked again from its card; one that answers has nothing to try', async () => {
+  const onretry = vi.fn()
+  const { unmount } = render(HostCard, { host: web01, info: { ms: null, error: errors[2] as ConnError, shown: shown.en[2] as Shown }, onretry })
+  await userEvent.click(screen.getByRole('button', { name: 'try again' }))
+  expect(onretry).toHaveBeenCalledOnce()
+  unmount()
+  render(HostCard, { host: web01, info: { ms: 12, peek }, onretry })
+  expect(screen.queryByRole('button', { name: 'try again' })).not.toBeInTheDocument()
+})
+
+test('the address is in the monospace face, the name is not', () => {
+  const el = card({ ms: 12, peek })
+  expect(within(el).getByText('deploy@10.0.0.5:2222')).toHaveClass('font-mono')
+  expect(within(el).getByRole('heading', { name: 'web-01' })).not.toHaveClass('font-mono')
+})

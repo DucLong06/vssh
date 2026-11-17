@@ -3,7 +3,8 @@
   import type { Host } from './api'
   import { chip, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
-  import { critical, down, type Live } from './live.svelte'
+  import { critical, down, type Live, type Trail } from './live.svelte'
+  import Sparkline from './Sparkline.svelte'
   import { compact, parts } from './stats'
   import { addr } from './streamer.svelte'
 
@@ -20,8 +21,24 @@
     onforwards?: () => void
     /** Opens the host's form. */
     onedit?: () => void
+    /** Asks a host that is down once more. */
+    onretry?: () => void
+    /** Its last rounds, for the sparklines; without them the figure of now is the one point there is. */
+    trail?: Trail
   } & HTMLAttributes<HTMLElement>
-  let { host, info, marked = false, onconnect, onfiles, onforwards, onedit, class: extra = '', ...rest }: Props = $props()
+  let {
+    host,
+    info,
+    marked = false,
+    onconnect,
+    onfiles,
+    onforwards,
+    onedit,
+    onretry,
+    trail,
+    class: extra = '',
+    ...rest
+  }: Props = $props()
 
   const list = $derived(info?.peek ? parts(info.peek.stats, t('mem')) : [])
   const kind = $derived(
@@ -38,113 +55,149 @@
     warn: `linear-gradient(to right, ${green}, ${yellow})`,
     crit: `linear-gradient(to right, ${green}, ${yellow}, ${red})`,
   }
-  const tone = { ok: 'text-green', warn: 'text-yellow', crit: 'text-red' }
-  const button = 'cursor-pointer rounded-md border border-edge bg-panel px-2 hover:bg-selection'
+  // A healthy figure is the concept's white; past a mark it takes the mark's colour.
+  const tone = { ok: 'text-ink', warn: 'text-yellow', crit: 'text-red' }
+  const ghost =
+    'cursor-pointer rounded-[10px] border border-edge px-3 py-1 text-[13px] font-medium whitespace-nowrap hover:border-dim/50 hover:bg-selection first-letter:uppercase'
+  const mini = 'cursor-pointer rounded-lg px-2 py-0.5 text-xs font-medium text-cyan hover:bg-selection'
 </script>
+
+<!-- A figure's bar: the track is always there, so a missing figure leaves no hole. -->
+{#snippet meter(label: string, part: (typeof list)[number] | undefined, shape: string)}
+  <div
+    role={part ? 'meter' : undefined}
+    aria-label={part ? label : undefined}
+    aria-valuenow={part?.pct}
+    aria-valuemin={part ? 0 : undefined}
+    aria-valuemax={part ? 100 : undefined}
+    data-level={part?.level}
+    class="overflow-hidden bg-bar {shape}"
+  >
+    {#if part}
+      <!-- Green, into yellow past the warning mark, into red past the critical one. -->
+      <div class="h-full rounded-full" style="width: {part.pct}%; background: {fill[part.level]}"></div>
+    {/if}
+  </div>
+{/snippet}
 
 <article
   {...rest}
   aria-label={host.alias}
   data-state={kind}
   data-marked={marked || undefined}
-  class="group relative h-full rounded-2xl border select-none focus-visible:outline-offset-2 border-edge bg-panel p-3 data-[state=crit]:border-red/50 data-[state=down]:border-red aria-[current]:ring-1 aria-[current]:ring-blue data-[marked]:border-magenta {extra}"
+  class="group relative flex h-full flex-col gap-3 rounded-2xl border border-transparent bg-panel p-4 shadow-card transition-[translate,border-color] duration-200 select-none hover:-translate-y-0.5 hover:border-dim/40 focus-visible:outline-offset-2 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 data-[state=down]:bg-linear-to-b data-[state=down]:from-red/6 data-[state=down]:to-transparent data-[state=down]:to-60% aria-[current]:ring-1 aria-[current]:ring-blue data-[marked]:border-magenta {extra}"
 >
-  {#if onconnect || onfiles || onforwards || onedit}
-    <!-- Over the address, and only when the card is pointed at or has the
-         focus: twenty of these at once would be all one sees. -->
-    <div
-      class="absolute top-8 right-3 z-1 flex gap-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-    >
-      {#if onedit}
-        <button type="button" onclick={onedit} aria-keyshortcuts="e" class="{button} text-cyan">{t('edit')}</button>
-      {/if}
-      {#if onforwards}
-        <button type="button" onclick={onforwards} aria-keyshortcuts="Shift+L" class="{button} text-cyan">
-          {t('forwards')}
-        </button>
-      {/if}
-      {#if onfiles}
-        <button type="button" onclick={onfiles} aria-keyshortcuts="f" class="{button} text-cyan">{t('files')}</button>
-      {/if}
-      {#if onconnect}
-        <button type="button" onclick={onconnect} class="{button} text-magenta">{t('connect')}</button>
-      {/if}
-    </div>
-  {/if}
-  <header class="flex items-center gap-1.5">
-    <!-- Whether the host answers, and nothing else: one that is overloaded
-         says so in its figures and its border. -->
-    <span
-      aria-hidden="true"
-      class={kind === 'down' ? 'text-red' : info?.peek || reached ? 'text-green' : 'text-dim'}
-    >
-      {kind === 'asking' || (kind === 'unchecked' && !reached) ? '○' : '●'}
-    </span>
-    <h3 class="truncate font-bold">{host.alias}</h3>
+  <header class="flex items-center gap-2">
+    <h3 class="truncate text-base font-semibold tracking-tight text-ink">{host.alias}</h3>
     {#if marked}
       <span role="img" aria-label={t('selected')} class="text-magenta">✓</span>
     {/if}
     {#if host.meta.pinned}
       <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
     {/if}
+    <!-- The concept's badge, in the TUI's words: how long the host takes to answer, or that it does not. -->
     <span
-      class="ml-auto shrink-0 rounded-full bg-bar px-2 {info?.ms === null ? 'text-red' : info?.ms === undefined ? 'text-dim' : kind === 'down' ? 'text-white' : 'text-green'}"
+      class="ml-auto inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap {info?.ms === null ? 'text-red inset-ring inset-ring-red/50' : info?.ms === undefined ? 'bg-bar text-dim' : kind === 'down' ? 'bg-bar text-white' : 'bg-green/12 text-green'}"
     >
+      <!-- Whether the host answers, and nothing else: one that is overloaded
+           says so in its figures and its border. A ring until it is known. -->
+      <i
+        aria-hidden="true"
+        class="size-1.5 rounded-full {kind === 'asking' || (kind === 'unchecked' && !reached) ? 'ring-1 ring-current' : 'bg-current'} {kind === 'down' ? 'text-red' : info?.peek || reached ? 'text-green' : 'text-dim'}"
+      ></i>
       {latency}
     </span>
   </header>
-  {#if addr(host)}
-    <p class="truncate pl-4 text-white">{addr(host)}</p>
-  {/if}
-  {#if tagsOf(host).length}
-    <ul aria-label={t('tags')} class="flex flex-wrap gap-1 pt-2 pl-4">
-      {#each tagsOf(host) as tag (tag)}
-        <li
-          class="rounded-full border px-2 text-xs leading-5"
-          style="color: {chip(tag)}; border-color: color-mix(in srgb, {chip(tag)} 40%, transparent); background: color-mix(in srgb, {chip(tag)} 12%, transparent)"
-        >{tag}</li>
+  <div class="-mt-1 flex min-h-[22px] items-start">
+    {#if tagsOf(host).length}
+      <ul aria-label={t('tags')} class="flex flex-wrap gap-1.5">
+        {#each tagsOf(host) as tag (tag)}
+          <li
+            class="rounded-md px-2 text-[11.5px] leading-[22px]"
+            style="color: {chip(tag)}; background: color-mix(in srgb, {chip(tag)} 12%, transparent)"
+          >{tag}</li>
+        {/each}
+      </ul>
+    {/if}
+    {#if onfiles || onforwards || onedit}
+      <!-- Beside the tags, and only when the card is pointed at or has the
+           focus: twenty of these at once would be all one sees. -->
+      <div
+        class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 shadow-card group-focus-within:opacity-100 group-hover:opacity-100"
+      >
+        {#if onedit}
+          <button type="button" onclick={onedit} aria-keyshortcuts="e" class={mini}>{t('edit')}</button>
+        {/if}
+        {#if onforwards}
+          <button type="button" onclick={onforwards} aria-keyshortcuts="Shift+L" class={mini}>{t('forwards')}</button>
+        {/if}
+        {#if onfiles}
+          <button type="button" onclick={onfiles} aria-keyshortcuts="f" class={mini}>{t('files')}</button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  {#if info?.shown}
+    <!-- The concept's box for a host that is down: which kind of failure, and what was said. -->
+    <p
+      title={info.shown.chain}
+      class="flex flex-1 flex-col justify-center gap-1 rounded-xl border border-dashed border-red/40 bg-bg px-4 py-3 break-words"
+    >
+      <strong class="font-semibold text-red">✗ {info.shown.label}</strong>
+      <span class="line-clamp-3 text-[13px] text-white">{info.shown.message}</span>
+    </p>
+  {:else if info?.peek}
+    <div role="group" aria-label={compact(list)} class="grid grid-cols-2 gap-x-3 gap-y-2.5">
+      {#each ['CPU', t('mem'), '/'] as label (label)}
+        {@const part = list.find((part) => part.label === label)}
+        {#if label === '/'}
+          <div class="col-span-2 flex items-center gap-3 text-xs">
+            <span class="text-dim">{label}</span>
+            <span class="order-last min-w-8 text-right font-semibold {part ? tone[part.level] : 'text-dim'}">
+              {part?.value ?? '—'}
+            </span>
+            {@render meter(label, part, 'h-1.5 flex-1 rounded-full')}
+          </div>
+        {:else}
+          {@const past = label === 'CPU' ? trail?.cpu : trail?.mem}
+          <!-- A well in the card: the figure, the minute behind it, and its bar for a floor. -->
+          <div class="overflow-hidden rounded-xl bg-bg">
+            <p class="flex flex-wrap items-baseline justify-between gap-x-1 px-3 pt-2 text-xs text-dim">
+              <span>{label}</span>
+              <span class="text-sm font-semibold tracking-tight {part ? tone[part.level] : 'text-dim'}">
+                {part?.value ?? '—'}
+              </span>
+            </p>
+            <Sparkline
+              points={past?.length ? past : part ? [part.pct] : []}
+              class="mt-0.5 w-full {label === 'CPU' ? 'text-blue' : 'text-teal'}"
+            />
+            {@render meter(label, part, 'h-[3px]')}
+          </div>
+        {/if}
       {/each}
-    </ul>
+    </div>
+  {:else if info?.peek === null}
+    <p class="flex-1 rounded-xl bg-bg px-3 py-2.5 text-[13px] text-white">
+      {t('not_checked')} <span class="text-dim">· <kbd>v</kbd> {t('quick_peek')}</span>
+    </p>
+  {:else}
+    <p class="flex-1 rounded-xl bg-bg px-3 py-2.5 text-[13px] text-white">{t('asking')} {host.alias}…</p>
   {/if}
 
-  <div class="pt-3">
-    {#if info?.shown}
-      <p title={info.shown.chain} class="line-clamp-3 break-words">
-        <strong class="text-red">✗ {info.shown.label}</strong>
-        <span class="text-white">{info.shown.message}</span>
-      </p>
-    {:else if info?.peek}
-      <div role="group" aria-label={compact(list)} class="grid grid-cols-3 gap-3">
-        {#each ['CPU', t('mem'), '/'] as label (label)}
-          {@const part = list.find((part) => part.label === label)}
-          <div>
-            <p class="flex justify-between gap-1 text-xs">
-              <span class="text-white">{label}</span>
-              <span class={part ? tone[part.level] : 'text-dim'}>{part?.value ?? '—'}</span>
-            </p>
-            <!-- The track is always there, so a missing figure leaves no hole. -->
-            <div
-              role={part ? 'meter' : undefined}
-              aria-label={part ? label : undefined}
-              aria-valuenow={part?.pct}
-              aria-valuemin={part ? 0 : undefined}
-              aria-valuemax={part ? 100 : undefined}
-              data-level={part?.level}
-              class="mt-1 h-2 overflow-hidden rounded-full bg-bar"
-            >
-              {#if part}
-                <!-- Green, into yellow past the warning mark, into red past the critical one. -->
-                <div class="h-full rounded-full" style="width: {part.pct}%; background: {fill[part.level]}"
-                ></div>
-              {/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-    {:else if info?.peek === null}
-      <p class="text-white">{t('not_checked')} <span class="text-dim">· <kbd>v</kbd> {t('quick_peek')}</span></p>
-    {:else}
-      <p class="text-white">{t('asking')} {host.alias}…</p>
+  <!-- The foot of the card. No <footer>: the window has one, the status bar. -->
+  <div class="mt-auto flex min-h-7 items-center gap-2">
+    {#if addr(host)}
+      <p class="min-w-0 flex-1 truncate font-mono text-xs text-white">{addr(host)}</p>
     {/if}
+    <span class="ml-auto flex shrink-0 gap-1.5">
+      {#if onretry && kind === 'down'}
+        <button type="button" onclick={onretry} class={ghost}>{t('try_again')}</button>
+      {/if}
+      {#if onconnect}
+        <button type="button" onclick={onconnect} class="{ghost} text-fg">{t('connect')}</button>
+      {/if}
+    </span>
   </div>
 </article>

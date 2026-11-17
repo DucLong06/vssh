@@ -1,10 +1,10 @@
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
 import { afterEach, expect, test, vi } from 'vitest'
-import type { Peek } from './api'
+import type { ConnError, Peek } from './api'
 import errors from './fixtures/errors.json'
 import fixture from './fixtures/peek.json'
 import shown from './fixtures/shown.json'
-import { ask, forget, live, ping, poll, relabel, sick } from './live.svelte'
+import { ask, forget, live, ping, poll, relabel, sick, trail, up } from './live.svelte'
 
 const peek = fixture as unknown as Peek
 const refused = errors[2]
@@ -103,4 +103,43 @@ test('a hidden window asks nobody', () => {
   poll(['web-01'], true)
   expect(asked).toEqual([])
   hidden.mockRestore()
+})
+
+// --- D9: the minute behind a figure --------------------------------------------
+
+test('every answer adds a round to the host\'s trail: twelve at most, the oldest goes first', async () => {
+  let round = 0
+  shell(() => ({ ...peek, stats: { cpu: round++, mem: [round, 100], disk: null } }))
+  for (let asked = 0; asked < 14; asked++) await ask('web-01', true)
+  expect(trail['web-01'].cpu).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+  expect(trail['web-01'].mem).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+})
+
+test('a figure the host did not give leaves no point, and a load past 100% is 100', async () => {
+  shell(() => ({ ...peek, stats: { cpu: 250, mem: null, disk: 61 } }))
+  await ask('web-01', true)
+  expect(trail['web-01']).toEqual({ cpu: [100], mem: [] })
+})
+
+test('a host that fails loses its trail; one the dashboard may not ask has none', async () => {
+  let answer: () => unknown = () => peek
+  shell(({ passive }) => (passive ? answer() : null))
+  await ask('web-01', true)
+  expect(trail['web-01'].cpu).toHaveLength(1)
+  answer = () => {
+    throw refused
+  }
+  await ask('web-01', true)
+  expect(trail['web-01']).toBeUndefined()
+  answer = () => null
+  await ask('hidden', true)
+  expect(trail.hidden).toBeUndefined()
+})
+
+test('a host is up when its figures came, or a ping got through and nothing failed since', () => {
+  expect(up(undefined)).toBe(false)
+  expect(up({ ms: 12, peek: null })).toBe(true)
+  expect(up({ peek })).toBe(true)
+  expect(up({ ms: 12, error: refused as ConnError })).toBe(false)
+  expect(up({ ms: null })).toBe(false)
 })
