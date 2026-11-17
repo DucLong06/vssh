@@ -71,7 +71,9 @@ test('a wrong passphrase says so and asks again; the third time warns, and locks
   const { user, onclose } = shell('locked')
   for (const guess of ['mastre', 'mister']) {
     await user.type(field('Vault passphrase'), `${guess}{Enter}`)
-    expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR wrong passphrase or damaged vault')
+    expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR Wrong vault passphrase, or the vault file is damaged')
+    // The core's own words are kept, out of the way.
+    expect(screen.getByRole('alert')).toHaveAttribute('title', 'wrong passphrase or damaged vault')
     // The guess is gone, and the field is there for the next one.
     expect(field('Vault passphrase')).toHaveValue('')
     expect(field('Vault passphrase')).toHaveFocus()
@@ -134,7 +136,7 @@ test('the passphrase is changed by who knows the old one and types the new one t
   await user.clear(field('Repeat passphrase'))
   await user.type(field('Repeat passphrase'), 'battery staple')
   await user.click(change)
-  expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR wrong passphrase or damaged vault')
+  expect(await screen.findByRole('alert')).toHaveTextContent('✗ ERROR Wrong vault passphrase, or the vault file is damaged')
   expect(field('Repeat passphrase')).toBeValid()
 
   await user.clear(field('Current passphrase'))
@@ -199,6 +201,10 @@ test('in Vietnamese it is the TUI\'s kho', async () => {
   setLang('vi')
   const { user } = shell('locked')
   expect(screen.getByRole('dialog', { name: 'Kho' })).toHaveTextContent('Kho đang khoá')
+  // A wrong one is refused in Vietnamese too, not in the core's English.
+  await user.type(field('Mật khẩu kho'), 'mastre{Enter}')
+  expect(await screen.findByRole('alert')).toHaveTextContent('Sai mật khẩu kho, hoặc tệp kho bị hỏng')
+  expect(screen.getByRole('alert')).not.toHaveTextContent('wrong passphrase')
   await user.type(field('Mật khẩu kho'), 'master')
   await user.click(button('Mở kho'))
   expect(await screen.findByRole('button', { name: 'Đổi mật khẩu kho' })).toBeInTheDocument()

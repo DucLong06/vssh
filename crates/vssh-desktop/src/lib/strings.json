@@ -159,7 +159,8 @@
     "vault_none": "There is no vault yet. Its passphrase will protect the passwords of your hosts.",
     "vault_unlocked": "unlocked",
     "waiting": "waiting",
-    "wrong_attempts": "{n} wrong attempts. The vault does not lock you out, but a forgotten passphrase cannot be recovered."
+    "wrong_attempts": "{n} wrong attempts. The vault does not lock you out, but a forgotten passphrase cannot be recovered.",
+    "wrong_passphrase": "Wrong vault passphrase, or the vault file is damaged"
   },
   "vi": {
     "accept_once": "Chấp nhận một lần",
@@ -321,6 +322,7 @@
     "vault_none": "Chưa có kho. Mật khẩu kho sẽ bảo vệ mật khẩu các máy chủ của bạn.",
     "vault_unlocked": "đã mở",
     "waiting": "đang chờ",
-    "wrong_attempts": "Đã sai {n} lần. Kho không khoá bạn lại, nhưng mật khẩu đã quên thì không lấy lại được."
+    "wrong_attempts": "Đã sai {n} lần. Kho không khoá bạn lại, nhưng mật khẩu đã quên thì không lấy lại được.",
+    "wrong_passphrase": "Sai mật khẩu kho, hoặc tệp kho bị hỏng"
   }
 }

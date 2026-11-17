@@ -35,7 +35,7 @@
   let root = $state<HTMLElement>()
 
   /** Does what was asked, unless the new passphrase was not typed the same twice. */
-  async function attempt(twice: boolean, act: () => Promise<string>) {
+  async function attempt(twice: boolean, act: () => Promise<string>, refused?: string) {
     failed = null
     note = ''
     mismatch = twice && (vault === 'none' ? pass : next) !== again
@@ -45,16 +45,23 @@
       return true
     } catch (error) {
       failed = await explain(error, i18n.lang)
+      // The core says a refused passphrase in English only: the window's own words, the core's in the title.
+      if (refused) failed.message = refused
       return false
     }
   }
 
   async function unlock(e: SubmitEvent) {
     e.preventDefault()
-    const opened = await attempt(vault === 'none', async () => {
-      await api.vaultUnlock(pass)
-      return ''
-    })
+    const opened = await attempt(
+      vault === 'none',
+      async () => {
+        await api.vaultUnlock(pass)
+        return ''
+      },
+      // Making a vault takes any passphrase: only one that is there refuses a wrong one.
+      vault === 'locked' ? t('wrong_passphrase') : undefined,
+    )
     if (mismatch) return
     pass = again = ''
     if (opened) vault = 'unlocked'
@@ -67,10 +74,14 @@
 
   async function change(e: SubmitEvent) {
     e.preventDefault()
-    const changed = await attempt(true, async () => {
-      await api.vaultPassChange(pass, next)
-      return t('passphrase_changed')
-    })
+    const changed = await attempt(
+      true,
+      async () => {
+        await api.vaultPassChange(pass, next)
+        return t('passphrase_changed')
+      },
+      t('wrong_passphrase'),
+    )
     if (changed) pass = next = again = ''
   }
 
