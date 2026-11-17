@@ -407,6 +407,18 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
 
 /// Opens the window over the user's own hosts and runs until it is closed.
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Asked by package checks on machines with no display: answered before GTK
+    // is touched. The version is the bundle's, which a release takes from its tag.
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stdout(),
+            "vssh-desktop {}",
+            context.package_info().version
+        );
+        return;
+    }
     // A config file that cannot be read is the TUI's to complain about.
     let config: Config = Config::load().unwrap_or_default();
     let backend = Backend::new(ssh_config_path(), data_dir(), Core::default())
@@ -414,6 +426,6 @@ pub fn run() {
     builder::<tauri::Wry>(backend)
         // Here and not in `builder`: it wants a display, which tests have not.
         .plugin(tauri_plugin_clipboard_manager::init())
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("vssh could not start its window");
 }
