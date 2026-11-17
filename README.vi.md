@@ -76,6 +76,76 @@ Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng đ�
 - **Chuyển khung:** `Alt-h/j/k/l` di chuyển giữa các khung như cửa sổ vim (hoặc `Ctrl-a` + phím mũi tên). `Ctrl-a d` đóng phiên đang chọn.
 - **Phát (broadcast):** `Alt-b` (hoặc `Ctrl-a b`). Khi bật, những gì bạn gõ hay dán sẽ được gửi tới *mọi* phiên đang kết nối, kể cả phiên không hiện trên màn hình. Thanh trạng thái chuyển sang màu cam và cho biết có bao nhiêu phiên đang nhận, các khung đó có viền cam. Nhấn `Alt-b` lần nữa để tắt.
 - **Snippet:** `Ctrl-a s` gõ một snippet đã lưu vào phiên, hoặc vào mọi phiên khi đang phát.
+- **Một lệnh, nhiều máy:** đánh dấu các máy bằng `Space`, nhấn `x`, gõ một lệnh. Lệnh chạy cùng lúc trên mọi máy đã đánh dấu, mỗi máy một kết nối riêng, không mở phiên nào. Kết quả hiện dần khi các máy trả lời, mỗi dòng dạng `máy │ kết quả`, tên máy mang màu thẻ của nó; máy còn đang chạy hiện vòng xoay, máy lỗi hiện lý do. `j`/`k` để cuộn, `/` chỉ hiện những máy có tên chứa chữ bạn gõ, `Esc` để đóng và bỏ các máy chưa trả lời. Phát (broadcast) dành cho việc gõ vào các phiên đang mở; `x` dành cho lệnh chạy một lần. Snippet chạy trên các máy đã đánh dấu cũng dùng màn hình này.
+
+## Thanh trạng thái
+
+Dòng dưới cùng hiện chế độ, máy chủ và khung đang chọn, rồi tới thẻ, nhóm và độ trễ. Ở cửa sổ rộng, nó còn cho biết tình trạng của máy chủ:
+
+```
+ TERMINAL  single          web-01 : khung 1/1          CPU ▂ 23% · RAM ▂ 4.2/16G · / ▅ 61%   web  prod  12 ms
+```
+
+- **CPU** là tải trung bình 1 phút chia cho số nhân (trên 100% nghĩa là việc đang phải xếp hàng), **RAM** là bộ nhớ đã dùng / tổng, **/** là mức đầy của phân vùng gốc. Mỗi số chuyển sang vàng rồi đỏ: CPU trên 50% / 80%, bộ nhớ trên 70% / 85%, đĩa trên 80% / 90%.
+- **Trong một phiên**, số liệu được đọc mỗi 5 giây qua một kênh thứ hai của chính kết nối đang mở: không đăng nhập thêm lần nào. Hỗ trợ máy chủ Linux (`/proc`) và macOS (`uptime`, `vm_stat`); máy không trả lời thì không hiện gì.
+- **Ở danh sách máy chủ**, dừng con trỏ trên một máy trong giây lát thì máy đó được hỏi một lần. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`), và chỉ dùng agent hoặc file khoá: mật khẩu trong kho không bao giờ được gửi cho việc này. Máy đang có phiên mở thì dùng số liệu của phiên đó; máy đã từ chối thì không bị hỏi lại.
+- **Khi thiếu chỗ:** bỏ thanh nhỏ trước, rồi tới đĩa, rồi bộ nhớ. Màn hình dọc và cửa sổ nhỏ chỉ giữ chế độ và máy chủ.
+- `status_stats = false` trong file cấu hình sẽ tắt toàn bộ.
+- **Nhãn bo tròn:** chế độ, độ trễ và chữ `vssh` là các nhãn có hai đầu nửa hình tròn (`◖NORMAL◗`). Nếu dùng Nerd Font, đặt `nerd_font = true` để dùng đầu bo Powerline cao trọn dòng; không có font đó thì chúng hiện thành ô trống, nên mặc định là tắt.
+- **Chuyển tab:** tab được chuyển tới trượt vào từ bên phải trong ba khung hình (120 ms). Terminal từ xa không bị đổi kích thước trong lúc trượt. Trên đường truyền chậm, ba lần vẽ lại là ba lượt gửi nhận: đặt `transitions = false` để tắt.
+
+## Chép vào clipboard
+
+vssh không dùng thư viện clipboard nào. Nó nhờ chính terminal đang chạy nó chép giúp, bằng chuỗi thoát OSC 52, nên vẫn dùng được khi bạn SSH vào máy đang chạy vssh.
+
+- **Danh sách máy chủ:** `y` chép `ssh <máy>`.
+- **Phiên làm việc:** `Ctrl-a y` chép kết quả của lệnh cuối: các dòng nằm giữa dấu nhắc bạn đang đứng và dấu nhắc trước đó. Nếu hai dấu nhắc không giống hệt nhau (có đồng hồ trong đó, hoặc bạn đã gõ dở), mọi thứ phía trên con trỏ sẽ được chép. Chỉ tính những gì đang hiện trên màn hình. Phím là `Ctrl-a y` chứ không phải `y`, vì `y` trần là của shell.
+- **SFTP:** `y` chép đường dẫn đầy đủ của file đang chọn.
+- **Terminal hỗ trợ:** hầu hết terminal hiện nay nhận OSC 52 (có cái hỏi trước hoặc cần bật). Trong tmux, vssh còn đưa văn bản cho chính tmux (`tmux load-buffer -w`), vì tmux bỏ qua OSC 52 của chương trình trừ khi `set-clipboard on`. `osc52 = false` tắt chuỗi thoát cho terminal in nó ra thay vì thực hiện; bộ đệm tmux vẫn được đặt.
+
+## Máy trung gian (jump host)
+
+`ProxyJump` và `ProxyCommand` trong `~/.ssh/config` được áp dụng cho mọi thứ vssh mở: phiên, SFTP, chuyển tiếp cổng, xem nhanh, chạy lệnh hàng loạt. vssh không có biểu mẫu cho hai mục này; hãy viết chúng vào file như khi dùng `ssh`.
+
+```
+Host bastion
+    HostName 203.0.113.1
+    User jump
+
+Host db-internal
+    HostName 10.0.0.5
+    ProxyJump bastion
+```
+
+- **`ProxyJump`** nhận một máy hoặc một chuỗi cách nhau bằng dấu phẩy, mỗi mục dạng `[user@]host[:port]`. Mỗi chặng được tra qua file cấu hình như mọi máy khác, nên có thể là một alias có `HostName`, `User`, `IdentityFile` riêng và cả `ProxyJump` riêng. Khoá máy chủ của từng chặng được kiểm tra với `known_hosts` y như máy đích.
+- **Các chặng chỉ đăng nhập bằng agent hoặc file khoá.** Mật khẩu trong kho chỉ dùng cho máy đích, không bao giờ dùng cho chặng trung gian.
+- **`ProxyCommand`** chạy lệnh ngay trên máy bạn, thay `%h`, `%p`, `%r` và `%%`, rồi nói chuyện SSH qua đầu vào và đầu ra của lệnh. Lệnh bị dừng khi kết nối kết thúc. Tên máy hay tên người dùng chứa ký tự nào ngoài chữ, số và `. _ - : @ [ ]` sẽ bị từ chối chứ không được đưa cho shell. Nếu một máy có cả hai, `ProxyJump` được dùng. `none` tắt mục tương ứng.
+- **Khi một chặng lỗi**, thông báo nêu rõ chặng đó và vị trí của nó trong chuỗi.
+- **Chưa hỗ trợ:** địa chỉ IPv6 trong ngoặc vuông và URI `ssh://` làm chặng (hãy tạo một khối `Host` cho chặng đó); và khi dừng con trỏ trên một máy cần máy trung gian hay lệnh proxy, vssh không hỏi số liệu của máy đó: hãy mở phiên hoặc nhấn `v`.
+
+## Xem nhanh
+
+Nhấn `v` ở danh sách máy chủ để mở một cửa sổ nhỏ cho biết máy đó tự nói gì về mình: tên máy, hệ thống (`uname -srm`), thời gian đã chạy, ba chỉ số tải trung bình, CPU, bộ nhớ và đĩa gốc. Không mở shell nào: chỉ là một lệnh qua một kết nối ngắn, với cùng cách kiểm tra khoá máy chủ và đăng nhập như một phiên (agent, khoá, rồi mật khẩu trong kho).
+
+- Câu trả lời được giữ 30 giây, nên mở lại cửa sổ là có ngay; `r` hoặc `Enter` để hỏi lại, `Esc` hoặc `q` để đóng.
+- Mục nào máy không trả lời thì hiện dấu gạch; phần còn lại vẫn hiện. Nếu kết nối thất bại, cửa sổ cho biết vì sao, theo cách diễn đạt ở mục kế tiếp.
+
+## Khi kết nối thất bại
+
+vssh cho biết vì sao, không chỉ báo là thất bại. Một hộp thoại hiện lý do cùng toàn bộ chuỗi lỗi; phần chi tiết của máy chủ giữ lỗi gần nhất, màu đỏ, cho tới khi kết nối được.
+
+| Hiển thị | Chuyện gì đã xảy ra |
+|----------|---------------------|
+| `DNS` Không phân giải được tên db.internal: … | tra tên thất bại; theo sau là nguyên văn lỗi của bộ phân giải |
+| `HẾT GIỜ` Hết thời gian kết nối sau 10 giây (203.0.113.7:22) | không có gì trả lời ở địa chỉ đó |
+| `BỊ TỪ CHỐI` 203.0.113.7:22 từ chối kết nối — sshd có đang chạy không? | máy có trả lời, nhưng không có gì nghe ở cổng đó |
+| `KHÔNG TỚI ĐƯỢC` Không tới được 203.0.113.7:22: … | không có đường đi; theo sau là nguyên văn lỗi của hệ thống |
+| `XÁC THỰC` Sai mật khẩu / Khoá công khai bị từ chối / Không có cách đăng nhập | máy chủ từ chối cách nào; sau đó bạn được hỏi mật khẩu |
+| `KHOÁ MÁY CHỦ` Khoá máy chủ … không khớp | dấu vân tay máy chủ gửi, và dòng trong `known_hosts` mà nó xung đột |
+| `MÁY TRUNG GIAN` Máy trung gian bastion:22 (hop 1 of 2) lỗi: … | chặng nào của chuỗi `ProxyJump` bị lỗi, và vì sao, theo cách diễn đạt của các dòng trên |
+| `LỖI` … | mọi lỗi khác, hiện nguyên văn |
+
+Snippet chạy trên nhiều máy và chuyển tiếp cổng báo lỗi bằng cùng cách diễn đạt.
 
 ## Ghi log phiên và script đăng nhập
 
@@ -119,6 +189,8 @@ Nhấn `e` trên một máy chủ rồi điền **Group** (một tên, ví dụ 
 
 `Enter` giữ bộ lọc, `Esc` xoá bộ lọc. Nhóm và thẻ nằm trong cơ sở dữ liệu riêng của vssh, không nằm trong ssh config.
 
+**Ngăn thẻ.** `w` mở một ngăn bên phải liệt kê mọi thẻ và nhóm dưới dạng nhãn màu, kèm số máy chủ mà thẻ đó liệt kê, thẻ dùng nhiều đứng trước. `1`-`9` lọc danh sách máy theo thẻ đó (giống hệt gõ `/#thẻ`, nên con số chính là số máy bạn nhận được); `j`/`k` rồi `Enter` để chọn thẻ ở phía dưới. `0` bỏ lọc, `/` thu hẹp chính ngăn thẻ bằng cách gõ, `w` hoặc `q` đóng ngăn và giữ bộ lọc, `Esc` đóng ngăn và bỏ lọc.
+
 ## Phím tắt
 
 Nhấn `?` trong vssh để xem danh sách này.
@@ -130,12 +202,16 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Enter` / `s` | mở shell / trình duyệt SFTP |
 | | `Space`, rồi `Enter` | đánh dấu các máy, rồi mở phiên trên mọi máy đã đánh dấu |
 | | `T` | kết nối mọi máy có cùng thẻ hoặc nhóm |
+| | `x` | chạy một lệnh trên mọi máy đã đánh dấu (máy đang chọn nếu chưa đánh dấu máy nào) |
 | | `c` | kết nối nhanh; `Ctrl-s` trong biểu mẫu để lưu máy chủ và mật khẩu |
 | | `/` | tìm kiếm (`#tag` để lọc theo thẻ hoặc nhóm); `Esc` để xoá |
-| | `a` `e` `d` `y` | thêm, sửa, xoá, nhân bản máy chủ |
+| | `a` `e` `d` `Y` | thêm, sửa, xoá, nhân bản máy chủ |
+| | `y` | chép `ssh <máy>` vào clipboard |
 | | `p` | ghim máy chủ |
 | | `f` / `n` | chuyển tiếp cổng / snippet của máy chủ |
+| | `w` | ngăn thẻ: `1`-`9` lọc theo thẻ, `0` hoặc `Esc` bỏ lọc, `/` tìm trong các thẻ |
 | | `r` | kiểm tra máy chủ nào kết nối được |
+| | `v` | xem nhanh: uptime, tải, bộ nhớ và đĩa của máy, không cần mở phiên |
 | | `P` / `V` | lưu mật khẩu vào kho / mở hoặc khoá kho |
 | | `Tab` / `Shift-Tab` | tab kế tiếp / tab trước |
 | | `?` | trợ giúp |
@@ -149,6 +225,7 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Ctrl-a` `w` | menu cửa sổ: `h` `j` `k` `l` chọn khung, `s` `v` `g` `t` bố cục, `d` đóng |
 | | `Ctrl-a` `l` | bật / tắt ghi log phiên ra file |
 | | `Ctrl-a` `s` | gõ một snippet vào phiên |
+| | `Ctrl-a` `y` | chép kết quả của lệnh cuối vào clipboard |
 | | `Ctrl-a` `d` hoặc `x` | đóng phiên |
 | | `Ctrl-a` `q` | về danh sách máy chủ |
 | | `Ctrl-a` `Tab` / `p`, `1`-`9` | tab kế tiếp / tab trước, tới tab số đó |
@@ -158,9 +235,10 @@ Nhấn `?` trong vssh để xem danh sách này.
 | | `Enter` / `h` | vào thư mục / lên thư mục cha |
 | | `c` | chép file sang khung bên kia |
 | | `m` `r` `d` `R` | tạo thư mục, đổi tên, xoá, tải lại |
+| | `y` | chép đường dẫn của file đang chọn vào clipboard |
 | | `q` / `Q` | đóng / thoát |
 
-`Alt-b` và, khi đang hiện nhiều khung, `Alt-h/j/k/l` do vssh xử lý nên không còn tới shell ở máy từ xa. Nếu bạn dùng bản cũ: `Ctrl-a h` (về danh sách máy chủ) nay là `Ctrl-a q`, còn `Ctrl-a k` / `j` (cuộn) nay là `Ctrl-a PgUp` / `PgDn`.
+`Alt-b` và, khi đang hiện nhiều khung, `Alt-h/j/k/l` do vssh xử lý nên không còn tới shell ở máy từ xa. Nếu bạn dùng bản cũ: `Ctrl-a h` (về danh sách máy chủ) nay là `Ctrl-a q`, `Ctrl-a k` / `j` (cuộn) nay là `Ctrl-a PgUp` / `PgDn`, còn nhân bản chuyển từ `y` sang `Y` vì `y` nay là chép (file cấu hình có `duplicate = "y"` thì vẫn giữ nguyên).
 
 Chuyển tiếp cổng được gõ giống cờ của `ssh`: `L 8080 localhost:80`, `R 9000 localhost:3000`, `D 1080`.
 
@@ -184,6 +262,10 @@ Chuyển tiếp cổng được gõ giống cờ của `ssh`: `L 8080 localhost:
 lang = "vi"             # "vi": gợi ý phím, menu và trợ giúp bằng tiếng Việt; mặc định "en"
 ping_on_start = false   # kiểm tra mọi máy chủ khi khởi động
 log_sessions = false    # ghi log mọi phiên ngay từ đầu
+status_stats = true     # tải, bộ nhớ và đĩa của máy đang chọn trên thanh trạng thái
+nerd_font = false       # true: đầu bo Powerline cho các nhãn (cần Nerd Font)
+transitions = true      # tab trượt vào trong ba khung hình khi chuyển tab
+osc52 = true            # chép qua chuỗi thoát OSC 52 của terminal
 
 [exec]                  # script đăng nhập: được gõ vào shell sau khi đăng nhập
 web-01 = "cd /srv/app && git status"
@@ -192,15 +274,15 @@ web-01 = "cd /srv/app && git status"
 accent = "cyan"         # còn có: border, text, dim, selection, ok, error, warn, bar, key
 
 [keys]                  # mỗi phím một ký tự; leader được nhấn cùng Ctrl
-leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, password, vault, help
+leader = "a"            # còn có: quit, search, sftp, connect, connect_tag, forwards, snippets, tags,
+quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
 ```
 
 Mục nào bỏ trống sẽ dùng giá trị mặc định, nên file cấu hình viết cho phiên bản cũ vẫn dùng được. Cũng có thể chọn ngôn ngữ cho từng lần chạy bằng `vssh --lang vi` hoặc `VSSH_LANG=vi`; các biểu mẫu và thông báo lỗi vẫn bằng tiếng Anh.
 
 ## Không hỗ trợ
 
-`ProxyJump` / `ProxyCommand`, `Include`, file khoá có mật khẩu bảo vệ (hãy dùng agent), keyboard-interactive / 2FA, chép thư mục qua SFTP, Telnet, serial, Zmodem, chuyển tiếp X11, chuột. Lý do nằm trong [docs/PLAN.md](docs/PLAN.md#not-planned).
+`Include`, file khoá có mật khẩu bảo vệ (hãy dùng agent), keyboard-interactive / 2FA, chép thư mục qua SFTP, Telnet, serial, Zmodem, chuyển tiếp X11, chuột. Lý do nằm trong [docs/PLAN.md](docs/PLAN.md#not-planned).
 
 ## Phát triển
 

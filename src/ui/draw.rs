@@ -2,7 +2,7 @@
 //! panes), bottom bar with the keys of the focused view.
 
 use std::num::NonZeroU16;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -15,7 +15,8 @@ use ratatui::Frame;
 use super::files::{SftpView, LOCAL, REMOTE};
 use super::panes;
 use super::panes::Shape;
-use super::{clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Tab};
+use super::stats::Level;
+use super::{batch_lines, clean, fwd_key, term, App, Focus, Kind, Leader, Popup, Row, Tab};
 use crate::config::{Lang, Theme};
 use crate::ssh::SessionCmd;
 use crate::store::db::Meta;
@@ -96,6 +97,23 @@ fn panel<'a>(title: &str, focused: bool, th: &Theme) -> Block<'a> {
         .padding(Padding::horizontal(1))
 }
 
+/// A rounded badge for a one-line bar: `text` in the `badge` style between
+/// two half circles. `sides` is what lies left and right of it, so the caps
+/// blend into the bar. The caps stand where a square badge has its padding:
+/// a pill is exactly as wide as ` text `.
+fn pill(text: &str, badge: Style, sides: [Color; 2], nerd: bool) -> [Span<'static>; 3] {
+    let (left, right) = match nerd {
+        true => ("\u{e0b6}", "\u{e0b4}"),
+        false => ("◖", "◗"),
+    };
+    let cap = |bg| Style::new().fg(badge.bg.unwrap_or(Color::Reset)).bg(bg);
+    [
+        Span::styled(left, cap(sides[0])),
+        Span::styled(text.to_string(), badge),
+        Span::styled(right, cap(sides[1])),
+    ]
+}
+
 fn selection(th: &Theme) -> Style {
     Style::new().bg(th.selection).add_modifier(Modifier::BOLD)
 }
@@ -108,6 +126,21 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
         w,
         h,
     )
+}
+
+/// Frames a tab takes to slide in when it is switched to.
+pub const SLIDE: u16 = 3;
+/// How long one of those frames stays up: three frames, 120 ms.
+pub const FRAME: Duration = Duration::from_millis(40);
+/// How long one frame of a spinner stays up.
+pub const SPIN: Duration = Duration::from_millis(100);
+
+/// Takes one frame off the countdown and returns the columns to shift it by:
+/// 2, 1, then 0 for good. While frames are left the main loop redraws on a
+/// timer, so the countdown must only reach zero with the unshifted frame.
+fn slide_step(left: &mut u16) -> u16 {
+    *left = left.saturating_sub(1);
+    *left
 }
 
 pub fn draw(app: &mut App, f: &mut Frame) {
@@ -131,10 +164,18 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     header(app, f, bar);
     let th = &app.cfg.theme;
     let tall = app.shape == Shape::Tall;
+    // A tab that was just switched to slides in from the right. Only the
+    // drawing moves: the sizes the rest of the app works with stay `body`.
+    let shift = slide_step(&mut app.slide).min(body.width.saturating_sub(1));
+    let view = Rect {
+        x: body.x + shift,
+        width: body.width - shift,
+        ..body
+    };
     match app.active.checked_sub(1).map(|i| &mut app.tabs[i].kind) {
-        None => hosts(app, f, body),
-        Some(Kind::Term { .. }) => sessions(app, f, body),
-        Some(Kind::Sftp(view)) => files(view, th, app.cfg.lang, tall, f, body),
+        None => hosts(app, f, view),
+        Some(Kind::Term { .. }) => sessions(app, f, view, shift == 0),
+        Some(Kind::Sftp(files_view)) => files(files_view, th, app.cfg.lang, tall, f, view),
     }
     hints(app, hint_rows, f, keys);
     status_line(app, f, status);
@@ -142,7 +183,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         which_key(app, f, body);
     }
     if let Some(p) = &app.popup {
-        popup(p, &app.cfg.theme, app.cfg.lang, f);
+        popup(p, app, f);
     }
 }
 
@@ -152,14 +193,16 @@ const GREEN: Color = Color::Rgb(158, 206, 106);
 const TEAL: Color = Color::Rgb(26, 188, 156);
 const YELLOW: Color = Color::Rgb(224, 175, 104);
 const MAGENTA: Color = Color::Rgb(187, 154, 247);
+const RED: Color = Color::Rgb(247, 118, 142);
 /// Also the border of the panes that receive broadcast input.
 const BROADCAST: Color = Color::Rgb(255, 158, 100);
 /// Text on the coloured segments.
 const INK: Color = Color::Rgb(26, 27, 38);
 
 /// The session view: one pane per slot of the layout, the active session
-/// focused. A single pane uses the whole area without a border.
-fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
+/// focused. A single pane uses the whole area without a border. `settled` is
+/// false for the frames of a slide, which must not resize the remote PTYs.
+fn sessions(app: &mut App, f: &mut Frame, area: Rect, settled: bool) {
     let shown = app.shown();
     let focused = app.active - 1;
     // Portrait: every pane gets the full width, one above the other.
@@ -188,17 +231,17 @@ fn sessions(app: &mut App, f: &mut Frame, area: Rect) {
             inner = block.inner(rect);
             f.render_widget(block, rect);
         }
-        term_pane(tab, inner, f, i == focused);
+        term_pane(tab, inner, f, i == focused, settled);
     }
 }
 
-fn term_pane(tab: &mut Tab, area: Rect, f: &mut Frame, focused: bool) {
+fn term_pane(tab: &mut Tab, area: Rect, f: &mut Frame, focused: bool, settled: bool) {
     let Kind::Term { parser, tx } = &mut tab.kind else {
         return;
     };
     // Keep the remote PTY the size of the pane.
     let size = (NonZeroU16::new(area.height), NonZeroU16::new(area.width));
-    if let (Some(rows), Some(cols)) = size {
+    if let (Some(rows), Some(cols), true) = (size.0, size.1, settled) {
         if parser.screen().size() != (rows, cols) {
             parser.set_size(rows, cols);
             let _ = tx.send(SessionCmd::Resize(area.width, area.height));
@@ -224,6 +267,9 @@ fn breadcrumb(app: &App) -> String {
     if let (Some(panel), Some(alias)) = (panel, app.alias()) {
         crumbs.extend([alias, panel.to_string()]);
     }
+    if app.focus == Focus::Tags {
+        crumbs.push(lang.pick("tags", "thẻ").to_string());
+    }
     if app.focus == Focus::Search {
         crumbs.push(format!("/{}▏", app.filter));
     } else if !app.filter.is_empty() {
@@ -246,7 +292,8 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
     let th = &app.cfg.theme;
     f.render_widget(Block::new().style(Style::new().bg(th.bar)), area);
     let brand = Style::new().fg(Color::Black).bg(th.accent).bold();
-    let mut spans = vec![Span::styled(" vssh ", brand), Span::raw(" ")];
+    let mut spans = pill("vssh", brand, [th.bar; 2], app.cfg.nerd_font).to_vec();
+    spans.push(Span::raw(" "));
     let titles = std::iter::once(breadcrumb(app)).chain(app.tabs.iter().map(|t| {
         let kind = match t.kind {
             Kind::Sftp(_) => "sftp:",
@@ -269,11 +316,15 @@ fn header(app: &App, f: &mut Frame, area: Rect) {
         spans.push(Span::styled("‹", Style::new().fg(th.dim)));
     }
     for (i, (number, title)) in tabs.into_iter().enumerate().skip(first) {
-        let (colour, text) = match i == app.active {
-            true => (th.accent, Style::new().fg(th.text).bold()),
-            false => (th.dim, Style::new().fg(th.dim)),
+        // The active tab is a band of its own, like the selected row of a list.
+        let (number_style, text) = match i == app.active {
+            true => (
+                Style::new().fg(th.accent).bg(th.selection).bold(),
+                Style::new().fg(th.text).bg(th.selection).bold(),
+            ),
+            false => (Style::new().fg(th.dim), Style::new().fg(th.dim)),
         };
-        spans.push(Span::styled(number, Style::new().fg(colour)));
+        spans.push(Span::styled(number, number_style));
         spans.push(Span::styled(title, text));
     }
     let used: usize = spans.iter().map(Span::width).sum();
@@ -419,7 +470,7 @@ fn address(app: &App, alias: &str) -> String {
 /// with one-line rows, details below. Small windows: one panel at a time,
 /// with the details (or forwards / snippets) taking the place of the list.
 fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
-    let side_up = app.info || matches!(app.focus, Focus::Forwards | Focus::Snippets);
+    let side_up = app.info || matches!(app.focus, Focus::Forwards | Focus::Snippets | Focus::Tags);
     let (list_area, side_area) = match app.shape {
         Shape::Wide => {
             let split = [Constraint::Percentage(44), Constraint::Min(24)];
@@ -468,6 +519,10 @@ fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
     }
 
     let Some(right) = side_area else { return };
+    // The drawer does not depend on a selected host: a tag may list none.
+    if app.focus == Focus::Tags {
+        return tag_drawer(app, f, right);
+    }
     let Some(alias) = app.alias() else {
         let k = &app.cfg.keys;
         let hint = match app.filter.is_empty() {
@@ -486,6 +541,59 @@ fn hosts(app: &mut App, f: &mut Frame, area: Rect) {
         Focus::Snippets => snippets(app, &alias, f, right),
         _ => details(app, &alias, f, right),
     }
+}
+
+/// The tag drawer: every tag and group as a pill in its colour, with the
+/// number of hosts it lists. The first nine have their digit in front; the
+/// tag the list is filtered by is marked.
+fn tag_drawer(app: &App, f: &mut Frame, area: Rect) {
+    let th = &app.cfg.theme;
+    let lang = app.cfg.lang;
+    let dim = Style::new().fg(th.dim);
+    let active = app.filter.strip_prefix('#').unwrap_or("\0");
+    let items = app
+        .drawer_tags()
+        .into_iter()
+        .enumerate()
+        .map(|(i, (tag, count))| {
+            let digit = match i {
+                0..9 => format!("{} ", i + 1),
+                _ => "  ".to_string(),
+            };
+            let mark = if tag.eq_ignore_ascii_case(active) {
+                "● "
+            } else {
+                "  "
+            };
+            let badge = Style::new().fg(Color::Black).bg(chip(&tag));
+            let mut spans = vec![
+                Span::styled(digit, Style::new().fg(th.key).bold()),
+                Span::styled(mark, Style::new().fg(th.accent)),
+            ];
+            spans.extend(pill(&tag, badge, [Color::Reset; 2], app.cfg.nerd_font));
+            spans.push(Span::styled(format!(" {count}"), dim));
+            Line::from(spans)
+        });
+    let mut items: Vec<Line> = items.collect();
+    if items.is_empty() {
+        let none = lang.pick(
+            "no tags: add them with e on a host",
+            "chưa có thẻ: nhấn e trên một máy để thêm",
+        );
+        items.push(Line::styled(none, dim));
+    }
+    let (query, typing) = &app.tag_query;
+    let mut title = format!("{} {}", lang.pick("Tags", "Thẻ"), items.len());
+    if *typing {
+        title.push_str(&format!("  /{query}▏"));
+    } else if !query.is_empty() {
+        title.push_str(&format!("  /{query}"));
+    }
+    let list = List::new(items)
+        .block(panel(&title, true, th))
+        .highlight_style(selection(th));
+    let mut state = ListState::default().with_selected(Some(app.sub_sel));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
@@ -519,6 +627,18 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
     let mut lines = vec![
         Line::styled(address(app, alias), Style::new().fg(th.text).bold()),
         Line::styled(format!("{dot} {state}"), Style::new().fg(colour)),
+    ];
+    // Why the last attempt failed, until one succeeds.
+    if let Some(fail) = app.fails.get(alias) {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("✗ {} ", fail.class.label(lang)),
+                Style::new().fg(RED).bold(),
+            ),
+            Span::styled(clean(&fail.message), dim),
+        ]));
+    }
+    lines.extend([
         Line::default(),
         section(t("CONNECTION", "KẾT NỐI")),
         row(t("Address", "Địa chỉ"), text(or(get("HostName"), alias))),
@@ -537,11 +657,10 @@ fn details(app: &App, alias: &str, f: &mut Frame, area: Rect) {
                 t("(agent / default keys)", "(agent / khoá mặc định)"),
             )),
         ),
-    ];
+    ]);
     for key in ["ProxyJump", "ProxyCommand"] {
         if !get(key).is_empty() {
-            let note = Span::styled("  not supported", Style::new().fg(th.error));
-            lines.push(row(key, vec![Span::raw(get(key)), note]));
+            lines.push(row(key, text(get(key))));
         }
     }
 
@@ -777,6 +896,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                     hint("m", "mkdir", "tạo thư mục", true),
                     hint("r", "rename", "đổi tên", entry.is_some()),
                     hint("d", "delete", "xoá", entry.is_some()),
+                    hint("y", "copy path", "chép đường dẫn", entry.is_some()),
                 ],
                 vec![
                     hint("q", "close", "đóng", true),
@@ -790,6 +910,18 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
             hint("enter", "keep", "giữ", true),
             hint("esc", "clear", "xoá", true),
         ]],
+        (None, Focus::Tags) => vec![
+            vec![
+                hint("1-9", "filter by tag", "lọc theo thẻ", true),
+                hint("enter", "pick", "chọn", true),
+                hint("0", "clear", "bỏ lọc", !app.filter.is_empty()),
+            ],
+            vec![
+                hint("/", "search tags", "tìm thẻ", true),
+                hint("esc", "clear and close", "bỏ lọc và đóng", true),
+                hint(&key(k.tags), "close", "đóng", true),
+            ],
+        ],
         (None, focus @ (Focus::Forwards | Focus::Snippets)) => {
             let alias = app.alias().unwrap_or_default();
             let (any, action) = match focus {
@@ -827,6 +959,7 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
             connect.extend([
                 hint(&key(k.sftp), "sftp", "sftp", host),
                 hint(&key(k.mark), "mark", "đánh dấu", host),
+                hint(&key(k.batch), "run", "chạy lệnh", host),
                 hint(&key(k.connect_tag), "by tag", "theo thẻ", host),
                 hint(&key(k.connect), "quick", "nhanh", true),
             ]);
@@ -835,12 +968,15 @@ fn hint_groups(app: &App) -> Vec<Vec<Hint>> {
                 vec![
                     hint(&key(k.forwards), "forwards", "chuyển cổng", host),
                     hint(&key(k.snippets), "snippets", "snippet", host),
+                    hint(&key(k.tags), "tags", "thẻ", true),
                     hint(&key(k.add), "add", "thêm", true),
                     hint(&key(k.edit), "edit", "sửa", host),
+                    hint(&key(k.copy), "copy ssh", "chép ssh", host),
                 ],
                 vec![
                     hint(&key(k.search), "search", "tìm", true),
                     hint(&key(k.ping), "ping", "kiểm tra", true),
+                    hint(&key(k.peek), "peek", "xem nhanh", host),
                     hint(&key(k.help), "help", "trợ giúp", true),
                     hint(&key(k.quit), "quit", "thoát", true),
                 ],
@@ -956,6 +1092,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     let badge = Style::new().fg(INK).bg(colour).bold();
     let section = Style::new().fg(th.text).bg(th.selection);
     let plain = Style::new().fg(th.dim).bg(th.bar);
+    let nerd = app.cfg.nerd_font;
     f.render_widget(Block::new().style(plain), area);
 
     // What the line is about: the focused tab, or the selected host.
@@ -994,7 +1131,7 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     if app.shape != Shape::Wide {
         // Portrait and small windows: mode, host, one tag. Recording and
         // broadcast stay, as marks: they change what typing does.
-        let mut left = vec![Span::styled(format!(" {name} "), badge)];
+        let mut left = pill(name, badge, [th.bar; 2], nerd).to_vec();
         if tab.is_some_and(|t| t.log.is_some()) {
             left.push(Span::styled(" ●", Style::new().fg(th.error).bg(th.bar)));
         }
@@ -1011,10 +1148,8 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         }
         return;
     }
-    let mut left = vec![
-        Span::styled(format!(" {name} "), badge),
-        Span::styled(format!(" {context} "), section),
-    ];
+    let mut left = pill(name, badge, [th.bar, th.selection], nerd).to_vec();
+    left.push(Span::styled(format!(" {context} "), section));
     if tab.is_some_and(|t| t.log.is_some()) {
         let rec = Style::new().fg(th.error).bg(th.bar).bold();
         left.push(Span::styled(" ● REC", rec));
@@ -1035,13 +1170,17 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
     }
 
     let mut right = vec![];
+    let mut tail = vec![];
+    // What the latency pill's left cap sits on: the group segment, if there is one.
+    let mut before = th.bar;
     if let Some(meta) = meta {
         let all: Vec<&str> = tags(meta).collect();
         if !all.is_empty() {
-            right.push(Span::styled(format!("{} ", all.join(" ")), plain));
+            tail.push(Span::styled(format!("{} ", all.join(" ")), plain));
         }
         if !meta.grp.is_empty() {
-            right.push(Span::styled(format!(" {} ", meta.grp), section));
+            tail.push(Span::styled(format!(" {} ", meta.grp), section));
+            before = th.selection;
         }
     }
     let reach = match app
@@ -1053,7 +1192,30 @@ fn status_line(app: &App, f: &mut Frame, area: Rect) {
         Some(None) => lang.pick("down", "mất kết nối").to_string(),
         None => "—".to_string(),
     };
-    right.push(Span::styled(format!(" {reach} "), badge));
+    tail.extend(pill(&reach, badge, [before, th.bar], nerd));
+
+    // Server metrics, in what is free between the centred text and the tags:
+    // they never push anything else off the line.
+    let free = usize::from(area.width).saturating_sub(middle.chars().count()) / 2;
+    let taken: usize = tail.iter().map(Span::width).sum();
+    let room = free.saturating_sub(taken + 4);
+    let mem = lang.pick("MEM", "RAM");
+    let stats = app.stats.get(&alias).and_then(Option::as_ref);
+    let parts = stats.map(|s| s.compact(mem, room, app.shape));
+    for (i, (label, value, level)) in parts.unwrap_or_default().into_iter().enumerate() {
+        let colour = match level {
+            Level::Ok => GREEN,
+            Level::Warn => YELLOW,
+            Level::Crit => RED,
+        };
+        let lead = if i == 0 { "" } else { " · " };
+        right.push(Span::styled(format!("{lead}{label} "), plain));
+        right.push(Span::styled(value, plain.fg(colour)));
+    }
+    if !right.is_empty() {
+        right.push(Span::styled("  ", plain));
+    }
+    right.extend(tail);
 
     f.render_widget(
         Line::styled(middle, plain).alignment(Alignment::Center),
@@ -1091,6 +1253,7 @@ fn leader_menu(app: &App) -> (&'static str, Vec<(String, &'static str, &'static 
                 entry("b", "broadcast", "phát tới mọi phiên"),
                 entry("l", "log session", "ghi log phiên"),
                 entry("s", "type a snippet", "gõ snippet"),
+                entry("y", "copy last output", "chép kết quả lệnh cuối"),
                 entry("d", "close pane", "đóng khung"),
                 entry("q", "host list", "danh sách máy chủ"),
                 entry("tab n", "next tab", "tab kế tiếp"),
@@ -1153,9 +1316,155 @@ fn which_key(app: &App, f: &mut Frame, body: Rect) {
     f.render_widget(Paragraph::new(lines).block(panel(title, true, th)), area);
 }
 
-fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
+/// One frame of the spinner shown while a host is being asked, by the clock.
+fn spinner() -> &'static str {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let now = SystemTime::now().duration_since(UNIX_EPOCH);
+    let step = now.map_or(0, |d| d.as_millis() / SPIN.as_millis());
+    FRAMES[step as usize % FRAMES.len()]
+}
+
+/// Key hints at the foot of a popup.
+fn foot(th: &Theme, pairs: &[(&'static str, &'static str)]) -> Line<'static> {
+    Line::from_iter(pairs.iter().flat_map(|(key, action)| {
+        [
+            Span::styled(*key, Style::new().fg(th.key).bold()),
+            Span::styled(format!(" {action}   "), Style::new().fg(th.dim)),
+        ]
+    }))
+}
+
+/// The quick peek: what the host said about itself, one row per fact. A fact
+/// it did not give is a dim dash, a failed connection is its classified
+/// reason; neither hides the rest.
+fn peek_lines(app: &App, alias: &str) -> Vec<Line<'static>> {
+    let th = &app.cfg.theme;
+    let lang = app.cfg.lang;
+    let dim = Style::new().fg(th.dim);
+    let close = ("esc", lang.pick("close", "đóng"));
+    let (at, peek) = match app.peeks.get(alias) {
+        Some(Some((at, Ok(peek)))) => (at, peek),
+        Some(Some((_, Err(fail)))) => {
+            let class = format!("✗ {}", fail.class.label(lang));
+            return vec![
+                Line::default(),
+                Line::styled(class, Style::new().fg(RED).bold()),
+                Line::styled(clean(&fail.message), dim),
+                Line::default(),
+                foot(th, &[("r", lang.pick("try again", "thử lại")), close]),
+            ];
+        }
+        _ => {
+            let asking = lang.pick("asking", "đang hỏi");
+            let line = format!("{} {asking} {alias}…", spinner());
+            return vec![
+                Line::default(),
+                Line::styled(line, dim),
+                Line::default(),
+                foot(th, &[close]),
+            ];
+        }
+    };
+    let row = |label: &str, value: Option<Span<'static>>| {
+        let value = value.unwrap_or_else(|| Span::styled("—", dim));
+        Line::from(vec![Span::styled(format!("{label:<10}"), dim), value])
+    };
+    let text = |v: &Option<String>| v.as_ref().map(|v| Span::raw(clean(v)));
+    let mut lines = vec![
+        Line::default(),
+        row(lang.pick("Host", "Tên máy"), text(&peek.host)),
+        row(lang.pick("System", "Hệ thống"), text(&peek.os)),
+        row(lang.pick("Uptime", "Đã chạy"), text(&peek.uptime)),
+        row(lang.pick("Load", "Tải"), text(&peek.load)),
+    ];
+    let mem = lang.pick("MEM", "RAM");
+    let parts = peek.stats.parts(mem, true);
+    for label in ["CPU", mem, "/"] {
+        let part = parts.iter().find(|(l, ..)| l == label);
+        let value = part.map(|(_, value, level)| {
+            let colour = match level {
+                Level::Ok => GREEN,
+                Level::Warn => YELLOW,
+                Level::Crit => RED,
+            };
+            Span::styled(value.clone(), Style::new().fg(colour))
+        });
+        let label = match label {
+            "/" => lang.pick("Disk /", "Đĩa /"),
+            other => other,
+        };
+        lines.push(row(label, value));
+    }
+    let secs = at.elapsed().as_secs();
+    let age = match lang {
+        Lang::En => format!("{secs}s ago"),
+        Lang::Vi => format!("{secs} giây trước"),
+    };
+    let mut keys = foot(th, &[("r", lang.pick("refresh", "làm mới")), close]);
+    keys.push_span(Span::styled(age, dim));
+    lines.extend([Line::default(), keys]);
+    lines
+}
+
+fn popup(popup: &Popup, app: &App, f: &mut Frame) {
+    let (th, lang) = (&app.cfg.theme, app.cfg.lang);
     let screen = f.area();
     match popup {
+        Popup::Batch(batch) => {
+            let area = centered(screen, screen.width * 9 / 10, screen.height * 9 / 10);
+            let lines = batch_lines(&batch.rows, &batch.filter, lang);
+            let width = lines.iter().map(|l| l.0.chars().count()).max().unwrap_or(0);
+            let text: Vec<Line> = lines
+                .into_iter()
+                .map(|(host, text, row)| {
+                    // A host has the colour of its first tag, or its group, everywhere.
+                    let meta = app.meta.get(&host);
+                    let tag = meta.and_then(|m| tags(m).next().or(Some(m.grp.as_str())));
+                    let colour = chip(tag.filter(|t| !t.is_empty()).unwrap_or(&host));
+                    let (lead, style) = match row {
+                        Row::Running => (format!("{} ", spinner()), Style::new().fg(th.dim)),
+                        Row::Failed => (String::new(), Style::new().fg(RED)),
+                        Row::Out => (String::new(), Style::new()),
+                    };
+                    Line::from(vec![
+                        Span::styled(format!("{host:<width$}"), Style::new().fg(colour).bold()),
+                        Span::styled(" │ ", Style::new().fg(th.border)),
+                        Span::styled(format!("{lead}{text}"), style),
+                    ])
+                })
+                .collect();
+            let done = batch.rows.iter().filter(|row| row.1.is_some()).count();
+            let mut title = format!("{} — {done}/{}", clean(&batch.command), batch.rows.len());
+            if batch.typing {
+                title.push_str(&format!("  /{}▏", batch.filter));
+            } else if !batch.filter.is_empty() {
+                title.push_str(&format!("  /{}", batch.filter));
+            }
+            let block = panel(&title, true, th);
+            let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
+                .areas(block.inner(area));
+            let scroll = batch.scroll.min(text.len().saturating_sub(1) as u16);
+            let text = Paragraph::new(text).wrap(Wrap { trim: false });
+            f.render_widget(Clear, area);
+            f.render_widget(block, area);
+            f.render_widget(text.scroll((scroll, 0)), body);
+            let hints = [
+                ("j/k", lang.pick("scroll", "cuộn")),
+                ("/", lang.pick("filter by host", "lọc theo máy")),
+                ("esc", lang.pick("close", "đóng")),
+            ];
+            f.render_widget(foot(th, &hints), keys);
+        }
+        Popup::Peek(alias) => {
+            let lines = peek_lines(app, alias);
+            // A long failure message wraps: count the rows it takes inside the frame.
+            let rows: usize = lines.iter().map(|l| l.width().div_ceil(56).max(1)).sum();
+            let area = centered(screen, 60, rows as u16 + 2);
+            let title = format!("{} {alias}", lang.pick("Quick peek:", "Xem nhanh:"));
+            let body = Paragraph::new(lines).wrap(Wrap { trim: false });
+            f.render_widget(Clear, area);
+            f.render_widget(body.block(panel(&title, true, th)), area);
+        }
         Popup::Confirm(text, _) => {
             let area = centered(screen, text.chars().count() as u16 + 8, 5);
             let lines = vec![
@@ -1204,8 +1513,10 @@ fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
             let label_w = form.fields.iter().map(|f| f.0.chars().count()).max();
             let label_w = label_w.unwrap_or(0) + 2;
             let area = centered(screen, 78, form.rows() as u16 + 5);
-            // Borders, padding and one cell for the cursor.
-            let room = usize::from(area.width).saturating_sub(label_w + 5);
+            // Borders, padding, and the margins of the input band: the right
+            // one is where the cursor stands after a value that fills it.
+            let room = usize::from(area.width).saturating_sub(label_w + 6);
+            let input = Style::new().bg(th.selection);
             let mut cursor = (area.x, area.y);
             let mut lines = vec![Line::default()];
             for (i, (label, value)) in form.fields.iter().enumerate() {
@@ -1221,12 +1532,12 @@ fn popup(popup: &Popup, th: &Theme, lang: Lang, f: &mut Frame) {
                     false => Style::new().fg(th.dim),
                 };
                 if i == form.idx {
-                    let x = area.x + 2 + (label_w + shown.chars().count()) as u16;
+                    let x = area.x + 3 + (label_w + shown.chars().count()) as u16;
                     cursor = (x, area.y + 2 + i as u16);
                 }
                 lines.push(Line::from(vec![
                     Span::styled(format!("{label:<label_w$}"), style),
-                    Span::raw(shown),
+                    Span::styled(format!(" {shown:<room$} "), input),
                 ]));
             }
             if let Some(on) = form.save {
@@ -1304,6 +1615,29 @@ mod tests {
         assert_eq!(shorten("root@web-01.example.com", 12), "root@web-01…");
         assert_eq!(shorten("short", 12), "short");
         assert_eq!(shorten("héllo wörld", 5), "héll…");
+        // A tab switch shifts three frames by 2, 1 and 0 columns, then stays put.
+        let mut left = SLIDE;
+        let offsets: Vec<u16> = (0..5)
+            .map(|_| {
+                let offset = slide_step(&mut left);
+                // A shifted frame always has a timed redraw coming after it.
+                assert_eq!(offset > 0, left > 0);
+                offset
+            })
+            .collect();
+        assert_eq!(offsets, [2, 1, 0, 0, 0]);
+        // A pill is as wide as the square badge it replaces, in either font.
+        let badge = Style::new().fg(INK).bg(BLUE);
+        for nerd in [false, true] {
+            let spans = pill("NORMAL", badge, [Color::Black, Color::Red], nerd);
+            assert_eq!(
+                spans.iter().map(Span::width).sum::<usize>(),
+                " NORMAL ".len()
+            );
+            let caps = [&spans[0], &spans[2]].map(|s| (s.style.fg, s.style.bg));
+            assert_eq!(caps[0], (Some(BLUE), Some(Color::Black)));
+            assert_eq!(caps[1], (Some(BLUE), Some(Color::Red)));
+        }
         let small = Rect::new(0, 0, 20, 4);
         assert_eq!(centered(small, 76, 11), small);
         assert_eq!(

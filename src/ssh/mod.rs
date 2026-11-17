@@ -3,12 +3,12 @@
 pub mod forward;
 
 use std::borrow::Cow;
-use std::fmt;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use russh::client::{self, Handle};
 use russh::keys::agent::client::AgentClient;
 use russh::keys::known_hosts::{known_host_keys_path, learn_known_hosts_path};
@@ -17,23 +17,12 @@ use russh::keys::{
     PublicKeyOrCertificate,
 };
 use russh::{Channel, ChannelMsg};
-use tokio::io::copy_bidirectional;
-use tokio::net::TcpStream;
+use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
+use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use crate::conn_err::Fail;
 use crate::store::ssh_config::SshConfig;
-
-/// Every offered method was refused; the caller may retry with a password.
-#[derive(Debug)]
-pub struct AuthFailed;
-
-impl fmt::Display for AuthFailed {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("authentication failed")
-    }
-}
-
-impl std::error::Error for AuthFailed {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
@@ -44,18 +33,54 @@ pub struct Target {
     pub keys: Vec<PathBuf>,
     /// `RemoteCommand` of the ssh config: run instead of the login shell.
     pub remote_command: Option<String>,
+    /// How to get to it.
+    pub via: Via,
+}
+
+/// The road to a target.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Via {
+    /// A TCP connection.
+    #[default]
+    Direct,
+    /// `ProxyJump`: through these hosts, in order. Hops of hops are already
+    /// flattened into the list; only the first can itself be `Command`.
+    Jump(Vec<Target>),
+    /// `ProxyCommand`: the standard input and output of this local command.
+    Command(String),
 }
 
 impl Target {
     /// Resolves an alias the way `ssh alias` would.
     pub fn from_config(c: &SshConfig, alias: &str) -> Result<Self> {
-        for key in ["ProxyJump", "ProxyCommand"] {
-            if c.get(alias, key)
-                .is_some_and(|v| !v.eq_ignore_ascii_case("none"))
-            {
-                bail!("{key} is not supported yet");
-            }
+        Self::resolve(c, alias, 0)
+    }
+
+    /// `depth` counts jump hosts resolved on the way here, to stop a loop.
+    fn resolve(c: &SshConfig, alias: &str, depth: usize) -> Result<Self> {
+        if depth > 8 {
+            bail!("ProxyJump loops or is more than 8 hosts deep (at {alias})");
         }
+        let set = |key| {
+            let value = c.get(alias, key);
+            value.filter(|v| !v.eq_ignore_ascii_case("none"))
+        };
+        let via = match (set("ProxyJump"), set("ProxyCommand")) {
+            (Some(jump), _) => {
+                let mut hops = vec![];
+                for hop in jump.split(',') {
+                    let mut hop = Self::hop(c, hop.trim(), depth + 1)?;
+                    // A hop reached through hops of its own: those come first.
+                    if let Via::Jump(before) = std::mem::take(&mut hop.via) {
+                        hops.extend(before);
+                    }
+                    hops.push(hop);
+                }
+                Via::Jump(hops)
+            }
+            (None, Some(command)) => Via::Command(command.to_string()),
+            (None, None) => Via::Direct,
+        };
         let host = c.get(alias, "HostName").unwrap_or(alias);
         crate::proto::ensure_ssh(host)?;
         let home = crate::config::home();
@@ -84,7 +109,36 @@ impl Target {
                 .get(alias, "RemoteCommand")
                 .filter(|cmd| !cmd.eq_ignore_ascii_case("none"))
                 .map(str::to_string),
+            via,
         })
+    }
+
+    /// One entry of a `ProxyJump` list, `[user@]host[:port]`. The host goes
+    /// through the ssh config like any other name, so a hop can be an alias
+    /// with its own key, user and jump hosts; `user@` and `:port` override.
+    // shortcut: no bracketed IPv6 literals and no ssh:// URIs as hops; give
+    // such a hop a Host block and name its alias.
+    fn hop(c: &SshConfig, spec: &str, depth: usize) -> Result<Self> {
+        let (user, rest) = match spec.rsplit_once('@') {
+            Some((user, rest)) => (Some(user), rest),
+            None => (None, spec),
+        };
+        let (name, port) = match rest.rsplit_once(':') {
+            Some((name, port)) => (name, Some(port)),
+            None => (rest, None),
+        };
+        if name.is_empty() {
+            bail!("ProxyJump has an empty host in {spec:?}");
+        }
+        let mut hop = Self::resolve(c, name, depth)?;
+        if let Some(user) = user {
+            hop.user = user.to_string();
+        }
+        if let Some(port) = port {
+            let port = port.parse();
+            hop.port = port.with_context(|| format!("ProxyJump port in {spec:?}"))?;
+        }
+        Ok(hop)
     }
 
     /// Adds this target to the ssh config as a host and returns the alias it
@@ -135,6 +189,7 @@ impl Target {
             user,
             keys: default_keys(),
             remote_command: None,
+            via: Via::Direct,
         })
     }
 }
@@ -155,6 +210,143 @@ pub struct Client {
     port: u16,
     /// Where connections arriving over a remote (`-R`) forward are sent.
     remote_fwd: Option<(String, u16)>,
+    /// What this connection runs through: jump host connections, a proxy
+    /// command. Held here so they live exactly as long as it does.
+    _road: Road,
+}
+
+/// Anything a transport can be: a socket, a channel of another connection.
+trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
+
+/// What must stay alive under a connection.
+type Road = Vec<Box<dyn Send>>;
+
+/// A running `ProxyCommand`, killed and reaped when its connection ends.
+struct Proxy(std::process::Child);
+
+impl Drop for Proxy {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// `ProxyCommand` with its tokens filled in: `%h` host, `%p` port, `%r`
+/// user, `%%` a percent sign. The values go into a shell command, so a host
+/// or user name that could be more than a name is refused (OpenSSH does the
+/// same since 9.6).
+fn proxy_command(command: &str, t: &Target) -> Result<String> {
+    let plain = |s: &str| {
+        let ok = |c: char| c.is_ascii_alphanumeric() || "._-:[]@%".contains(c);
+        !s.is_empty() && !s.starts_with('-') && s.chars().all(ok)
+    };
+    if !plain(&t.host) || !plain(&t.user) {
+        bail!(
+            "ProxyCommand refused: {}@{} is not a plain user and host name",
+            t.user,
+            t.host
+        );
+    }
+    let mut out = String::new();
+    let mut chars = command.chars();
+    while let Some(c) = chars.next() {
+        match (c, chars.clone().next()) {
+            ('%', Some('h' | 'n')) => out.push_str(&t.host),
+            ('%', Some('p')) => out.push_str(&t.port.to_string()),
+            ('%', Some('r')) => out.push_str(&t.user),
+            ('%', Some('%')) => out.push('%'),
+            _ => {
+                out.push(c);
+                continue;
+            }
+        }
+        chars.next();
+    }
+    Ok(out)
+}
+
+/// The first leg of a road: TCP, or the pipes of a `ProxyCommand`.
+async fn first_leg(t: &Target) -> Result<(Box<dyn Stream>, Road)> {
+    let Via::Command(command) = &t.via else {
+        let sock = dial(&t.host, t.port).await?;
+        let _ = sock.set_nodelay(true);
+        return Ok((Box::new(sock), vec![]));
+    };
+    let command = proxy_command(command, t)?;
+    // One end of a socket pair is the command's stdin and stdout, the other
+    // is the transport. `exec`, so that killing the shell kills the command.
+    let (ours, theirs) = std::os::unix::net::UnixStream::pair()?;
+    let theirs = std::os::fd::OwnedFd::from(theirs);
+    let child = std::process::Command::new("sh")
+        .args(["-c", &format!("exec {command}")])
+        .stdin(theirs.try_clone()?)
+        .stdout(theirs)
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .with_context(|| format!("cannot run ProxyCommand {command}"))?;
+    let proxy = Proxy(child);
+    ours.set_nonblocking(true)?;
+    let ours = tokio::net::UnixStream::from_std(ours)?;
+    Ok((Box::new(ours), vec![Box::new(proxy)]))
+}
+
+/// Opens the transport to a target, through its jump hosts if it has any.
+/// A hop that fails is named in the error (`Fail::Jump`), with its position.
+async fn road(t: &Target) -> Result<(Box<dyn Stream>, Road)> {
+    let Via::Jump(hops) = &t.via else {
+        return first_leg(t).await;
+    };
+    let mut road: Road = vec![];
+    let mut last: Option<(Handle<Client>, &Target)> = None;
+    for (i, hop) in hops.iter().enumerate() {
+        let through = async {
+            let stream = match &last {
+                Some((h, from)) => tunnel(h, from, hop).await?,
+                None => {
+                    let (stream, under) = first_leg(hop).await?;
+                    road.extend(under);
+                    stream
+                }
+            };
+            // shortcut: jump hosts log in with the agent or key files only;
+            // carry vault passwords per hop if a bastion ever needs one.
+            let mut h = handshake(hop, stream, None, vec![]).await?;
+            login(&mut h, hop, None).await?;
+            anyhow::Ok(h)
+        };
+        let h = through.await.map_err(|e| {
+            let cause = e.downcast_ref::<Fail>().cloned().map(Box::new);
+            let hop = format!(
+                "{}:{} (hop {} of {})",
+                hop.host,
+                hop.port,
+                i + 1,
+                hops.len()
+            );
+            e.context(Fail::Jump { hop, cause })
+        })?;
+        if let Some((before, _)) = last.replace((h, hop)) {
+            road.push(Box::new(before));
+        }
+    }
+    let Some((h, from)) = last else {
+        bail!("ProxyJump names no host");
+    };
+    let stream = tunnel(&h, from, t).await?;
+    road.push(Box::new(h));
+    Ok((stream, road))
+}
+
+/// A channel from a connected jump host to the next host on the road.
+async fn tunnel(h: &Handle<Client>, from: &Target, to: &Target) -> Result<Box<dyn Stream>> {
+    let addr = format!("{}:{}", to.host, to.port);
+    let opening = h.channel_open_direct_tcpip(to.host.clone(), to.port.into(), "127.0.0.1", 0);
+    let channel = opening
+        .await
+        .with_context(|| format!("jump host {}:{} could not connect", from.host, from.port))
+        .map_err(|e| e.context(Fail::Unreachable { addr }))?;
+    Ok(Box::new(channel.into_stream()))
 }
 
 impl client::Handler for Client {
@@ -207,14 +399,22 @@ pub fn verify_host_key(host: &str, port: u16, key: &PublicKey, known_hosts: &Pat
         return Ok(());
     }
     if let Some((line, _)) = known.first() {
-        bail!(
-            "HOST KEY MISMATCH for {host}: the server's key is not the one on line {line} \
-             of {}. Refusing to connect; fix that file if the key really changed",
-            known_hosts.display()
-        );
+        return Err(Fail::HostKey {
+            host: host.to_string(),
+            fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
+            line: *line,
+            file: known_hosts.to_path_buf(),
+        }
+        .into());
     }
     learn_known_hosts_path(host, port, key, known_hosts)
         .with_context(|| format!("cannot write {}", known_hosts.display()))
+}
+
+/// True if `known_hosts` already has a key for this target: it has been
+/// connected to before, so talking to it again trusts nothing new.
+pub fn is_known(t: &Target) -> bool {
+    known_host_keys_path(&t.host, t.port, known_hosts_path()).is_ok_and(|known| !known.is_empty())
 }
 
 /// Host key algorithms to offer, the types already on record first (as
@@ -237,31 +437,73 @@ fn host_key_algorithms(known: &[PublicKey]) -> Vec<Algorithm> {
     all
 }
 
-/// Connects and authenticates: agent, then key files, then the password.
-pub async fn connect(
+/// How long a TCP connect, and then the SSH handshake, may take.
+const PATIENCE: Duration = Duration::from_secs(10);
+
+/// Resolves the name and opens the TCP connection. The error says which of
+/// the two failed, and at which address.
+async fn dial(host: &str, port: u16) -> Result<TcpStream> {
+    let dns = || Fail::Dns {
+        host: host.to_string(),
+    };
+    let addrs = lookup_host((host, port))
+        .await
+        .map_err(|e| anyhow::Error::new(e).context(dns()))?;
+    // Every address is tried; the last failure is the one reported.
+    let mut last = anyhow::Error::new(dns());
+    for addr in addrs {
+        let at = addr.to_string();
+        last = match tokio::time::timeout(PATIENCE, TcpStream::connect(addr)).await {
+            Ok(Ok(sock)) => return Ok(sock),
+            Ok(Err(e)) if e.kind() == ErrorKind::ConnectionRefused => {
+                anyhow::Error::new(e).context(Fail::Refused { addr: at })
+            }
+            Ok(Err(e)) => anyhow::Error::new(e).context(Fail::Unreachable { addr: at }),
+            Err(_) => Fail::Timeout {
+                addr: at,
+                secs: PATIENCE.as_secs(),
+            }
+            .into(),
+        };
+    }
+    Err(last)
+}
+
+/// The SSH handshake over an open stream, host key check included.
+async fn handshake(
     t: &Target,
-    password: Option<&str>,
+    stream: Box<dyn Stream>,
     remote_fwd: Option<(String, u16)>,
+    road: Road,
 ) -> Result<Handle<Client>> {
     let mut config = client::Config {
         keepalive_interval: Some(Duration::from_secs(30)),
-        nodelay: true,
         ..Default::default()
     };
     let known = known_host_keys_path(&t.host, t.port, known_hosts_path()).unwrap_or_default();
     let known: Vec<PublicKey> = known.into_iter().map(|(_, key)| key).collect();
     config.preferred.key = Cow::Owned(host_key_algorithms(&known));
-    let config = Arc::new(config);
     let handler = Client {
         host: t.host.clone(),
         port: t.port,
         remote_fwd,
+        _road: road,
     };
-    let connecting = client::connect(config, (t.host.as_str(), t.port), handler);
-    let mut h = tokio::time::timeout(Duration::from_secs(10), connecting)
+    let shaking = client::connect_stream(Arc::new(config), stream, handler);
+    let slow = |_| Fail::Timeout {
+        addr: format!("{}:{}", t.host, t.port),
+        secs: PATIENCE.as_secs(),
+    };
+    tokio::time::timeout(PATIENCE, shaking)
         .await
-        .map_err(|_| anyhow!("connection to {}:{} timed out", t.host, t.port))??;
+        .map_err(slow)?
+}
+
+/// Authenticates: agent, then key files, then the password. If all of it is
+/// refused the error says what was tried (`Fail::Auth`).
+async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Result<()> {
     let rsa_hash = h.best_supported_rsa_hash().await?.flatten();
+    let mut keys = 0;
 
     if let Ok(mut agent) = AgentClient::connect_env().await {
         let mut ids = agent.request_identities().await.unwrap_or_default();
@@ -279,11 +521,12 @@ pub async fn connect(
         });
         for id in ids {
             let key = id.public_key().into_owned();
+            keys += 1;
             let res = h
                 .authenticate_publickey_with(&t.user, key, rsa_hash, &mut agent)
                 .await;
             if res.is_ok_and(|r| r.success()) {
-                return Ok(h);
+                return Ok(());
             }
         }
     }
@@ -293,16 +536,37 @@ pub async fn connect(
             continue;
         };
         let key = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+        keys += 1;
         if h.authenticate_publickey(&t.user, key).await?.success() {
-            return Ok(h);
+            return Ok(());
         }
     }
     if let Some(pw) = password {
         if h.authenticate_password(&t.user, pw).await?.success() {
-            return Ok(h);
+            return Ok(());
         }
     }
-    Err(AuthFailed.into())
+    Err(Fail::Auth {
+        user: t.user.clone(),
+        host: t.host.clone(),
+        keys,
+        password: password.is_some(),
+    }
+    .into())
+}
+
+/// Connects and authenticates, through the target's jump hosts or proxy
+/// command if it has them. A failure carries a `Fail` saying which step it
+/// was: name lookup, TCP, a jump host, host key, or login.
+pub async fn connect(
+    t: &Target,
+    password: Option<&str>,
+    remote_fwd: Option<(String, u16)>,
+) -> Result<Handle<Client>> {
+    let (stream, road) = road(t).await?;
+    let mut h = handshake(t, stream, remote_fwd, road).await?;
+    login(&mut h, t, password).await?;
+    Ok(h)
 }
 
 pub enum SessionCmd {
@@ -330,9 +594,10 @@ impl Login {
     }
 }
 
-/// Runs an interactive session on a PTY until either side closes it.
+/// Runs an interactive session on a PTY until either side closes it. The
+/// connection is only borrowed, so other channels can run next to the shell.
 pub async fn shell(
-    h: Handle<Client>,
+    h: &Handle<Client>,
     (cols, rows): (u16, u16),
     login: Login,
     mut rx: UnboundedReceiver<SessionCmd>,
@@ -595,7 +860,102 @@ mod tests {
         assert_eq!(t.keys.len(), 3);
 
         let err = |alias| Target::from_config(&c, alias).unwrap_err().to_string();
-        assert_eq!(err("jump"), "ProxyJump is not supported yet");
         assert_eq!(err("tty"), "Serial is not implemented yet");
+        // `ProxyJump none` is no jump; a hop that is no alias still gets the `Host *` defaults.
+        assert_eq!(t.via, Via::Direct);
+        let Via::Jump(hops) = Target::from_config(&c, "jump").unwrap().via else {
+            panic!("jump has a jump host");
+        };
+        let hop = (hops[0].host.as_str(), hops[0].user.as_str(), hops[0].port);
+        assert_eq!((hops.len(), hop), (1, ("bastion", "admin", 22)));
+    }
+
+    #[test]
+    fn proxyjump_round_trips_and_resolves_to_a_chain() {
+        let text = "Host bastion\n    HostName 203.0.113.1\n    User jump\n    IdentityFile /keys/bastion\n\n\
+                    Host inner\n    HostName 10.0.0.5\n    ProxyJump bastion\n\n\
+                    Host deep\n    HostName 10.0.1.9\n    ProxyJump inner\n\n\
+                    Host multi\n    ProxyJump admin@gw.example:2222, bastion\n\n\
+                    Host off\n    ProxyJump none\n    ProxyCommand none\n\n\
+                    Host piped\n    ProxyCommand nc -X 5 -x proxy:1080 %h %p\n\n\
+                    Host both\n    ProxyJump bastion\n    ProxyCommand nc %h %p\n\n\
+                    Host a\n    ProxyJump b\n\nHost b\n    ProxyJump a\n\n\
+                    Host badport\n    ProxyJump bastion:ssh\n";
+        let c = SshConfig::parse(text);
+        // Parsing and writing back changes nothing: the option survives vssh's edits.
+        assert_eq!(c.to_string(), text);
+        assert_eq!(c.get("inner", "ProxyJump"), Some("bastion"));
+
+        let chain = |alias| match Target::from_config(&c, alias).unwrap().via {
+            Via::Jump(hops) => hops,
+            other => panic!("{alias}: {other:?}"),
+        };
+        let names = |alias| -> Vec<String> {
+            let hops = chain(alias);
+            hops.iter()
+                .map(|h| format!("{}@{}:{}", h.user, h.host, h.port))
+                .collect()
+        };
+        // A hop is resolved like any host: its HostName, user and key.
+        assert_eq!(names("inner"), ["jump@203.0.113.1:22"]);
+        assert_eq!(chain("inner")[0].keys, [PathBuf::from("/keys/bastion")]);
+        // A hop with a hop of its own: the outermost comes first, and the list is flat.
+        let user = current_user();
+        assert_eq!(
+            names("deep"),
+            [
+                "jump@203.0.113.1:22".to_string(),
+                format!("{user}@10.0.0.5:22")
+            ]
+        );
+        assert!(chain("deep").iter().all(|hop| hop.via == Via::Direct));
+        // A list, with user and port given in place.
+        assert_eq!(
+            names("multi"),
+            ["admin@gw.example:2222", "jump@203.0.113.1:22"]
+        );
+
+        let via = |alias| Target::from_config(&c, alias).unwrap().via;
+        assert_eq!(via("off"), Via::Direct);
+        assert_eq!(
+            via("piped"),
+            Via::Command("nc -X 5 -x proxy:1080 %h %p".into())
+        );
+        assert!(matches!(via("both"), Via::Jump(_)));
+        assert_eq!(Target::parse("root@10.0.0.5").unwrap().via, Via::Direct);
+
+        let err = |alias| Target::from_config(&c, alias).unwrap_err().to_string();
+        assert!(err("a").starts_with("ProxyJump loops"), "{}", err("a"));
+        assert_eq!(err("badport"), "ProxyJump port in \"bastion:ssh\"");
+    }
+
+    #[test]
+    fn proxy_command_tokens_and_names_that_are_not_names() {
+        let mut t = Target::parse("deploy@web.example:2222").unwrap();
+        let expand = |command: &str, t: &Target| proxy_command(command, t);
+        assert_eq!(
+            expand("nc -x proxy:1080 %h %p", &t).unwrap(),
+            "nc -x proxy:1080 web.example 2222"
+        );
+        assert_eq!(
+            expand("corkscrew p 8080 %h %p # %r at 100%% %x %", &t).unwrap(),
+            "corkscrew p 8080 web.example 2222 # deploy at 100% %x %"
+        );
+        // A name that would be shell syntax, or an option, never reaches the shell.
+        for host in [
+            "web;reboot",
+            "$(id)",
+            "a b",
+            "`id`",
+            "-oProxyCommand=x",
+            "a|b",
+            "",
+        ] {
+            t.host = host.to_string();
+            assert!(expand("nc %h %p", &t).is_err(), "{host}");
+        }
+        t.host = "web.example".into();
+        t.user = "x;id".into();
+        assert!(expand("nc %h %p", &t).is_err());
     }
 }

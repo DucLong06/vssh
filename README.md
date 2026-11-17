@@ -77,6 +77,76 @@ A plain `S` cannot be the toggle while the cursor is in a text field, because it
 - **Focus:** `Alt-h/j/k/l` moves between panes like vim windows (also `Ctrl-a` + arrow). `Ctrl-a d` closes the focused session.
 - **Broadcast:** `Alt-b` (or `Ctrl-a b`). While it is on, what you type or paste goes to *every* connected session, including ones not on screen. The status line turns orange and shows how many sessions are listening, and their panes get an orange border. Press `Alt-b` again to stop.
 - **Snippets:** `Ctrl-a s` types a saved snippet into the session, or into all of them while broadcasting.
+- **One command, many hosts:** mark hosts with `Space`, press `x`, type a command. It runs on every marked host at once, each over its own connection, with no session opened. The results fill in as hosts answer, one `host │ output` line per line, the host in the colour of its tag; a host still running shows a spinner, a host that failed shows why. `j`/`k` scroll, `/` shows only hosts whose name contains what you type, `Esc` closes and drops the hosts that have not answered. Broadcast is for typing into live sessions; `x` is for a one-off. A snippet run on marked hosts uses the same view.
+
+## Status bar
+
+The bottom line shows the mode, the focused host and pane, then its tags, group and latency. In a wide window it also shows how the server is doing:
+
+```
+ TERMINAL  single          web-01 : pane 1/1          CPU ▂ 23% · MEM ▂ 4.2/16G · / ▅ 61%   web  prod  12 ms
+```
+
+- **CPU** is the 1-minute load average per core (over 100% means work is queueing), **MEM** is used / total memory, **/** is how full the root file system is. Each turns yellow, then red: CPU above 50% / 80%, memory above 70% / 85%, disk above 80% / 90%.
+- **In a session** the numbers are read every 5 seconds over a second channel of the connection that is already open: no extra login. Linux servers (`/proc`) and macOS servers (`uptime`, `vm_stat`) are understood; a host that does not answer shows nothing.
+- **On the host list**, resting on a host for a moment asks it once. Only a host you have connected to before (its key is in `known_hosts`) is asked, and only with your agent or key files: a vault password is never sent for this. A host with a session open uses that session's numbers; a host that refuses is not asked again.
+- **Little room:** the bars go first, then disk, then memory. Portrait and small windows keep to mode and host.
+- `status_stats = false` in the config turns all of it off.
+- **Rounded badges:** the mode, the latency and the `vssh` mark are pills with half-circle ends (`◖NORMAL◗`). With a Nerd Font, `nerd_font = true` uses its full-height Powerline caps instead; without such a font those would show as empty boxes, so it is off by default.
+- **Tab switches:** the tab you switch to slides in from the right over three frames (120 ms). Remote terminals are not resized while it moves. On a slow link three redraws are three round trips: `transitions = false` turns it off.
+
+## Copy to the clipboard
+
+vssh has no clipboard library. It asks the terminal it runs in to do the copy, with the OSC 52 escape, so it also works over SSH to the machine vssh runs on.
+
+- **Host list:** `y` copies `ssh <host>`.
+- **Session:** `Ctrl-a y` copies the output of the last command: the lines between the prompt you are at and the prompt before it. If the prompt is not the same text both times (a clock in it, or something already typed), everything above the cursor is copied instead. Only what is on screen counts. It is `Ctrl-a y` and not a bare `y`, because a bare `y` belongs to the shell.
+- **SFTP:** `y` copies the full path of the selected file.
+- **Terminal support:** most current terminals accept OSC 52 (some ask first or need it enabled). Inside tmux, vssh also hands the text to tmux itself (`tmux load-buffer -w`), since tmux ignores OSC 52 from programs unless `set-clipboard on`. `osc52 = false` stops the escape for a terminal that prints it instead of obeying it; the tmux buffer is still set.
+
+## Jump hosts
+
+`ProxyJump` and `ProxyCommand` in `~/.ssh/config` are honoured for everything vssh opens: sessions, SFTP, forwards, quick peek, batch commands. vssh has no form for them; write them in the file as you would for `ssh`.
+
+```
+Host bastion
+    HostName 203.0.113.1
+    User jump
+
+Host db-internal
+    HostName 10.0.0.5
+    ProxyJump bastion
+```
+
+- **`ProxyJump`** takes one host or a comma-separated chain, each `[user@]host[:port]`. A hop is resolved through the config like any host, so it can be an alias with its own `HostName`, `User`, `IdentityFile` and its own `ProxyJump`. Every hop's host key is checked against `known_hosts` just like the target's.
+- **Hops log in with your agent or key files only.** A vault password is used for the target, never for a hop.
+- **`ProxyCommand`** runs the command locally with `%h`, `%p`, `%r` and `%%` filled in and talks SSH over its input and output. It is stopped when the connection ends. A host or user name containing anything but letters, digits and `. _ - : @ [ ]` is refused rather than handed to the shell. If a host has both, `ProxyJump` is used. `none` turns either off.
+- **When a hop fails** the error names it and its place in the chain.
+- **Not supported:** bracketed IPv6 addresses and `ssh://` URIs as hops (give the hop a `Host` block), and resting the cursor on a host that needs a jump or a proxy command does not ask it for stats; open a session or press `v`.
+
+## Quick peek
+
+`v` on the host list opens a small window with what the host says about itself: name, system (`uname -srm`), uptime, the three load averages, CPU, memory and root disk. No shell is opened: it is one command over a short connection, with the same host key check and login as a session (agent, keys, then the vault password).
+
+- The answer is kept for 30 seconds, so opening the window again is instant; `r` or `Enter` asks again, `Esc` or `q` closes.
+- What the host did not answer is a dash; the rest is still shown. If the connection fails, the window says why, in the wording of the next section.
+
+## When a connection fails
+
+vssh says why, not only that it failed. A popup shows the reason and the full error chain; the host's details keep the last failure, in red, until a connection to it succeeds.
+
+| Shown | What happened |
+|-------|---------------|
+| `DNS` Cannot resolve db.internal: … | the name lookup failed; the resolver's own words follow |
+| `TIMEOUT` Connection timed out after 10s (203.0.113.7:22) | nothing answered at that address |
+| `REFUSED` Connection refused by 203.0.113.7:22 — is sshd running? | the machine answered, nothing listens on the port |
+| `UNREACHABLE` Cannot reach 203.0.113.7:22: … | no route; the system's own words follow |
+| `AUTH` Wrong password / Public key rejected / No way to log in | which method the server refused; you are then asked for a password |
+| `HOST KEY` Host key mismatch … | the fingerprint the server sent, and the line of `known_hosts` it conflicts with |
+| `JUMP HOST` Jump host bastion:22 (hop 1 of 2) failed: … | which hop of a `ProxyJump` chain failed, and why, in the wording of the rows above |
+| `ERROR` … | anything else, shown word for word |
+
+Snippets run on several hosts and port forwards report failures with the same wording.
 
 ## Session logs and login scripts
 
@@ -120,6 +190,8 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 
 `Enter` keeps the filter, `Esc` clears it. Groups and tags are stored in vssh's own database, not in the ssh config.
 
+**Tag drawer.** `w` opens a drawer on the right with every tag and group as a coloured pill and the number of hosts it lists, most used first. `1`-`9` filter the host list by that tag (the same as typing `/#tag`, so the number is exactly how many hosts you get); `j`/`k` and `Enter` pick one further down. `0` clears the filter, `/` narrows the drawer itself by typing, `w` or `q` closes it and keeps the filter, `Esc` closes it and clears the filter.
+
 ## Keys
 
 `?` shows this list inside vssh.
@@ -131,12 +203,16 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Enter` / `s` | open shell / SFTP browser |
 | | `Space`, then `Enter` | mark hosts, then open a session on every marked host |
 | | `T` | connect to every host with a tag or group |
+| | `x` | run one command on every marked host (the selected one if none is marked) |
 | | `c` | quick connect; `Ctrl-s` in the form saves the host and its password |
 | | `/` | search (`#tag` for a tag or group); `Esc` clears |
-| | `a` `e` `d` `y` | add, edit, delete, duplicate host |
+| | `a` `e` `d` `Y` | add, edit, delete, duplicate host |
+| | `y` | copy `ssh <host>` to the clipboard |
 | | `p` | pin host |
 | | `f` / `n` | port forwards / snippets of the host |
+| | `w` | tag drawer: `1`-`9` filter by a tag, `0` or `Esc` clear, `/` search the tags |
 | | `r` | check which hosts are reachable |
+| | `v` | quick peek: uptime, load, memory and disk of the host, without a session |
 | | `P` / `V` | store a password in the vault / unlock or lock the vault |
 | | `Tab` / `Shift-Tab` | next / previous tab |
 | | `?` | help |
@@ -150,6 +226,7 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Ctrl-a` `w` | window menu: `h` `j` `k` `l` focus, `s` `v` `g` `t` layout, `d` close |
 | | `Ctrl-a` `l` | log the session to a file, on / off |
 | | `Ctrl-a` `s` | type a snippet into the session |
+| | `Ctrl-a` `y` | copy the last command's output to the clipboard |
 | | `Ctrl-a` `d` or `x` | close the session |
 | | `Ctrl-a` `q` | back to the host list |
 | | `Ctrl-a` `Tab` / `p`, `1`-`9` | next / previous tab, go to tab |
@@ -159,9 +236,10 @@ Press `e` on a host and fill in **Group** (one name, e.g. `prod`) and **Tags** (
 | | `Enter` / `h` | open directory / parent |
 | | `c` | copy file to the other pane |
 | | `m` `r` `d` `R` | mkdir, rename, delete, refresh |
+| | `y` | copy the path of the selected file to the clipboard |
 | | `q` / `Q` | close / quit |
 
-`Alt-b` and, while several panes are shown, `Alt-h/j/k/l` are taken by vssh and no longer reach the remote shell. Coming from an older version: `Ctrl-a h` (host list) is now `Ctrl-a q`, and `Ctrl-a k` / `j` (scroll) are now `Ctrl-a PgUp` / `PgDn`.
+`Alt-b` and, while several panes are shown, `Alt-h/j/k/l` are taken by vssh and no longer reach the remote shell. Coming from an older version: `Ctrl-a h` (host list) is now `Ctrl-a q`, `Ctrl-a k` / `j` (scroll) are now `Ctrl-a PgUp` / `PgDn`, and duplicate moved from `y` to `Y` when `y` became copy (a config that sets `duplicate = "y"` keeps it).
 
 A forward is typed like the `ssh` flags: `L 8080 localhost:80`, `R 9000 localhost:3000`, `D 1080`.
 
@@ -185,6 +263,10 @@ A forward is typed like the `ssh` flags: `L 8080 localhost:80`, `R 9000 localhos
 lang = "en"             # "vi" for Vietnamese key hints, menus and help
 ping_on_start = false   # check every host at launch
 log_sessions = false    # log every session from the start
+status_stats = true     # load, memory and disk of the focused host in the status bar
+nerd_font = false       # true: Powerline round caps on the badges (needs a Nerd Font)
+transitions = true      # slide a tab in over three frames when switching to it
+osc52 = true            # copy through the OSC 52 terminal escape
 
 [exec]                  # login scripts: typed into the shell after login
 web-01 = "cd /srv/app && git status"
@@ -193,15 +275,15 @@ web-01 = "cd /srv/app && git status"
 accent = "cyan"         # also: border, text, dim, selection, ok, error, warn, bar, key
 
 [keys]                  # one character each; leader is pressed with Ctrl
-leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets,
-quit = "q"              # add, edit, delete, duplicate, pin, mark, ping, password, vault, help
+leader = "a"            # also: quit, search, sftp, connect, connect_tag, forwards, snippets, tags,
+quit = "q"              # add, edit, delete, duplicate, copy, pin, mark, ping, batch, peek, password, vault, help
 ```
 
 Entries you leave out keep their defaults, so a config written for an older version still works. The language can also be set per run with `vssh --lang vi` or `VSSH_LANG=vi`; forms and error messages stay in English.
 
 ## Not supported
 
-`ProxyJump` / `ProxyCommand`, `Include`, passphrase-protected key files (use the agent), keyboard-interactive / 2FA, copying directories over SFTP, Telnet, serial, Zmodem, X11 forwarding, mouse. The reasons are in [docs/PLAN.md](docs/PLAN.md#not-planned).
+`Include`, passphrase-protected key files (use the agent), keyboard-interactive / 2FA, copying directories over SFTP, Telnet, serial, Zmodem, X11 forwarding, mouse. The reasons are in [docs/PLAN.md](docs/PLAN.md#not-planned).
 
 ## Development
 

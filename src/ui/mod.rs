@@ -3,6 +3,7 @@
 mod draw;
 mod files;
 mod panes;
+mod stats;
 mod term;
 
 use std::collections::{BTreeSet, HashMap};
@@ -28,14 +29,16 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
 
-use crate::config::{data_dir, ssh_config_path, Config};
+use crate::config::{data_dir, ssh_config_path, Config, Lang};
+use crate::conn_err::{self, Fail, Report};
 use crate::sftp;
-use crate::ssh::{self, forward, AuthFailed, Login, SessionCmd, Target};
+use crate::ssh::{self, forward, Login, SessionCmd, Target};
 use crate::store::db::{Db, Meta, Snippet};
 use crate::store::ssh_config::{Forward, SshConfig, FORWARD_KEYS};
 use crate::vault::Vault;
 use files::SftpView;
 use panes::{Layout, Shape};
+use stats::{Peek, Stats};
 
 /// Everything that can wake the UI. Background tasks only ever talk to the
 /// app through these.
@@ -43,25 +46,31 @@ pub enum Event {
     Input(Input),
     /// Output of a shell session.
     Data(u64, Vec<u8>),
-    /// A tab's connection ended, with the reason.
-    Closed(u64, String),
+    /// A tab's connection ended: cleanly, or with the error that ended it.
+    Closed(u64, Option<anyhow::Error>),
     /// A tab could not authenticate; ask for a password and retry.
-    AuthFailed(u64),
+    AuthFailed(u64, anyhow::Error),
     Sftp(u64, sftp::Reply),
     /// Host alias and TCP connect time in ms, `None` if unreachable.
     Ping(String, Option<u128>),
     /// Forward key; `Ok(true)` = now listening, anything else = it ended.
-    Forward(String, Result<bool, String>),
-    /// Host alias and command output.
-    Snippet(String, String),
+    Forward(String, Result<bool>),
+    /// One host's answer in a batch: batch id, host alias, command output.
+    Batch(u64, String, Result<String>),
+    /// Tab title or host alias and its metrics; `None` = it stopped answering.
+    Stats(String, Option<Stats>),
+    /// Host alias and the answer to a quick peek.
+    Peek(String, Result<Peek>),
 }
 
 impl Event {
     fn ended(id: u64, res: Result<()>) -> Self {
         match res {
-            Ok(()) => Self::Closed(id, "connection closed".into()),
-            Err(e) if e.is::<AuthFailed>() => Self::AuthFailed(id),
-            Err(e) => Self::Closed(id, format!("{e:#}")),
+            Ok(()) => Self::Closed(id, None),
+            Err(e) if matches!(e.downcast_ref(), Some(Fail::Auth { .. })) => {
+                Self::AuthFailed(id, e)
+            }
+            Err(e) => Self::Closed(id, Some(e)),
         }
     }
 }
@@ -112,6 +121,8 @@ enum After {
     VaultCreate(Option<String>, Option<Zeroizing<String>>),
     VaultSet(String),
     AddForward(String),
+    /// Run the typed command on these hosts.
+    Batch(Vec<String>),
     SaveSnippet(i64),
     DeleteSnippet(i64),
     SftpMkdir,
@@ -140,14 +151,73 @@ impl Form {
     }
 }
 
+/// What one host of a batch answered: `None` while it is still running.
+type Outcome = Option<Result<String, Report>>;
+
+/// One command run on several hosts at once, and what came back so far.
+struct Batch {
+    id: u64,
+    command: String,
+    /// In the order the hosts were asked, not the order they answered.
+    rows: Vec<(String, Outcome)>,
+    scroll: u16,
+    /// Only hosts whose name contains this are shown.
+    filter: String,
+    /// The filter is being typed.
+    typing: bool,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+/// Closing the results gives up on the hosts that have not answered.
+impl Drop for Batch {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+/// What a line of batch results is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Row {
+    Running,
+    Out,
+    Failed,
+}
+
+/// The lines a batch shows: every line of every host's output, each with its
+/// host, hosts in the order they were asked. A host still running, one that
+/// said nothing and one that failed get one line each, so none goes missing.
+fn batch_lines(rows: &[(String, Outcome)], filter: &str, lang: Lang) -> Vec<(String, String, Row)> {
+    let mut lines = vec![];
+    for (host, outcome) in rows.iter().filter(|(host, _)| host.contains(filter)) {
+        let mut line = |text: &str, row| lines.push((host.clone(), text.to_string(), row));
+        match outcome {
+            None => line(lang.pick("running…", "đang chạy…"), Row::Running),
+            Some(Err(fail)) => {
+                let text = format!("✗ {} {}", fail.class.label(lang), fail.message);
+                line(&text, Row::Failed);
+            }
+            Some(Ok(out)) if out.trim().is_empty() => {
+                line(lang.pick("(no output)", "(không có kết quả)"), Row::Out)
+            }
+            Some(Ok(out)) => out.lines().for_each(|l| line(l, Row::Out)),
+        }
+    }
+    lines
+}
+
 enum Popup {
     Form(Form),
+    Batch(Batch),
     Confirm(String, After),
     Text {
         title: String,
         body: String,
         scroll: u16,
     },
+    /// Quick peek at a host, by alias; what it shows is in `App::peeks`.
+    Peek(String),
     /// Choose a snippet (name, command) to type into the session.
     Pick {
         items: Vec<(String, String)>,
@@ -171,6 +241,8 @@ enum Focus {
     Search,
     Forwards,
     Snippets,
+    /// The tag drawer.
+    Tags,
 }
 
 pub struct App {
@@ -187,10 +259,23 @@ pub struct App {
     list: ListState,
     filter: String,
     focus: Focus,
-    /// Selection inside the forwards / snippets panel.
+    /// Selection inside the forwards / snippets panel or the tag drawer.
     sub_sel: usize,
+    /// What narrows the tag drawer, and whether it is being typed.
+    tag_query: (String, bool),
     marked: BTreeSet<String>,
     reach: HashMap<String, Option<u128>>,
+    /// Why the last connection to a host failed, until one succeeds.
+    fails: HashMap<String, Report>,
+    /// Latest server metrics, by tab title or host alias. `None`: it was
+    /// asked and had no answer, so the host list does not ask it again.
+    stats: HashMap<String, Option<Stats>>,
+    /// Quick peeks by host alias: when the answer came and what it was.
+    /// `None` while the host is being asked.
+    peeks: HashMap<String, Option<Peeked>>,
+    /// The host-list selection whose metrics were last asked for, and the
+    /// task asking; replaced, and the task aborted, when the selection moves.
+    probe: (Option<String>, Option<JoinHandle<()>>),
     /// Running forwards by key, with whether they are listening yet.
     fwds: HashMap<String, (JoinHandle<()>, bool)>,
     tabs: Vec<Tab>,
@@ -210,12 +295,17 @@ pub struct App {
     info: bool,
     /// Columns and rows available to a terminal tab.
     body: (u16, u16),
+    /// Frames left of the slide that follows a tab switch.
+    slide: u16,
     popup: Option<Popup>,
     /// A password waiting for the vault to be unlocked, with its alias.
     pending: Option<(String, Zeroizing<String>)>,
     msg: String,
     quit: bool,
 }
+
+/// The answer to a quick peek, and when it came.
+type Peeked = (Instant, Result<Peek, Report>);
 
 fn vault_path() -> PathBuf {
     data_dir().join("vault")
@@ -242,6 +332,32 @@ fn has_tag(meta: &Meta, query: &str) -> bool {
         .split([' ', ','])
         .chain([meta.grp.as_str()])
         .any(|t| !t.is_empty() && t.to_lowercase().starts_with(&query))
+}
+
+/// Every tag and group of these hosts with the number of hosts `#name`
+/// shows: the same prefix match as the search box, so the count in the
+/// drawer is the length of the list you get. Most used first, then by name;
+/// names that differ only in case are one entry, in the first spelling seen.
+fn tag_counts(hosts: &[String], meta: &HashMap<String, Meta>) -> Vec<(String, usize)> {
+    let metas: Vec<&Meta> = hosts.iter().filter_map(|h| meta.get(h)).collect();
+    let mut names: Vec<&str> = vec![];
+    for m in &metas {
+        for name in m.tags.split([' ', ',']).chain([m.grp.as_str()]) {
+            if !name.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                names.push(name);
+            }
+        }
+    }
+    let count = |name: &str| metas.iter().filter(|m| has_tag(m, name)).count();
+    let mut counts: Vec<(String, usize)> = names
+        .into_iter()
+        .map(|name| (name.to_string(), count(name)))
+        .collect();
+    counts.sort_by(|(a, na), (b, nb)| {
+        nb.cmp(na)
+            .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
+    });
+    counts
 }
 
 /// Opens the log file of a session: `<dir>/<alias>-<stamp>.log`, private to
@@ -349,8 +465,13 @@ impl App {
             filter: String::new(),
             focus: Focus::List,
             sub_sel: 0,
+            tag_query: (String::new(), false),
             marked: BTreeSet::new(),
             reach: HashMap::new(),
+            fails: HashMap::new(),
+            stats: HashMap::new(),
+            peeks: HashMap::new(),
+            probe: (None, None),
             fwds: HashMap::new(),
             tabs: vec![],
             active: 0,
@@ -362,6 +483,7 @@ impl App {
             shape: Shape::Wide,
             info: false,
             body: (80, 24),
+            slide: 0,
             popup: None,
             pending: None,
             msg: String::new(),
@@ -448,6 +570,58 @@ impl App {
                 values.into_iter().map(|v| (*kind, v.to_string()))
             })
             .collect()
+    }
+
+    /// What the tag drawer lists: every tag with its count, narrowed by the
+    /// drawer's own search.
+    fn drawer_tags(&self) -> Vec<(String, usize)> {
+        let query = self.tag_query.0.to_lowercase();
+        let mut tags = tag_counts(&self.sshc.hosts(), &self.meta);
+        tags.retain(|(name, _)| name.to_lowercase().contains(&query));
+        tags
+    }
+
+    /// Keys of the tag drawer. Picking a tag is the search `#tag`.
+    fn tags_key(&mut self, k: KeyEvent) {
+        let tags = self.drawer_tags();
+        let (query, typing) = &mut self.tag_query;
+        let pick = match k.code {
+            // While the drawer's search is typed every key belongs to it.
+            KeyCode::Esc if *typing => {
+                query.clear();
+                *typing = false;
+                return self.sub_sel = 0;
+            }
+            KeyCode::Enter if *typing => return *typing = false,
+            KeyCode::Backspace | KeyCode::Char(_) if *typing => {
+                match k.code {
+                    KeyCode::Char(c) => query.push(c),
+                    _ => drop(query.pop()),
+                }
+                return self.sub_sel = 0;
+            }
+            KeyCode::Char('/') => return *typing = true,
+            KeyCode::Down | KeyCode::Char('j') => {
+                return self.sub_sel = (self.sub_sel + 1).min(tags.len().saturating_sub(1));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                return self.sub_sel = self.sub_sel.saturating_sub(1)
+            }
+            KeyCode::Char(c @ '1'..='9') => tags.get(c as usize - '1' as usize),
+            KeyCode::Enter => tags.get(self.sub_sel),
+            KeyCode::Char('0') => None,
+            // Esc clears the filter on its way out; the other ways out keep it.
+            KeyCode::Esc => {
+                self.focus = Focus::List;
+                None
+            }
+            KeyCode::Left | KeyCode::Char('q' | 'h') => return self.focus = Focus::List,
+            KeyCode::Char(c) if c == self.cfg.keys.tags => return self.focus = Focus::List,
+            _ => return,
+        };
+        self.filter = pick.map(|(tag, _)| format!("#{tag}")).unwrap_or_default();
+        self.sel = 0;
+        self.refilter();
     }
 
     /// Global snippets plus the ones bound to this host.
@@ -558,6 +732,38 @@ impl App {
         }
     }
 
+    /// Puts text on the clipboard of the terminal vssh runs in, and says so.
+    fn copy(&mut self, text: &str) {
+        let lang = self.cfg.lang;
+        if text.is_empty() {
+            return self.msg = lang.pick("nothing to copy", "không có gì để chép").into();
+        }
+        term::copy(text, self.cfg.osc52);
+        self.msg = match text.lines().count() {
+            1 => format!("{}: {text}", lang.pick("copied", "đã chép")),
+            n => format!(
+                "{} {n} {}",
+                lang.pick("copied", "đã chép"),
+                lang.pick("lines", "dòng")
+            ),
+        };
+    }
+
+    /// Copies from the active tab: the last command's output of a session,
+    /// the path of the selected file in SFTP.
+    fn copy_active(&mut self) {
+        let Some(i) = self.active.checked_sub(1) else {
+            return;
+        };
+        let text = match &self.tabs[i].kind {
+            Kind::Term { parser, .. } => term::last_output(parser.screen()),
+            Kind::Sftp(view) => view.selected().map_or(String::new(), |e| {
+                format!("{}/{}", view.dirs[view.side].trim_end_matches('/'), e.name)
+            }),
+        };
+        self.copy(&text);
+    }
+
     /// Number of sessions that would receive typed input right now.
     fn live_sessions(&self) -> usize {
         let live = |t: &&Tab| matches!(t.kind, Kind::Term { .. }) && !t.closed;
@@ -606,12 +812,18 @@ impl App {
             (Kind::Sftp(Box::new(SftpView::new(cmd_tx))), task)
         } else {
             let (cmd_tx, cmd_rx) = unbounded_channel();
+            let (title, with_stats) = (alias.to_string(), self.cfg.status_stats);
             let task = tokio::spawn(async move {
                 let res = async {
                     let pw = password.as_ref().map(|p| p.as_str());
                     let h = ssh::connect(&target, pw, None).await?;
                     let data = |d: &[u8]| drop(tx.send(Event::Data(id, d.to_vec())));
-                    ssh::shell(h, size, login, cmd_rx, data).await
+                    let report = |s| drop(tx.send(Event::Stats(title.clone(), s)));
+                    // The metrics ride on the session's own connection and end with it.
+                    tokio::select! {
+                        res = ssh::shell(&h, size, login, cmd_rx, data) => res,
+                        () = stats::poll(&h, report), if with_stats => Ok(()),
+                    }
                 };
                 let _ = tx.send(Event::ended(id, res.await));
             });
@@ -700,6 +912,7 @@ impl App {
     fn close_tab(&mut self, i: usize) -> Tab {
         let tab = self.tabs.remove(i);
         tab.task.abort();
+        self.stats.remove(&tab.alias);
         self.active = match self.active {
             a if a == i + 1 => 0,
             a if a > i + 1 => a - 1,
@@ -725,6 +938,92 @@ impl App {
         self.msg = "checking reachability…".into();
     }
 
+    /// On the host list, asks the selected host for its metrics once the
+    /// selection has rested on it. A host with a live session is left to that
+    /// session. Called once per frame; does nothing until the selection (or
+    /// the tab) changes.
+    fn probe_selected(&mut self) {
+        let on_list = self.active == 0 && self.cfg.status_stats;
+        let alias = self.alias().filter(|_| on_list);
+        if alias == self.probe.0 {
+            return;
+        }
+        if let Some(task) = self.probe.1.take() {
+            task.abort();
+        }
+        self.probe.0 = alias.clone();
+        let Some(alias) = alias else { return };
+        let live = |t: &Tab| t.alias == alias && !t.closed && matches!(t.kind, Kind::Term { .. });
+        // Not a host that is down, and not one that already refused: every
+        // refused probe is a failed login in that server's log.
+        let refused = self.stats.get(&alias) == Some(&None);
+        if self.tabs.iter().any(live) || refused || self.reach.get(&alias) == Some(&None) {
+            return;
+        }
+        let Ok(target) = Target::from_config(&self.sshc, &alias) else {
+            return;
+        };
+        // Nor through a jump host or a proxy command: that would log in to
+        // other machines, or run a local program, for a cursor movement.
+        if target.via != ssh::Via::Direct {
+            return;
+        }
+        let tx = self.tx.clone();
+        self.probe.1 = Some(tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            // Resting on a row is not a decision to connect: only hosts whose
+            // key is already on record, and keys only, never a vault password.
+            if !ssh::is_known(&target) {
+                return;
+            }
+            let stats = match ssh::connect(&target, None, None).await {
+                Ok(h) => stats::fetch(&h).await,
+                Err(_) => None,
+            };
+            let _ = tx.send(Event::Stats(alias, stats));
+        }));
+    }
+
+    /// Opens the quick peek for a host. The answer is asked for over a
+    /// connection of its own (same host key rules and login as a session)
+    /// unless one from the last 30 seconds is there, or `refresh` says so.
+    fn peek(&mut self, alias: &str, refresh: bool) {
+        self.popup = Some(Popup::Peek(alias.to_string()));
+        let keep = match self.peeks.get(alias) {
+            Some(Some((at, _))) => !refresh && at.elapsed() < Duration::from_secs(30),
+            // Already asking: one request at a time.
+            Some(None) => true,
+            None => false,
+        };
+        if keep {
+            return;
+        }
+        self.peeks.insert(alias.to_string(), None);
+        let target = Target::from_config(&self.sshc, alias);
+        let password = self.vault_password(alias);
+        let (tx, alias) = (self.tx.clone(), alias.to_string());
+        tokio::spawn(async move {
+            let res = async {
+                let pw = password.as_ref().map(|p| p.as_str());
+                let h = ssh::connect(&target?, pw, None).await?;
+                let asking = ssh::exec(&h, stats::PEEK);
+                let out = tokio::time::timeout(Duration::from_secs(10), asking).await??;
+                anyhow::Ok(stats::parse_peek(&out))
+            };
+            let _ = tx.send(Event::Peek(alias, res.await));
+        });
+    }
+
+    /// True while something on screen is waiting for an answer and shows a
+    /// spinner: the main loop then redraws on a timer.
+    fn waiting(&self) -> bool {
+        match &self.popup {
+            Some(Popup::Peek(alias)) => matches!(self.peeks.get(alias), Some(None)),
+            Some(Popup::Batch(batch)) => batch.rows.iter().any(|row| row.1.is_none()),
+            _ => false,
+        }
+    }
+
     fn toggle_forward(&mut self, alias: &str, kind: char, value: &str) -> Result<()> {
         let key = fwd_key(alias, kind, value);
         if let Some((task, _)) = self.fwds.remove(&key) {
@@ -739,8 +1038,7 @@ impl App {
             let pw = password.as_ref().map(|p| p.as_str());
             let ready = || drop(tx.send(Event::Forward(k.clone(), Ok(true))));
             let res = forward::run(&target, pw, fwd, ready).await;
-            let res = res.map(|()| false).map_err(|e| format!("{e:#}"));
-            let _ = tx.send(Event::Forward(k.clone(), res));
+            let _ = tx.send(Event::Forward(k.clone(), res.map(|()| false)));
         });
         self.fwds.insert(key, (task, false));
         Ok(())
@@ -753,25 +1051,39 @@ impl App {
         } else {
             vec![alias.to_string()]
         };
-        self.popup = Some(Popup::Text {
-            title: format!("{} on {} host(s)", s.name, hosts.len()),
-            body: String::new(),
-            scroll: 0,
-        });
-        for host in hosts {
-            let target = Target::from_config(&self.sshc, &host);
-            let password = self.vault_password(&host);
-            let (tx, command) = (self.tx.clone(), s.command.clone());
+        self.batch(hosts, &s.command);
+    }
+
+    /// Runs one command on every host, each over its own connection, all at
+    /// once, and opens the results: they fill in as the hosts answer.
+    // shortcut: no cap on how many connect at once; add a semaphore if
+    // batches grow to hundreds of hosts.
+    fn batch(&mut self, hosts: Vec<String>, command: &str) {
+        let id = self.next_id;
+        self.next_id += 1;
+        let tasks = hosts.iter().map(|host| {
+            let target = Target::from_config(&self.sshc, host);
+            let password = self.vault_password(host);
+            let (tx, host, command) = (self.tx.clone(), host.clone(), command.to_string());
             tokio::spawn(async move {
                 let res = async {
                     let pw = password.as_ref().map(|p| p.as_str());
                     let h = ssh::connect(&target?, pw, None).await?;
                     ssh::exec(&h, &command).await
                 };
-                let out = res.await.unwrap_or_else(|e| format!("error: {e:#}\n"));
-                let _ = tx.send(Event::Snippet(host, out));
-            });
-        }
+                let _ = tx.send(Event::Batch(id, host, res.await));
+            })
+        });
+        let tasks = tasks.collect();
+        self.popup = Some(Popup::Batch(Batch {
+            id,
+            command: command.to_string(),
+            rows: hosts.into_iter().map(|host| (host, None)).collect(),
+            scroll: 0,
+            filter: String::new(),
+            typing: false,
+            tasks,
+        }));
     }
 
     // ── events ──────────────────────────────────────────────────────────
@@ -817,11 +1129,26 @@ impl App {
                     }
                 }
             }
-            Event::Closed(id, why) => {
+            Event::Closed(id, err) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
+                let lang = self.cfg.lang;
+                let report = err.map(|e| conn_err::classify(&e, lang));
+                let why = match report {
+                    // It never got through: there is no session to keep on
+                    // screen, only the reason to show.
+                    Some(report) if !self.tabs[i].connected => {
+                        let tab = self.close_tab(i);
+                        return self.failed(&tab.alias, report);
+                    }
+                    Some(report) => report.message,
+                    None => lang
+                        .pick("connection closed", "kết nối đã đóng")
+                        .to_string(),
+                };
                 self.tabs[i].closed = true;
+                self.stats.remove(&self.tabs[i].alias);
                 match &mut self.tabs[i].kind {
                     Kind::Term { parser, .. } => {
                         let leader = self.cfg.keys.leader;
@@ -833,22 +1160,38 @@ impl App {
                     Kind::Sftp(_) => self.msg = why,
                 }
             }
-            Event::AuthFailed(id) => {
+            Event::AuthFailed(id, err) => {
                 let Some(i) = tab_index(&self.tabs, id) else {
                     return;
                 };
                 let tab = self.close_tab(i);
+                let report = conn_err::classify(&err, self.cfg.lang);
                 let then = After::Password {
                     sftp: matches!(tab.kind, Kind::Sftp(_)),
                     alias: tab.alias.clone(),
                     target: tab.target.clone(),
                     saved: tab.saved,
                 };
-                let title = format!("Keys were refused. Password for {}", tab.alias);
-                self.prompt(&title, "Password", true, then);
+                // The title says what was refused: a key, a password, or nothing to offer.
+                self.prompt(&report.message, "Password", true, then);
+                self.fails.insert(tab.alias, report);
             }
             Event::Ping(alias, ms) => {
                 self.reach.insert(alias, ms);
+            }
+            Event::Stats(alias, stats) => {
+                self.stats.insert(alias, stats);
+            }
+            Event::Peek(alias, res) => {
+                if let Ok(peek) = &res {
+                    // It answered: the status line can use the numbers too.
+                    self.fails.remove(&alias);
+                    if peek.stats != Stats::default() {
+                        self.stats.insert(alias.clone(), Some(peek.stats.clone()));
+                    }
+                }
+                let res = res.map_err(|e| conn_err::classify(&e, self.cfg.lang));
+                self.peeks.insert(alias, Some((Instant::now(), res)));
             }
             Event::Forward(key, Ok(true)) => {
                 if let Some(state) = self.fwds.get_mut(&key) {
@@ -857,28 +1200,65 @@ impl App {
             }
             Event::Forward(key, res) => {
                 self.fwds.remove(&key);
-                let why = res.err().unwrap_or_else(|| "stopped".into());
+                let why = match res {
+                    Err(e) => conn_err::classify(&e, self.cfg.lang).message,
+                    Ok(_) => "stopped".into(),
+                };
                 self.msg = format!("forward {key}: {why}");
             }
-            Event::Snippet(host, out) => {
-                let block = format!("── {host} ──\n{}\n", clean(&out));
-                match &mut self.popup {
-                    Some(Popup::Text { body, .. }) => body.push_str(&block),
-                    _ => {
-                        self.popup = Some(Popup::Text {
-                            title: "Snippet output".into(),
-                            body: block,
-                            scroll: 0,
-                        })
-                    }
+            Event::Batch(id, host, out) => {
+                // An answer to a batch that was closed has nowhere to go.
+                let Some(Popup::Batch(batch)) = &mut self.popup else {
+                    return;
+                };
+                let out = out.map(|o| clean(&o));
+                let out = out.map_err(|e| conn_err::classify(&e, self.cfg.lang));
+                let row = batch.rows.iter_mut().find(|(h, _)| *h == host);
+                if let Some(row) = row.filter(|_| batch.id == id) {
+                    row.1 = Some(out);
                 }
             }
         }
     }
 
+    /// A connection that never got through: remembered for the host's
+    /// details, and shown at once with the full chain. Several failures (a
+    /// tag of hosts opened together) share one popup; a form or a question
+    /// that is open is not replaced, the message line carries it instead.
+    fn failed(&mut self, alias: &str, report: Report) {
+        let lang = self.cfg.lang;
+        let heading = lang.pick("! Connection failed", "! Kết nối thất bại");
+        let mut block = format!(
+            "{alias}  [{}]\n  {}\n",
+            report.class.label(lang),
+            clean(&report.message)
+        );
+        if report.chain != report.message {
+            block.push_str(&format!("  {}\n", clean(&report.chain)));
+        }
+        match &mut self.popup {
+            Some(Popup::Text { title, body, .. }) if title == heading => {
+                body.push_str(&format!("\n{block}"));
+            }
+            Some(_) => self.msg = format!("{alias}: {}", report.message),
+            None => {
+                self.popup = Some(Popup::Text {
+                    title: heading.into(),
+                    body: block,
+                    scroll: 0,
+                })
+            }
+        }
+        self.fails.insert(alias.to_string(), report);
+    }
+
     /// Records a successful connection the first time a tab hears back.
     fn mark_connected(&mut self, i: usize) {
-        if !mem::replace(&mut self.tabs[i].connected, true) && self.tabs[i].saved {
+        if mem::replace(&mut self.tabs[i].connected, true) {
+            return;
+        }
+        self.fails.remove(&self.tabs[i].alias);
+        if self.tabs[i].saved {
             let res = self.db.touch(&self.tabs[i].alias);
             let res = res.and_then(|()| self.db.metas().map(|m| self.meta = m));
             self.check(res.map_err(Into::into));
@@ -979,6 +1359,7 @@ impl App {
             KeyCode::Char('w') => self.leader = Leader::Window,
             KeyCode::Char('l') => self.toggle_log(),
             KeyCode::Char('s') => self.pick_snippet(),
+            KeyCode::Char('y') => self.copy_active(),
             KeyCode::Tab | KeyCode::Char('n') => self.cycle(true),
             KeyCode::BackTab | KeyCode::Char('p') => self.cycle(false),
             KeyCode::Char('q') => self.active = 0,
@@ -1031,6 +1412,7 @@ impl App {
         match self.focus {
             Focus::Search => return self.search_key(k),
             Focus::Forwards | Focus::Snippets => return self.panel_key(k),
+            Focus::Tags => return self.tags_key(k),
             Focus::List => {}
         }
         let keys = &self.cfg.keys;
@@ -1095,7 +1477,16 @@ impl App {
                 self.form(title, fields, false, After::ConnectTag);
             }
             KeyCode::Char(c) if c == keys.help => self.help(),
+            KeyCode::Char(c) if c == keys.tags => {
+                (self.focus, self.sub_sel) = (Focus::Tags, 0);
+                self.tag_query = (String::new(), false);
+            }
             KeyCode::Char(c) if c == keys.ping => self.ping_all(),
+            KeyCode::Char(c) if c == keys.peek => {
+                if let Some(alias) = self.alias() {
+                    self.peek(&alias, false);
+                }
+            }
             KeyCode::Char(c) if c == keys.vault => {
                 if self.vault.take().is_some() {
                     self.msg = "vault locked".into();
@@ -1140,6 +1531,21 @@ impl App {
             self.db.set_meta(&copy, &meta)?;
             self.reload()?;
             self.msg = format!("created {copy}");
+        } else if c == keys.copy {
+            self.copy(&format!("ssh {alias}"));
+        } else if c == keys.batch {
+            // Every marked host, or the selected one when nothing is marked.
+            let hosts: Vec<String> = match self.marked.is_empty() {
+                true => vec![alias.to_string()],
+                false => self.marked.iter().cloned().collect(),
+            };
+            let lang = self.cfg.lang;
+            let title = match lang {
+                Lang::En => format!("Run on {} host(s)", hosts.len()),
+                Lang::Vi => format!("Chạy trên {} máy", hosts.len()),
+            };
+            let label = lang.pick("Command", "Lệnh");
+            self.prompt(&title, label, false, After::Batch(hosts));
         } else if c == keys.pin {
             let mut meta = self.meta.get(alias).cloned().unwrap_or_default();
             meta.pinned ^= true;
@@ -1274,6 +1680,7 @@ impl App {
             (KeyCode::Enter | KeyCode::Right | KeyCode::Char('l'), _) => view.enter(),
             (KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h'), _) => view.up(),
             (KeyCode::Char('R'), _) => view.refresh(),
+            (KeyCode::Char('y'), _) => return self.copy_active(),
             (KeyCode::Char('q'), _) => return self.close_pane(),
             (KeyCode::Char('Q'), _) => return self.ask_quit(),
             (KeyCode::Char('m'), _) => {
@@ -1408,8 +1815,12 @@ impl App {
              \x20              search #tag shows only hosts with that tag or group\n\
              \x20 {add}            add host          {edit}       edit host\n\
              \x20 {delete}            delete host       {duplicate}       duplicate host\n\
+             \x20 {copy}            copy `ssh <host>` to the clipboard (OSC 52)\n\
              \x20 {pin}            pin / unpin       {ping}       check reachability\n\
+             \x20 {peek}            quick peek: uptime, load, memory, disk, without a session\n\
+             \x20 {batch}            run one command on every marked host (/ filters the results)\n\
              \x20 {forwards}            port forwards     {snippets}       snippets\n\
+             \x20 {tags}            tag drawer: 1-9 filter by a tag, 0 or Esc clear, / search tags\n\
              \x20 {password}            store password    {vault}       unlock / lock vault\n\
              \x20 {quit}            quit              Q       quit (from SFTP too)\n\n\
              FORWARDS / SNIPPETS PANEL\n\
@@ -1422,6 +1833,7 @@ impl App {
              \x20 leader b, Alt-b  broadcast: typing goes to every live session\n\
              \x20 leader l         log this session to a file (everything shown, as is)\n\
              \x20 leader s         type a snippet into the session\n\
+             \x20 leader y         copy the last command's output to the clipboard\n\
              \x20 leader d / x     close pane        leader q      back to the host list\n\
              \x20 leader Tab/n     next tab          leader p      previous tab\n\
              \x20 leader 1-9       go to tab         leader PgUp/PgDn  scroll (also Ctrl-u/d)\n\
@@ -1429,6 +1841,7 @@ impl App {
              SFTP\n\
              \x20 Tab switch pane   Enter/l open dir   h/Backspace parent\n\
              \x20 c copy to other pane   m mkdir   r rename   d delete\n\
+             \x20 y copy the path of the selected file to the clipboard\n\
              \x20 R refresh   q close   Q quit\n",
             tag = k.connect_tag,
             sftp = k.sftp,
@@ -1438,10 +1851,14 @@ impl App {
             edit = k.edit,
             delete = k.delete,
             duplicate = k.duplicate,
+            copy = k.copy,
             pin = k.pin,
             ping = k.ping,
+            peek = k.peek,
+            batch = k.batch,
             forwards = k.forwards,
             snippets = k.snippets,
+            tags = k.tags,
             password = k.password,
             vault = k.vault,
             quit = k.quit,
@@ -1458,8 +1875,12 @@ impl App {
              \x20              tìm #tag chỉ hiện máy có thẻ hoặc nhóm đó\n\
              \x20 {add}            thêm máy          {edit}       sửa máy\n\
              \x20 {delete}            xoá máy           {duplicate}       nhân bản máy\n\
+             \x20 {copy}            chép `ssh <máy>` vào clipboard (OSC 52)\n\
              \x20 {pin}            ghim / bỏ ghim    {ping}       kiểm tra kết nối\n\
+             \x20 {peek}            xem nhanh: uptime, tải, bộ nhớ, đĩa, không cần mở phiên\n\
+             \x20 {batch}            chạy một lệnh trên mọi máy đã đánh dấu (/ để lọc kết quả)\n\
              \x20 {forwards}            chuyển tiếp cổng  {snippets}       snippet\n\
+             \x20 {tags}            ngăn thẻ: 1-9 lọc theo thẻ, 0 hoặc Esc bỏ lọc, / tìm thẻ\n\
              \x20 {password}            lưu mật khẩu      {vault}       mở / khoá kho mật khẩu\n\
              \x20 {quit}            thoát             Q       thoát (cả từ SFTP)\n\n\
              KHUNG CHUYỂN TIẾP CỔNG / SNIPPET\n\
@@ -1472,6 +1893,7 @@ impl App {
              \x20 leader b, Alt-b  phát: gõ một lần, gửi tới mọi phiên đang mở\n\
              \x20 leader l         ghi log phiên này ra file (mọi thứ hiện ra, nguyên văn)\n\
              \x20 leader s         gõ một snippet vào phiên\n\
+             \x20 leader y         chép kết quả của lệnh cuối vào clipboard\n\
              \x20 leader d / x     đóng khung        leader q      về danh sách máy chủ\n\
              \x20 leader Tab/n     tab kế tiếp       leader p      tab trước\n\
              \x20 leader 1-9       tới tab số        leader PgUp/PgDn  cuộn (hoặc Ctrl-u/d)\n\
@@ -1479,6 +1901,7 @@ impl App {
              SFTP\n\
              \x20 Tab đổi khung   Enter/l vào thư mục   h/Backspace thư mục cha\n\
              \x20 c chép sang khung kia   m tạo thư mục   r đổi tên   d xoá\n\
+             \x20 y chép đường dẫn của file đang chọn vào clipboard\n\
              \x20 R tải lại   q đóng   Q thoát\n",
             tag = k.connect_tag,
             sftp = k.sftp,
@@ -1488,10 +1911,14 @@ impl App {
             edit = k.edit,
             delete = k.delete,
             duplicate = k.duplicate,
+            copy = k.copy,
             pin = k.pin,
             ping = k.ping,
+            peek = k.peek,
+            batch = k.batch,
             forwards = k.forwards,
             snippets = k.snippets,
+            tags = k.tags,
             password = k.password,
             vault = k.vault,
             quit = k.quit,
@@ -1528,7 +1955,33 @@ impl App {
                     }
                 }
             }
-            (Popup::Pick { .. }, KeyCode::Esc | KeyCode::Char('q')) => {}
+            (Popup::Batch(mut batch), code) => {
+                match code {
+                    // While the filter is typed every key belongs to it.
+                    KeyCode::Esc if batch.typing => {
+                        batch.filter.clear();
+                        batch.typing = false;
+                    }
+                    KeyCode::Enter if batch.typing => batch.typing = false,
+                    KeyCode::Backspace if batch.typing => drop(batch.filter.pop()),
+                    KeyCode::Char(c) if batch.typing => batch.filter.push(c),
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => return,
+                    KeyCode::Char('/') => batch.typing = true,
+                    KeyCode::Down | KeyCode::Char('j') => batch.scroll += 1,
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        batch.scroll = batch.scroll.saturating_sub(1)
+                    }
+                    KeyCode::PageDown => batch.scroll += 10,
+                    KeyCode::PageUp => batch.scroll = batch.scroll.saturating_sub(10),
+                    _ => {}
+                }
+                if batch.typing {
+                    batch.scroll = 0;
+                }
+                self.popup = Some(Popup::Batch(batch));
+            }
+            (Popup::Pick { .. } | Popup::Peek(_), KeyCode::Esc | KeyCode::Char('q')) => {}
+            (Popup::Peek(alias), KeyCode::Char('r') | KeyCode::Enter) => self.peek(&alias, true),
             (Popup::Form(_), KeyCode::Esc) => {
                 // Cancelling the vault prompt also gives up the password waiting for it.
                 if self.pending.take().is_some() {
@@ -1742,6 +2195,10 @@ impl App {
                 self.sshc.add(alias, fwd.key(), &fwd.value());
                 self.save_config()?;
             }
+            After::Batch(hosts) => {
+                ensure!(!text(0).is_empty(), "type a command to run");
+                self.batch(hosts.clone(), &text(0));
+            }
             After::SaveSnippet(id) => {
                 ensure!(
                     !text(0).is_empty() && !text(1).is_empty(),
@@ -1800,11 +2257,30 @@ pub async fn run(cfg: Config) -> Result<()> {
     let res = async {
         while !app.quit {
             terminal.draw(|f| draw::draw(&mut app, f))?;
-            let Some(ev) = rx.recv().await else { break };
+            app.probe_selected();
+            let tab = app.active;
+            // A transition under way, or a spinner on screen, draws its next
+            // frame on time, event or not.
+            let tick = match app.slide {
+                0 if app.waiting() => Some(draw::SPIN),
+                0 => None,
+                _ => Some(draw::FRAME),
+            };
+            let ev = match tick {
+                None => rx.recv().await,
+                Some(tick) => match tokio::time::timeout(tick, rx.recv()).await {
+                    Ok(ev) => ev,
+                    Err(_) => continue,
+                },
+            };
+            let Some(ev) = ev else { break };
             app.on_event(ev);
             // Coalesce bursts (fast output, transfer progress) into one redraw.
             while let Ok(ev) = rx.try_recv() {
                 app.on_event(ev);
+            }
+            if app.active != tab && app.cfg.transitions {
+                app.slide = draw::SLIDE;
             }
         }
         anyhow::Ok(())
@@ -2004,6 +2480,101 @@ mod tests {
             then: After::QuickConnect,
         };
         assert_eq!((form(None).rows(), form(Some(false)).rows()), (2, 3));
+    }
+
+    #[test]
+    fn tag_drawer_counts_what_the_filter_would_show() {
+        let meta = |grp: &str, tags: &str| Meta {
+            grp: grp.into(),
+            tags: tags.into(),
+            ..Meta::default()
+        };
+        let all: HashMap<String, Meta> = [
+            ("web-01", meta("prod", "web eu")),
+            ("web-02", meta("prod", "Web, us")),
+            ("web-03", meta("staging", "webapp")),
+            ("db-01", meta("prod", "db")),
+            ("bare", meta("", "")),
+            ("gone", meta("prod", "web")),
+        ]
+        .into_iter()
+        .map(|(alias, meta)| (alias.to_string(), meta))
+        .collect();
+        // `gone` has metadata but is no longer a host: it does not count.
+        let hosts: Vec<String> = ["web-01", "web-02", "web-03", "db-01", "bare", "nometa"]
+            .map(String::from)
+            .into();
+        let counts = tag_counts(&hosts, &all);
+        let shown: Vec<(&str, usize)> = counts.iter().map(|(t, n)| (t.as_str(), *n)).collect();
+        // `web` also counts `webapp`: `#web` shows that host too. `Web` is the same tag.
+        assert_eq!(
+            shown,
+            [
+                ("prod", 3),
+                ("web", 3),
+                ("db", 1),
+                ("eu", 1),
+                ("staging", 1),
+                ("us", 1),
+                ("webapp", 1)
+            ]
+        );
+        // Each count is exactly the number of hosts the search `#tag` lists.
+        for (tag, count) in &counts {
+            let listed = hosts
+                .iter()
+                .filter(|h| all.get(*h).is_some_and(|m| has_tag(m, tag)));
+            assert_eq!(listed.count(), *count, "{tag}");
+        }
+        assert!(tag_counts(&[], &all).is_empty());
+    }
+
+    #[test]
+    fn batch_results_keep_every_host_and_every_line() {
+        let refused = Report {
+            class: conn_err::Class::Refused,
+            message: "Connection refused by 10.0.0.3:22 — is sshd running?".into(),
+            chain: String::new(),
+        };
+        let rows = vec![
+            (
+                "web-01".to_string(),
+                Some(Ok("up 3 days\nload 0.5\n".to_string())),
+            ),
+            ("web-02".to_string(), None),
+            ("db-01".to_string(), Some(Err(refused))),
+            ("db-02".to_string(), Some(Ok(" \n".to_string()))),
+        ];
+        let lines = batch_lines(&rows, "", Lang::En);
+        let shown: Vec<(&str, &str, Row)> = lines
+            .iter()
+            .map(|(host, text, row)| (host.as_str(), text.as_str(), *row))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("web-01", "up 3 days", Row::Out),
+                ("web-01", "load 0.5", Row::Out),
+                ("web-02", "running…", Row::Running),
+                (
+                    "db-01",
+                    "✗ REFUSED Connection refused by 10.0.0.3:22 — is sshd running?",
+                    Row::Failed
+                ),
+                ("db-02", "(no output)", Row::Out),
+            ]
+        );
+        // Filtering by host keeps whole hosts, never part of one's output.
+        let hosts = |filter| {
+            let lines = batch_lines(&rows, filter, Lang::Vi);
+            let mut hosts: Vec<String> = lines.into_iter().map(|l| l.0).collect();
+            hosts.dedup();
+            hosts
+        };
+        assert_eq!(hosts("db"), ["db-01", "db-02"]);
+        assert_eq!(hosts("-01"), ["web-01", "db-01"]);
+        assert!(hosts("nope").is_empty());
+        assert_eq!(batch_lines(&rows, "web-02", Lang::Vi)[0].1, "đang chạy…");
     }
 
     #[test]

@@ -59,7 +59,7 @@ pub enum Orientation {
     Portrait,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub theme: Theme,
@@ -76,6 +76,37 @@ pub struct Config {
     /// TCP-probe every host at startup. Off by default: it touches every
     /// machine in the ssh config on each launch.
     pub ping_on_start: bool,
+    /// Load, memory and disk of the focused host in the status line. On by
+    /// default; off, no session opens a second channel to ask for them.
+    pub status_stats: bool,
+    /// Round the badge ends with the Powerline half circles of a Nerd Font
+    /// instead of the plain Unicode ones. Off by default: without such a
+    /// font they show as empty boxes.
+    pub nerd_font: bool,
+    /// Slide a tab in over three frames when switching to it. On by default;
+    /// turn it off on a slow link, where three redraws are three round trips.
+    pub transitions: bool,
+    /// Copy through the OSC 52 terminal escape. On by default; turn it off
+    /// for a terminal that prints the sequence instead of obeying it.
+    pub osc52: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            keys: Keys::default(),
+            lang: Lang::default(),
+            layout: Orientation::default(),
+            log_sessions: false,
+            exec: HashMap::new(),
+            ping_on_start: false,
+            status_stats: true,
+            nerd_font: false,
+            transitions: true,
+            osc52: true,
+        }
+    }
 }
 
 fn color<'de, D: Deserializer<'de>>(d: D) -> Result<Color, D::Error> {
@@ -147,13 +178,21 @@ pub struct Keys {
     pub info: char,
     pub forwards: char,
     pub snippets: char,
+    /// Open the tag drawer: every tag and group with its host count.
+    pub tags: char,
     pub add: char,
     pub edit: char,
     pub delete: char,
     pub duplicate: char,
+    /// Copy `ssh <alias>` to the clipboard.
+    pub copy: char,
     pub pin: char,
     pub mark: char,
     pub ping: char,
+    /// Run one command on every marked host.
+    pub batch: char,
+    /// Quick peek: the selected host's uptime, load, memory and disk, without a session.
+    pub peek: char,
     pub password: char,
     pub vault: char,
     pub help: char,
@@ -171,13 +210,18 @@ impl Default for Keys {
             info: 'i',
             forwards: 'f',
             snippets: 'n',
+            tags: 'w',
             add: 'a',
             edit: 'e',
             delete: 'd',
-            duplicate: 'y',
+            // Was `y` until `y` became copy; a config that says `y` still wins.
+            duplicate: 'Y',
+            copy: 'y',
             pin: 'p',
             mark: ' ',
             ping: 'r',
+            batch: 'x',
+            peek: 'v',
             password: 'P',
             vault: 'V',
             help: '?',
@@ -251,6 +295,8 @@ mod tests {
             (d.warn, d.bar, d.key)
         );
         assert_eq!(c.keys.connect, 'c');
+        // It names `y` for duplicate, from when that was the default: still so.
+        assert_eq!((c.keys.duplicate, Keys::default().duplicate), ('y', 'Y'));
     }
 
     #[test]
@@ -264,6 +310,15 @@ mod tests {
         assert_eq!(c.exec["db.prod"], "psql");
         let none: Config = toml::from_str("").unwrap();
         assert!(!none.log_sessions && none.exec.is_empty());
+    }
+
+    #[test]
+    fn status_bar_switches_default_to_on() {
+        let none: Config = toml::from_str("").unwrap();
+        assert!(none.status_stats && none.transitions && none.osc52 && !none.nerd_font);
+        let set = "status_stats = false\nnerd_font = true\ntransitions = false\nosc52 = false";
+        let set: Config = toml::from_str(set).unwrap();
+        assert!(!set.status_stats && !set.transitions && !set.osc52 && set.nerd_font);
     }
 
     #[test]
