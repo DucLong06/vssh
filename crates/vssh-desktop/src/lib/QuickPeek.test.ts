@@ -214,6 +214,7 @@ test("in Vietnamese the rows are the TUI's", async () => {
   expect(popover()).toHaveTextContent('KẾT NỐI')
   expect(popover()).toHaveTextContent('kết nối được · 12 ms')
   expect(rows().map((row) => row[0])).toEqual(['Tên máy', 'Hệ thống', 'Đã chạy', 'Tải', 'CPU', 'RAM', 'Đĩa /'])
+  expect(rows()[2]).toEqual(['Đã chạy', '3 ngày, 2:15'])
   expect(popover()).toHaveTextContent('2 giây trước')
   expect(popover()).toHaveTextContent('r làm mới')
   expect(popover()).toHaveTextContent('esc đóng')

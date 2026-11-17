@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { Peek } from './api'
 import fixture from './fixtures/peek.json'
-import { compact, parts } from './stats'
+import { compact, parts, uptime } from './stats'
 
 const peek = fixture as unknown as Peek
 
@@ -22,6 +22,22 @@ test('cpu warns over 50 and is critical over 80; memory over 70 and 85; disk ove
   expect([70, 71, 85, 86].map(mem)).toEqual(['ok', 'warn', 'warn', 'crit'])
   const disk = (pct: number) => parts({ cpu: null, mem: null, disk: pct }, '')[0].level
   expect([80, 81, 90, 91].map(disk)).toEqual(['ok', 'warn', 'warn', 'crit'])
+})
+
+test("uptime's units are Vietnamese in Vietnamese", () => {
+  // The core's test of `stats::uptime`.
+  const pairs = [
+    ['41 days, 3 min', '41 ngày, 3 phút'],
+    ['1 day, 2:15', '1 ngày, 2:15'],
+    ['2 hrs', '2 giờ'],
+    ['5 mins', '5 phút'],
+    ['30 secs', '30 giây'],
+    ['2:15', '2:15'],
+  ]
+  for (const [en, vi] of pairs) {
+    expect(uptime(en, 'vi')).toBe(vi)
+    expect(uptime(en, 'en')).toBe(en)
+  }
 })
 
 test('what a host did not answer is left out, not made up', () => {

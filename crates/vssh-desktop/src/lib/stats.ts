@@ -1,7 +1,7 @@
 // A host's figures as the cards show them. The numbers come from the core's
 // parser; the wording and the thresholds here are `Stats::parts` of
 // `vssh_core::stats` again, held to its test's examples by `stats.test.ts`.
-import type { Stats } from './api'
+import type { Lang, Stats } from './api'
 
 export type Level = 'ok' | 'warn' | 'crit'
 
@@ -31,6 +31,12 @@ export function parts(stats: Stats, mem: string): Part[] {
   if (stats.disk !== null) add('/', `${stats.disk}%`, stats.disk, 80, 90)
   return out
 }
+
+const UNITS: Record<string, string> = { day: 'ngày', hr: 'giờ', min: 'phút', sec: 'giây' }
+
+/** The host's `uptime` words in this language, as `vssh_core::stats::uptime`: `41 ngày, 3 phút`. */
+export const uptime = (up: string, lang: Lang) =>
+  lang === 'vi' ? up.replace(/\b(day|hr|min|sec)s?\b/g, (_, unit: string) => UNITS[unit]) : up
 
 /** `CPU 23% · MEM 4.2/16G · / 61%` */
 export const compact = (list: Part[]) => list.map((part) => `${part.label} ${part.value}`).join(' · ')

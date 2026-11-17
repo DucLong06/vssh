@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Host } from './api'
   import { address } from './hosts'
-  import { t } from './i18n.svelte'
+  import { i18n, t } from './i18n.svelte'
   import type { Live } from './live.svelte'
-  import { parts } from './stats'
+  import { parts, uptime } from './stats'
 
   // The TUI's quick peek, as a popover under a card: what the host said
   // about itself the last time it was asked, and how long ago that was.
@@ -50,7 +50,7 @@
     return [
       text(t('hostname'), peek.host),
       text(t('system'), peek.os),
-      text(t('uptime'), peek.uptime),
+      text(t('uptime'), peek.uptime && uptime(peek.uptime, i18n.lang)),
       text(t('load'), peek.load),
       figure('CPU'),
       figure(t('mem')),
