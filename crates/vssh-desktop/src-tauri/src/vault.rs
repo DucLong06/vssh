@@ -41,6 +41,8 @@ pub fn vault_hosts(backend: State<'_, Backend>) -> Vec<String> {
 // shortcut: a name deleted and given to a new host before the vault is next
 // unlocked keeps the old password; keep a list of the names deleted while it
 // is shut (a table of the database) if that is ever met.
+// Said on stderr, the only log the app has: a password is not dropped unseen.
+#[allow(clippy::print_stderr)]
 fn forget_gone(backend: &Backend, vault: &mut Vault) {
     // A config that cannot be read, or lists no host at all, is more likely
     // a file that is not where it was than every host deleted: nothing goes.
