@@ -157,9 +157,12 @@ test("in Vietnamese the states are the TUI's words", () => {
   expect(screen.getByRole('article', { name: 'web-02' })).toHaveTextContent('đang hỏi web-02…')
 })
 
-test('a card that can open the host\'s files has a button for it, next to Connect', async () => {
+test('a tall card that can open the host\'s files has a button for it, next to Connect; a low one has Connect alone, and nothing lying on its name', async () => {
   const [onfiles, onconnect] = [vi.fn(), vi.fn()]
-  render(HostCard, { host: web01, onfiles, onconnect })
+  const low = render(HostCard, { host: web01, info: { ms: 12, peek }, onfiles, onconnect })
+  expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual(['Connect'])
+  low.unmount()
+  render(HostCard, { host: web01, info: stats(100, null, null), onfiles, onconnect })
   const buttons = screen.getAllByRole('button').map((button) => button.textContent?.trim())
   expect(buttons).toEqual(['Files', 'Connect'])
   await userEvent.click(screen.getByRole('button', { name: 'Files' }))
@@ -206,16 +209,14 @@ test('a button says its key in its tooltip; a host nobody asked has a button for
   render(HostCard, { host: web01, info: { ms: 0, peek: null }, onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), onpeek })
   const el = screen.getByRole('article', { name: 'web-01' })
   expect(el.querySelector('kbd')).toBeNull()
-  expect(within(el).getAllByRole('button').map((button) => button.title)).toEqual([
-    'Edit (E)',
-    'Forwards (L)',
-    'Files (F)',
-    'Connect (Enter)',
-    'Quick peek (V)',
-  ])
+  expect(within(el).getAllByRole('button').map((button) => button.title)).toEqual(['Connect (Enter)', 'Quick peek (V)'])
   await userEvent.click(within(el).getByRole('button', { name: 'Quick peek' }))
   expect(onpeek).toHaveBeenCalledOnce()
   setLang('vi')
   expect(await within(el).findByRole('button', { name: 'Xem nhanh' })).toHaveAttribute('title', 'Xem nhanh (V)')
   setLang('en')
+  // A card that is tall has the three over its tags as well.
+  render(HostCard, { host: bare, info: stats(100, null, null), onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn() })
+  const tall = screen.getByRole('article', { name: 'bare' })
+  expect(within(tall).getAllByRole('button').map((button) => button.title)).toEqual(['Edit (E)', 'Forwards (L)', 'Files (F)', 'Connect (Enter)'])
 })

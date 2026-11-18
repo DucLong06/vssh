@@ -256,10 +256,11 @@
     {#if tags.length === 0}
       <p class="px-3 pb-2 text-[13px] text-white">{t('no_tags')}</p>
     {:else}
-      <!-- Small: three whole rows of them and no half of a fourth. -->
-      <ul aria-label={t('tags')} class="flex max-h-[66px] shrink-0 flex-wrap gap-1 overflow-y-auto px-3 pb-2">
+      <!-- Small: three whole rows of them (18 px each, 4 between, 8 under) and no half of a fourth. -->
+      <ul aria-label={t('tags')} class="flex max-h-[70px] shrink-0 flex-wrap gap-1 overflow-y-auto px-3 pb-2">
         {#each tags as [name, n] (name)}
-          <li>
+          <!-- flex: as tall as its button, not as a line of text. -->
+          <li class="flex">
             <button
               type="button"
               aria-pressed={tag === name}

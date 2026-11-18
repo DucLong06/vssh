@@ -242,6 +242,9 @@
         layout = mapped(kept.layout, (at) => ids[at])
         active = ids[kept.active] ?? null
         zen = !!kept.zen
+        // A terminal in front has the keys, as it had when the app was closed.
+        const id = active
+        if (id !== null) void rendered().then(() => terms[id]?.focus())
       }
     } catch {
       // Not what this wrote: nothing is opened.

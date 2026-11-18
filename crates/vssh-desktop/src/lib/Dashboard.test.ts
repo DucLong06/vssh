@@ -226,8 +226,17 @@ test('a card dropped on another takes its place, and the order is remembered', a
   expect(web01).toHaveAttribute('draggable', 'true')
 
   await fireEvent.dragStart(bare)
+  // Over itself it would land where it is; over another, that one is lit until the pointer is off it.
+  await fireEvent.dragOver(bare)
+  expect(document.querySelector('[data-drop]')).toBeNull()
+  await fireEvent.dragOver(web01)
+  expect(web01).toHaveAttribute('data-drop')
+  expect(web01).toHaveClass('cursor-grab', 'data-[drop]:border-blue')
+  await fireEvent(web01, new MouseEvent('dragleave', { clientX: 5000, clientY: 5000, bubbles: true }))
+  expect(document.querySelector('[data-drop]')).toBeNull()
   await fireEvent.dragOver(web01)
   await fireEvent.drop(web01)
+  expect(document.querySelector('[data-drop]')).toBeNull()
   expect(names()).toEqual(['bare', 'web-01', 'web-02', 'db-primary'])
   // Down the list it lands after the card it was dropped on.
   await fireEvent.dragStart(screen.getByRole('article', { name: 'bare' }))

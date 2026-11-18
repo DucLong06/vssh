@@ -96,10 +96,10 @@
   {/if}
 {/snippet}
 
-<!-- Over the tags, and only when the card is pointed at or has the focus: twenty of these at once would be all one sees. -->
-{#snippet tools(place: string)}
+<!-- Over the tags of a tall card, and only when it is pointed at or has the focus: twenty of these at once would be all one sees. -->
+{#snippet tools()}
   {#if onfiles || onforwards || onedit}
-    <div class="absolute {place} z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+    <div class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
       {#if onedit}
         <button type="button" onclick={onedit} aria-keyshortcuts="e" title={tip(t('edit'), KEY.edit)} class={mini}>{t('edit')}</button>
       {/if}
@@ -138,10 +138,8 @@
     {/if}
     <!-- The concept's badge, in the TUI's words: how long the host takes to answer, or that it does not. -->
     {#if low}
-      <div class="relative flex h-7 min-w-0 flex-1 items-center">
-        {@render tags()}
-        {@render tools('right-0')}
-      </div>
+      <!-- No buttons over a low card: they would lie on its name, and where it is held to be moved. The right button's menu and the keys have them. -->
+      <div class="flex h-7 min-w-0 flex-1 items-center overflow-hidden">{@render tags()}</div>
     {/if}
     <span
       class="ml-auto inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap {info?.ms === null ? 'text-red inset-ring inset-ring-red/50' : info?.ms === undefined ? 'bg-bar text-dim' : kind === 'down' ? 'bg-bar text-white' : 'bg-green/12 text-green'}"
@@ -159,7 +157,7 @@
   {#if !low}
     <div class="-mt-1 flex min-h-[22px] items-start">
       {@render tags()}
-      {@render tools('right-3')}
+      {@render tools()}
     </div>
   {/if}
 

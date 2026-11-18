@@ -67,8 +67,9 @@
   let query = $state('')
   /** The user's own order: aliases, as they were last dragged. */
   let order = $state<string[]>(saved())
-  /** The card being dragged. */
+  /** The card being dragged, and the one it is over: where it would land. */
   let dragging: string | null = null
+  let over = $state<string | null>(null)
   /** The card whose quick peek is open, and whether the pointer opened it. */
   let peeking = $state<{ alias: string; hover: boolean } | null>(null)
   let resting: ReturnType<typeof setTimeout> | undefined
@@ -520,14 +521,27 @@
                   // Some webviews do not start a drag that carries nothing.
                   e.dataTransfer?.setData('text/plain', host.alias)
                 }}
-                ondragover={(e) => e.preventDefault()}
+                data-drop={over === host.alias || undefined}
+                ondragenter={(e) => e.preventDefault()}
+                ondragover={(e) => {
+                  // A web view lets go only where it was let in and kept: at the entering as at the moving.
+                  e.preventDefault()
+                  // No peek opens under a card in hand: it would be what the card is let go on.
+                  clearTimeout(resting)
+                  if (dragging && dragging !== host.alias) over = host.alias
+                }}
+                ondragleave={(e) => {
+                  // By where the pointer is: a web view says a leave for every part of the card on the way across it.
+                  const box = e.currentTarget.getBoundingClientRect()
+                  if (e.clientX < box.left || e.clientX >= box.right || e.clientY < box.top || e.clientY >= box.bottom) over = null
+                }}
                 ondrop={(e) => {
                   e.preventDefault()
                   if (dragging) place(dragging, host.alias)
-                  dragging = null
+                  dragging = over = null
                 }}
-                ondragend={() => (dragging = null)}
-                class="cursor-grab scroll-mt-20"
+                ondragend={() => (dragging = over = null)}
+                class="cursor-grab scroll-mt-20 active:cursor-grabbing data-[drop]:border-blue data-[drop]:bg-blue/8"
               />
               {#if peeking?.alias === host.alias}
                 <QuickPeek {host} info={live[host.alias]} trail={trail[host.alias]} onrefresh={() => void ask(host.alias, false)} />

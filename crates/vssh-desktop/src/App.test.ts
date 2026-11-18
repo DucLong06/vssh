@@ -67,6 +67,11 @@ const status = () => screen.getByRole('contentinfo')
 /** The palette's box. Behind its dialog the page is inert; jsdom does not know. */
 const palette = () => within(screen.getByRole('dialog')).getByRole('combobox')
 const card = (alias: string) => screen.findByRole('article', { name: alias })
+/** A row of a card's menu, the right button's: where a card with nothing wrong has its files, its forwards and its form. */
+const chose = async (user: ReturnType<typeof userEvent.setup>, alias: string, name: RegExp) => {
+  await fireEvent.contextMenu(await card(alias), { clientX: 300, clientY: 200 })
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name }))
+}
 /** What a card with nothing wrong says of where its host is: to the pointer on its name. */
 const at = async (alias: string) => within(await card(alias)).getByRole('heading').title
 /** A row of the settings at the rail's foot, chosen: the language, the theme, streamer mode, focus mode, the cheatsheet. */
@@ -524,9 +529,9 @@ test('a host chosen in the palette is the selected one', async () => {
   // No row of keys under the window: each of the card's buttons says its own, in the window's language.
   expect(status().querySelector('kbd')).toBeNull()
   const titles = async () => within(await card('db-primary')).getAllByRole('button').map((button) => button.title)
-  expect(await titles()).toEqual(['Edit (E)', 'Forwards (L)', 'Files (F)', 'Connect (Enter)'])
+  expect(await titles()).toEqual(['Connect (Enter)'])
   await setting(user, /Language/)
-  expect(await titles()).toEqual(['Sửa (E)', 'Chuyển tiếp (L)', 'Tệp (F)', 'Kết nối (Enter)'])
+  expect(await titles()).toEqual(['Kết nối (Enter)'])
   // Chosen again from where the focus went (the button): the card has it back, for its keys.
   await user.keyboard('{Control>}k{/Control}')
   await user.type(palette(), 'db{Enter}')
@@ -760,7 +765,7 @@ test('every string of the table is one the window uses', async () => {
   expect(unused).toEqual([])
 })
 
-test('f on a card, or its Files button, opens the host\'s files in a tab of their own, once per host', async () => {
+test('f on a card, or Files in its menu, opens the host\'s files in a tab of their own, once per host', async () => {
   const user = shell()
   ;(await card('web-01')).focus()
   await user.keyboard('f')
@@ -780,14 +785,14 @@ test('f on a card, or its Files button, opens the host\'s files in a tab of thei
   expect(asked('session_open')).toHaveLength(0)
   expect(status()).toHaveTextContent('Sessions 0')
 
-  // From the dashboard again, the card's button goes to the tab that is open.
+  // From the dashboard again, the card's menu goes to the tab that is open.
   await user.keyboard(`${leader}0`)
   expect(screen.getByRole('tabpanel', { hidden: true })).not.toBeVisible()
-  await user.click(within(await card('web-01')).getByRole('button', { name: 'Files' }))
+  await chose(user, 'web-01', /^Files/)
   expect(screen.getAllByRole('tab')).toHaveLength(2)
   expect(asked('sftp_list')).toHaveLength(1)
   await user.keyboard(`${leader}0`)
-  await user.click(within(await card('web-02')).getByRole('button', { name: 'Files' }))
+  await chose(user, 'web-02', /^Files/)
   expect(await tab(/2 Files web-02/)).toHaveAttribute('aria-selected', 'true')
 
   // Ctrl-W closes the one in front, as it closes a terminal; so does its ×.
@@ -815,10 +820,11 @@ test('a file view next to a terminal: its tab comes after the sessions, in Vietn
   expect(screen.getByRole('button', { name: 'Tải xuống' })).toHaveAttribute('title', 'Tải xuống (C)')
   expect(screen.getAllByRole('button', { name: 'Tệp ẩn' })[0]).toHaveAttribute('title', 'Tệp ẩn (.)')
   await user.keyboard(`${leader}0`)
-  expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toBeInTheDocument()
   ;(await card('web-01')).focus()
   await vi.waitFor(() => expect(status()).toHaveTextContent('web-01 deploy@'))
-  expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toHaveAttribute('title', 'Tệp (F)')
+  // The card's menu has it, with its key.
+  await fireEvent.contextMenu(await card('web-01'), { clientX: 300, clientY: 200 })
+  expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: /^Tệp/ })).toHaveTextContent('Tệp F')
 })
 
 // --- D5: snippets, batches, forwards -----------------------------------------
@@ -930,7 +936,7 @@ test('x on the dashboard: a command for the marked hosts, or the selected one; t
   expect(screen.getByRole('button', { name: 'Chép tất cả', hidden: true })).toBeInTheDocument()
 })
 
-test('L on a card, or its Forwards button, opens the host\'s port forwards', async () => {
+test('L on a card, or Forwards in its menu, opens the host\'s port forwards', async () => {
   const user = shell({ forwards_list: () => forwards, forward_toggle: () => true })
   ;(await card('web-02')).focus()
   await vi.waitFor(() => expect(status()).toHaveTextContent('web-02'))
@@ -955,11 +961,10 @@ test('L on a card, or its Forwards button, opens the host\'s port forwards', asy
   await emit('forward-state', { host: 'web-02', kind: 'L', value: '8080 localhost:80', state: 'off', error: null })
   await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Forwards 1' })).toBeNull())
 
-  await user.click(within(await card('web-01')).getByRole('button', { name: 'Forwards' }))
+  await chose(user, 'web-01', /^Forwards/)
   expect(await screen.findByRole('dialog', { name: 'Forwards web-01' })).toBeInTheDocument()
   setLang('vi')
   expect(await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })).toBeInTheDocument()
-  expect(within(await card('web-01')).getByRole('button', { name: 'Chuyển tiếp' })).toHaveAttribute('title', 'Chuyển tiếp (L)')
 })
 
 // --- D6: the vault, the host form, the key setup ----------------------------
@@ -1083,7 +1088,7 @@ test('with no hosts yet the empty dashboard has the way to the first one', async
   expect(await screen.findByRole('dialog', { name: 'Add host' })).toBeInTheDocument()
 })
 
-test('e on a card, or its Edit button, opens the form on that host; renamed, it is still the selected one', async () => {
+test('e on a card, or Edit in its menu, opens the form on that host; renamed, it is still the selected one', async () => {
   const user = editable()
   ;(await card('web-02')).focus()
   await vi.waitFor(() => expect(status()).toHaveTextContent('web-02'))
@@ -1099,7 +1104,7 @@ test('e on a card, or its Edit button, opens the form on that host; renamed, it 
   expect(await card('web-two')).toHaveAttribute('aria-current', 'true')
   expect(screen.queryByRole('article', { name: 'web-02' })).toBeNull()
 
-  await user.click(within(await card('web-01')).getByRole('button', { name: 'Edit' }))
+  await chose(user, 'web-01', /^Edit/)
   await vi.waitFor(() => expect(within(screen.getByRole('dialog', { name: 'Edit host' })).getByLabelText('Alias')).toHaveValue('web-01'))
 })
 
@@ -2415,6 +2420,8 @@ test('what was open is open the next time: the tabs of the config\'s hosts in th
   await again()
   // One after the other, as each is opened; then the one that was in front is.
   await vi.waitFor(() => expect(picked()).toHaveTextContent('1 migration'))
+  // And has the keys, as it had.
+  await vi.waitFor(() => expect(terminals[0].focused).toBe(true))
   expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.match(/\d \S+/)?.[0])).toEqual(['0 Hosts', '1 migration', '2 web-01', '3 Files'])
   expect(asked('session_open')).toEqual([{ alias: 'web-01' }, { alias: 'web-01' }])
   expect(asked('quick_connect')).toEqual([])
