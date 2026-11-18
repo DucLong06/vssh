@@ -142,7 +142,7 @@ test('with the sidebar there, the strip has no button for it and no leader to sa
 
 // --- D12: broadcast, from the strip ---------------------------------------------
 
-const cast = () => screen.queryByRole('button', { name: /^broadcast( \d+)?$/ })
+const cast = () => screen.queryByRole('button', { name: 'broadcast' })
 
 test('the broadcast button is there once two sessions are open and not before: one session has nobody to broadcast to, and a host\'s files are no session', async () => {
   const onbroadcast = vi.fn()
@@ -165,7 +165,7 @@ test('nobody to tell: without a way to ask for it the strip has no broadcast but
   expect(cast()).toBeNull()
 })
 
-test('the broadcast button is a switch: off it asks for all of them, and says in its tooltip what it does and its key; on it is lit, counts who hears, and asks for none', async () => {
+test('the broadcast button is a switch: off it asks for all of them, and says in its tooltip what it does and its key; on it is lit, and asks for none', async () => {
   const onbroadcast = vi.fn()
   const user = userEvent.setup()
   const sessions = [session(1, 'web-01'), session(2, 'web-02'), session(3, 'db-primary')]
@@ -181,11 +181,11 @@ test('the broadcast button is a switch: off it asks for all of them, and says in
 
   await rerender({ sessions: sessions.map((tab) => ({ ...tab, broadcast: true })) })
   expect(button).toHaveAttribute('aria-pressed', 'true')
-  expect(button).toHaveAccessibleName('broadcast 3')
+  // No wider for being on: the tabs beside it keep their room.
+  expect(button).toHaveAccessibleName('broadcast')
   // One pane taken out of it by its own switch: still on, for the two that are left.
   await rerender({ sessions: sessions.map((tab) => ({ ...tab, broadcast: tab.id !== 2 })) })
   expect(button).toHaveAttribute('aria-pressed', 'true')
-  expect(button).toHaveAccessibleName('broadcast 2')
   await user.click(button)
   expect(onbroadcast).toHaveBeenLastCalledWith(false)
 })

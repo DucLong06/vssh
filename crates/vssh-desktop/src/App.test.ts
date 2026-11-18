@@ -2533,7 +2533,7 @@ test('user@hostname typed in the hosts\' search is a quick connect: a session, a
 })
 
 /** The strip's switch; a broadcasting session's row in the rail is "broadcast web-01". */
-const cast = () => screen.queryByRole('button', { name: /^broadcast( \d+)?$/ })
+const cast = () => screen.queryByRole('button', { name: 'broadcast' })
 
 test('the broadcast button: there with two terminals open, tabs or panes; on, one line typed runs in every one of them, and the keys are still the terminal\'s in front', async () => {
   const user = shell()
@@ -2553,7 +2553,6 @@ test('the broadcast button: there with two terminals open, tabs or panes; on, on
 
   await user.click(cast()!)
   expect(cast()).toHaveAttribute('aria-pressed', 'true')
-  expect(cast()).toHaveAccessibleName('broadcast 3')
   expect(status()).toHaveTextContent('Broadcasting: 3')
   // The click did not take the keys from the terminal that is typed in.
   expect(terminals[2].focused).toBe(true)
@@ -2596,7 +2595,7 @@ test('while broadcasting every pane has its own switch: out of it a pane neither
   await user.click(own(right))
   expect(own(right)).toHaveAttribute('aria-pressed', 'false')
   expect(own(left)).toHaveAttribute('aria-pressed', 'true')
-  expect(cast()).toHaveAccessibleName('broadcast 2')
+  expect(cast()).toHaveAttribute('aria-pressed', 'true')
   expect(status()).toHaveTextContent('Broadcasting: 2')
   // The pane whose switch it was has the keys: a click in a pane brings it to the front.
   expect(terminals[1].focused).toBe(true)

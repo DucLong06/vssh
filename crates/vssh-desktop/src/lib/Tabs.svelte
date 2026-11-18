@@ -70,8 +70,8 @@
     onbroadcast,
   }: Props = $props()
 
-  /** How many sessions hear what is typed in one of them. */
-  const casting = $derived(sessions.filter((session) => session.broadcast).length)
+  /** Some session hears what is typed in another. How many, the status bar says. */
+  const casting = $derived(sessions.some((session) => session.broadcast))
 
   /** The tabs in the strip's order: each a session or a host's files. */
   type Shown = { id: number; session?: Tab; view?: { id: number; host: string } }
@@ -296,17 +296,16 @@
       <span role="status" class="pr-1"><Keys keys={KEY.leader[0]} class="text-yellow" /></span>
     {/if}
     {#if onbroadcast && sessions.length > 1}
-      <!-- With two shells open there is something to broadcast to. Lit, with a line around it and the number that hear, while it is on. -->
+      <!-- With two shells open there is something to broadcast to. Lit, with a line around it, while it is on; no wider for it: the tabs keep their room. -->
       <button
         type="button"
-        aria-pressed={casting > 0}
+        aria-pressed={casting}
         onclick={() => onbroadcast(!casting)}
         title={tip(t('broadcast_hint'), [`${KEY.leader[0]} Shift+B`])}
         class="mr-1 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-transparent px-2 text-[13px] font-medium text-dim hover:bg-selection hover:text-fg aria-pressed:border-yellow aria-pressed:bg-yellow/15 aria-pressed:text-yellow"
       >
         <Icon name="cast" />
         <span class="first-letter:uppercase">{t('broadcast')}</span>
-        {#if casting}<span class="font-mono text-[11px]">{casting}</span>{/if}
       </button>
     {/if}
     {#if active !== null}
