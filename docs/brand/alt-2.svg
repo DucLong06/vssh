@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- alt-2: hai block cursor đối xứng — "nhiều phiên cạnh nhau", tính năng đặc trưng của vssh -->
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="14" y="14" width="484" height="484" rx="100" fill="#16161e"/>
+  <rect x="150" y="160" width="90" height="192" rx="18" fill="#7aa2f7"/>
+  <rect x="272" y="160" width="90" height="192" rx="18" fill="#bb9af7"/>
+</svg>

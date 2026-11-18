@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 3t-c, cursor and star</title>
+  <rect width="512" height="512" rx="112" fill="#16161e"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#292e42" stroke-width="8"/>
+  <!-- laid out like the ">_" of a terminal icon: the V where the prompt is, then the underscore cursor -->
+  <path d="M236 404 C296 330 240 200 312 96 L452 150 C388 236 396 352 276 420 Z" fill="#f7768e" stroke="#f7768e" stroke-width="12" stroke-linejoin="round"/>
+  <!-- the left arm is cut square top and bottom, like a monospace backslash -->
+  <path d="M92 104 L164 104 L268 408 L196 408 Z" fill="#7aa2f7"/>
+  <path d="M370.0 126.0 L383.0 166.1 L425.2 166.1 L391.1 190.8 L404.1 230.9 L370.0 206.2 L335.9 230.9 L348.9 190.8 L314.8 166.1 L357.0 166.1 Z" fill="#ffcd00" stroke="#ffcd00" stroke-width="4" stroke-linejoin="round"/>
+  <rect x="352" y="384" width="96" height="32" fill="#c0caf5"/>
+</svg>

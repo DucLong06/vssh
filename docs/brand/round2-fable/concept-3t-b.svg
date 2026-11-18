@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 3t-b, the bitmap V</title>
+  <defs><clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath></defs>
+  <rect width="512" height="512" rx="112" fill="#16161e"/>
+  <!-- drawn on a 16 x 16 grid of 32-unit cells, so the 16px render is the drawing itself -->
+  <!-- the cloth: a red edge trailing the right arm, two cells wide, one at the foot -->
+  <path d="M416 96 h64 v64 h-32 v64 h-32 v64 h-64 v64 h-32 v-64 h32 v-64 h32 v-64 h32 Z" fill="#f7768e"/>
+  <!-- the V, a bitmap glyph two cells thick -->
+  <path d="M64 96 h64 v64 h32 v64 h32 v64 h32 v64 h32 v-64 h32 v-64 h32 v-64 h32 v-64 h64 v64 h-32 v64 h-32 v64 h-32 v64 h-32 v64 h-96 v-64 h-32 v-64 h-32 v-64 h-32 v-64 h-32 Z" fill="#c0caf5"/>
+  <path d="M240.0 90.0 L256.6 141.1 L310.4 141.1 L266.9 172.7 L283.5 223.9 L240.0 192.3 L196.5 223.9 L213.1 172.7 L169.6 141.1 L223.4 141.1 Z" fill="#ffcd00" stroke="#ffcd00" stroke-width="4" stroke-linejoin="round"/>
+  <!-- scanlines on the cell boundaries: even at 16px, visible from about 64px up -->
+  <path clip-path="url(#tile)" d="M0 32h512M0 64h512M0 96h512M0 128h512M0 160h512M0 192h512M0 224h512M0 256h512M0 288h512M0 320h512M0 352h512M0 384h512M0 416h512M0 448h512M0 480h512" stroke="#16161e" stroke-width="4" stroke-opacity="0.35"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#292e42" stroke-width="8"/>
+</svg>

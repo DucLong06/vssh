@@ -1,5 +1,7 @@
 # vssh
 
+<img src="docs/img/logo.png" alt="vssh — a terminal prompt whose V is lying down, ssh as its command" width="360">
+
 [![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
 
 **English** · [Tiếng Việt](README.vi.md) · Terminal app: [README-terminal.md](README-terminal.md) · [README-terminal.vi.md](README-terminal.vi.md)

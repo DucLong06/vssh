@@ -75,9 +75,33 @@
   <!-- The name is the same in every language: drawn, not said. -->
   <div aria-hidden="true" class="flex items-center gap-3 px-2 pb-4">
     <span
-      class="grid size-9 place-items-center rounded-xl bg-linear-to-br from-blue to-magenta font-mono text-sm font-bold text-page shadow-lg shadow-blue/30"
+      class="grid size-9 place-items-center overflow-hidden rounded-xl border border-edge bg-page shadow-lg shadow-blue/30"
     >
-      &gt;_
+      <!-- The brand mark: a > whose V is lying down, and "ssh" as its command. -->
+      <svg viewBox="0 0 512 512" aria-hidden="true" class="h-9 w-9">
+        <defs>
+          <linearGradient id="brand-g" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#7aa2f7" />
+            <stop offset="1" stop-color="#7dcfff" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M 150 140 L 290 248 L 150 356"
+          fill="none"
+          stroke="url(#brand-g)"
+          stroke-width="46"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <text
+          x="248"
+          y="418"
+          font-family="ui-monospace, monospace"
+          font-size="112"
+          font-weight="700"
+          fill="#7dcfff"
+          letter-spacing="2">ssh</text>
+      </svg>
     </span>
     <span class="text-base font-semibold tracking-tight text-ink after:content-['vssh']"></span>
   </div>

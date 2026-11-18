@@ -1,5 +1,7 @@
 # vssh
 
+<img src="docs/img/logo.png" alt="vssh — dấu nhắc terminal với chữ V nằm ngang, ssh là dòng lệnh" width="360">
+
 [![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
 
 **Tiếng Việt** · [English](README.md) · Ứng dụng terminal: [README-terminal.vi.md](README-terminal.vi.md) · [README-terminal.md](README-terminal.md)

@@ -278,9 +278,33 @@
       <div class="grid h-full place-content-center justify-items-center gap-3 text-center">
         <p
           aria-hidden="true"
-          class="grid size-14 place-items-center rounded-2xl bg-linear-to-br from-blue to-magenta font-mono text-xl font-bold text-page shadow-lg shadow-blue/30"
+          class="grid size-14 place-items-center overflow-hidden rounded-2xl border border-edge bg-page shadow-lg shadow-blue/30"
         >
-          &gt;_
+          <!-- The brand mark, as the rail draws it. -->
+          <svg viewBox="0 0 512 512" class="h-14 w-14">
+            <defs>
+              <linearGradient id="brand-empty-g" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#7aa2f7" />
+                <stop offset="1" stop-color="#7dcfff" />
+              </linearGradient>
+            </defs>
+            <path
+              d="M 150 140 L 290 248 L 150 356"
+              fill="none"
+              stroke="url(#brand-empty-g)"
+              stroke-width="46"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <text
+              x="248"
+              y="418"
+              font-family="ui-monospace, monospace"
+              font-size="112"
+              font-weight="700"
+              fill="#7dcfff"
+              letter-spacing="2">ssh</text>
+          </svg>
         </p>
         <h2 class="text-lg font-semibold text-ink">{t('no_hosts')}</h2>
         <p class="text-white">{t('no_hosts_hint')}</p>

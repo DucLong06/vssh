@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 3t-c, the flag V at a prompt, with its cursor</title>
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#292e42" stroke-width="8"/>
+  <!-- the V: a square-cut backslash for the pole, the cloth for the right arm;
+       lifted 8 units so its foot lands on a 16px pixel edge (416 = 13 pixels) -->
+  <g transform="translate(0 -8)">
+    <path d="M208 398 C272 320 218 190 298 92 L412 140 C324 232 350 348 234 418 Z" fill="#f7768e" stroke="#f7768e" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M92 88 H140 L248 424 H200 Z" fill="#7aa2f7"/>
+    <path d="M322 120 L332.3 151.8 L365.7 151.8 L338.7 171.4 L349 203.2 L322 183.6 L295 203.2 L305.3 171.4 L278.3 151.8 L311.7 151.8 Z" fill="#ffcd00" stroke="#ffcd00" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+  <!-- the cursor, where a cursor sits: after the V, on its baseline; three pixels wide at 16px -->
+  <rect x="320" y="376" width="96" height="40" fill="#c0caf5"/>
+</svg>

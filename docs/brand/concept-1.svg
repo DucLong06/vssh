@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 1, the star in the V</title>
+  <!-- tile: rx 112 of 512 is 14px at 64px, the app's 12-16px radius -->
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#292e42" stroke-width="8"/>
+  <path d="M100 126 L256 392 L412 126" fill="none" stroke="#f7768e" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 90 L270.8 135.6 L318.8 135.6 L280 163.8 L294.8 209.4 L256 181.2 L217.2 209.4 L232 163.8 L193.2 135.6 L241.2 135.6 Z" fill="#e0af68" stroke="#e0af68" stroke-width="6" stroke-linejoin="round"/>
+</svg>
