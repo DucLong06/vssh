@@ -1,6 +1,7 @@
 <script lang="ts">
   import { i18n, setLang, t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import Keys from './Keys.svelte'
   import { KEY, tip } from './keymap'
   import { setStreamer, streamer } from './streamer.svelte'
 
@@ -38,7 +39,7 @@
   >
     <Icon name="search" />
     <span class="min-w-0 flex-1 truncate">{t('search')}</span>
-    <kbd>{KEY.palette[0]}</kbd>
+    <Keys keys={KEY.palette[0]} />
   </button>
   {#if onshortcuts}
     <!-- Where a person finds out that there are keys at all. -->

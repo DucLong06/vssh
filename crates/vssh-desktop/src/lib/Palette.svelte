@@ -4,6 +4,7 @@
   import { address, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import Keys from './Keys.svelte'
   import Modal from './Modal.svelte'
   import { KEY } from './keymap'
   import { addr } from './streamer.svelte'
@@ -18,9 +19,12 @@
     onvault?: () => void
     /** The cheatsheet. */
     onshortcuts?: () => void
+    /** Focus mode, on or off; and, with a tab in front, another shell beside it or (`down`) under it. */
+    onzen?: () => void
+    onsplit?: (down: boolean) => void
     onclose: () => void
   }
-  let { hosts, onhost, onquick, onsnippets, onadd, onvault, onshortcuts, onclose }: Props = $props()
+  let { hosts, onhost, onquick, onsnippets, onadd, onvault, onshortcuts, onzen, onsplit, onclose }: Props = $props()
 
   /** `keys`: an action's own key, for the next time. */
   type Item = { key: string; label: string; detail: string; keys?: readonly string[]; action: boolean; run: () => void }
@@ -40,6 +44,13 @@
       ...(onadd ? [{ key: 'add-host', label: t('add_host'), detail: '', keys: KEY.add, en: 'add host', run: onadd }] : []),
       ...(onvault ? [{ key: 'vault', label: t('vault'), detail: '', en: 'vault', run: onvault }] : []),
       ...(onshortcuts ? [{ key: 'shortcuts', label: t('shortcuts'), detail: '', keys: KEY.shortcuts, en: 'keyboard shortcuts', run: onshortcuts }] : []),
+      ...(onsplit
+        ? [
+            { key: 'split-right', label: t('split_right'), detail: '', keys: KEY.splitRight, en: 'split right', run: () => onsplit(false) },
+            { key: 'split-down', label: t('split_down'), detail: '', keys: KEY.splitDown, en: 'split down', run: () => onsplit(true) },
+          ]
+        : []),
+      ...(onzen ? [{ key: 'focus', label: t('focus_mode'), detail: '', keys: KEY.focus, en: 'focus mode', run: onzen }] : []),
     ].map(({ en, ...item }): { item: Item; en: string } => ({ item: { ...item, action: true }, en }))
     const rows = hosts.map((host) => {
       // Found by its real address, shown at the one the window may show.
@@ -89,7 +100,7 @@
     spellcheck="false"
     class="w-full bg-transparent py-4 text-base text-fg outline-none placeholder:text-dim"
   />
-  <kbd>Esc</kbd>
+  <Keys keys="Esc" />
   </label>
   <ul
     id="palette-options"
@@ -112,8 +123,8 @@
         <span class="font-medium {item.action ? 'text-magenta' : 'text-ink'}">{item.label}</span>
         <span class="truncate font-mono text-xs text-dim">{item.detail}</span>
         {#if item.keys}
-          <span class="ml-auto flex shrink-0 gap-1 self-center">
-            {#each item.keys as key (key)}<kbd>{key}</kbd>{' '}{/each}
+          <span class="ml-auto flex shrink-0 gap-2 self-center">
+            {#each item.keys as key (key)}<Keys keys={key} />{' '}{/each}
           </span>
         {/if}
       </li>
@@ -123,7 +134,7 @@
     <p role="status" class="border-t border-edge px-5 py-4 text-white">{t('no_match')}</p>
   {/if}
   <footer class="flex gap-4 border-t border-edge px-5 py-3 text-[13px] text-white">
-    <span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd> {t('select')}</span>
-    <span><kbd>Esc</kbd> {t('close')}</span>
+    <span><Keys keys="↑" /> <Keys keys="↓" /> <Keys keys="Enter" /> {t('select')}</span>
+    <span><Keys keys="Esc" /> {t('close')}</span>
   </footer>
 </Modal>

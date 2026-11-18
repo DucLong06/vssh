@@ -10,6 +10,10 @@ export const KEY = {
   shortcuts: ['?', 'F1', 'Ctrl+/'],
   newTab: ['Ctrl+T'],
   closeTab: ['Ctrl+W'],
+  // With Shift: no shell is sent these, so they are the window's in a terminal too.
+  splitRight: ['Ctrl+Shift+D'],
+  splitDown: ['Ctrl+Shift+E'],
+  focus: ['Ctrl+Shift+B', 'Ctrl+B'],
   leader: ['Ctrl+A'],
   search: ['/', 'Ctrl+F'],
   add: ['A'],
@@ -31,6 +35,9 @@ type Keys = readonly string[]
 export type View = 'dashboard' | 'sessions' | 'files'
 export type Group = { name: string; view?: View; rows: [keys: Keys, label: string][] }
 
+/** Focus mode, and what it does: the rail's own button says the second half. */
+const focus = () => `${t('focus_mode')}: ${t('hide_sidebar').toLowerCase()}`
+
 /** Every key there is, by where it works, in the window's language. */
 export const sheet = (): Group[] => [
   {
@@ -42,6 +49,9 @@ export const sheet = (): Group[] => [
       [KEY.closeTab, t('close_tab')],
       [['Ctrl+Tab'], t('next_tab')],
       [['Ctrl+Shift+Tab'], t('prev_tab')],
+      [KEY.splitRight, t('split_right')],
+      [KEY.splitDown, t('split_down')],
+      [KEY.focus, focus()],
       [['Esc'], t('close')],
     ],
   },
@@ -77,6 +87,12 @@ export const sheet = (): Group[] => [
       [['B'], t('broadcast_tab')],
       [['Shift+B'], t('broadcast_all')],
       [['X', 'D'], t('close_tab')],
+      // tmux's own, and the two that draw the line they make.
+      [['|', '%'], t('split_right')],
+      [['-', '"'], t('split_down')],
+      [['!'], t('unsplit')],
+      [['{', '}'], t('swap_panes')],
+      [['Z'], focus()],
       [KEY.leader, t('send_to_shell')],
       [['?'], t('shortcuts')],
     ],
@@ -94,6 +110,14 @@ export const sheet = (): Group[] => [
       [KEY.search, t('filter')],
       [KEY.hidden, t('hidden_files')],
       [[t('right_click')], `${t('rename')}, ${t('delete')}, ${t('new_folder')}`],
+    ],
+  },
+  {
+    name: t('keys_mouse'),
+    rows: [
+      [[t('middle_click')], t('close_tab')],
+      [[t('double_click')], t('rename_tab')],
+      [[t('drag')], t('drag_tab')],
     ],
   },
   {

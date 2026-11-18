@@ -113,13 +113,24 @@ body {
     outline: 2px solid var(--color-blue);
     outline-offset: -2px;
   }
-  /* A key is a keycap wherever it is named. */
+  /* A key is a keycap wherever it is named (Keys.svelte): one cap a key of
+     a chord, in the window's own letters, raised by a line under it. No
+     frame and no monospace: that is how a terminal writes a key. */
   kbd {
-    padding: 1px 6px;
-    border: 1px solid var(--color-edge);
-    border-radius: 6px;
-    background: var(--color-page);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    display: inline-flex;
+    gap: 3px;
+    vertical-align: middle;
+    font: 500 11px/1 var(--font-sans);
+  }
+  kbd > span:not(.sr-only) {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 5px;
+    background: var(--color-bar);
+    color: var(--color-white);
+    box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.28);
   }
 }

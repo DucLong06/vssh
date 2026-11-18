@@ -4,6 +4,7 @@
   import { t } from './i18n.svelte'
   import Icon, { type IconName } from './Icon.svelte'
   import SessionDot from './SessionDot.svelte'
+  import { KEY, tip } from './keymap'
   import { addr } from './streamer.svelte'
   import type { Tab } from './Tabs.svelte'
   import { setTheme, theme } from './theme.svelte'
@@ -28,6 +29,8 @@
     current?: Nav
     snippets?: number
     onnav?: (to: Nav) => void
+    /** Focus mode: the rail goes, and the tabs have the way back. */
+    onzen?: () => void
   }
   let {
     hosts,
@@ -42,6 +45,7 @@
     current,
     snippets,
     onnav,
+    onzen,
   }: Props = $props()
 
   let list = $state<HTMLElement>()
@@ -73,13 +77,26 @@
 
 <nav aria-label={t('hosts')} class="flex min-h-0 flex-col gap-0.5 border-r border-edge bg-bg px-3 pt-4 pb-3">
   <!-- The name is the same in every language: drawn, not said. -->
-  <div aria-hidden="true" class="flex items-center gap-3 px-2 pb-4">
+  <div class="flex items-center gap-3 px-2 pb-4">
     <span
+      aria-hidden="true"
       class="grid size-9 place-items-center rounded-xl bg-linear-to-br from-blue to-magenta font-mono text-sm font-bold text-page shadow-lg shadow-blue/30"
     >
       &gt;_
     </span>
-    <span class="text-base font-semibold tracking-tight text-ink after:content-['vssh']"></span>
+    <span aria-hidden="true" class="text-base font-semibold tracking-tight text-ink after:content-['vssh']"></span>
+    {#if onzen}
+      <button
+        type="button"
+        onclick={onzen}
+        aria-label={t('hide_sidebar')}
+        aria-keyshortcuts="Control+Shift+B Control+B"
+        title={tip(t('hide_sidebar'), KEY.focus)}
+        class="ml-auto grid size-8 cursor-pointer place-items-center rounded-lg text-dim hover:bg-panel hover:text-fg"
+      >
+        <Icon name="rail" />
+      </button>
+    {/if}
   </div>
 
   {@render item('dashboard', 'grid', t('status'))}

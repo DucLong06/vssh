@@ -148,3 +148,36 @@ test('an action shows its own key as a key cap, and the cheatsheet is an action;
   expect(chosen()).toHaveTextContent('Phím tắt')
   setLang('en')
 })
+
+test('the window\'s own shape is in the palette: focus mode, and a split while a tab is in front; a host\'s name finds none of them', async () => {
+  const { user, input, onzen, onsplit } = open({ onzen: vi.fn(), onsplit: vi.fn() })
+  expect(options().slice(0, 5)).toEqual(['Quick connect', 'Snippets', 'Split right', 'Split down', 'Focus mode'])
+  const keys = (name: RegExp) => [...screen.getByRole('option', { name }).querySelectorAll('kbd')].map((key) => key.textContent)
+  expect(keys(/Split right/)).toEqual(['Ctrl+Shift+D'])
+  expect(keys(/Split down/)).toEqual(['Ctrl+Shift+E'])
+  expect(keys(/Focus mode/)).toEqual(['Ctrl+Shift+B', 'Ctrl+B'])
+  // Two letters of a host's name are not scattered over an action's: db is the two hosts it is in.
+  for (const lang of ['en', 'vi'] as const) {
+    setLang(lang)
+    await user.clear(input)
+    await user.type(input, 'db')
+    expect(options(), lang).toEqual(['db-primary'])
+    await user.clear(input)
+    await user.type(input, 'web')
+    expect(options(), lang).toEqual(['web-01', 'web-02'])
+  }
+  await user.clear(input)
+  await user.type(input, 'split down{Enter}')
+  expect(onsplit).toHaveBeenCalledExactlyOnceWith(true)
+  await user.clear(input)
+  await user.type(input, 'chia doi sang{Enter}')
+  expect(onsplit).toHaveBeenLastCalledWith(false)
+  await user.clear(input)
+  await user.type(input, 'tap trung{Enter}')
+  expect(onzen).toHaveBeenCalledOnce()
+})
+
+test('over the dashboard there is nothing to split: the palette does not offer it', () => {
+  open({ onzen: vi.fn() })
+  expect(options().slice(0, 3)).toEqual(['Quick connect', 'Snippets', 'Focus mode'])
+})

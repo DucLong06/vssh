@@ -384,6 +384,34 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("open_folder", "Open folder", "Mở thư mục"),
     ("parent_folder", "Parent folder", "Thư mục cha"),
     ("right_click", "Right-click", "Chuột phải"),
+    // The window's own shape: panes side by side, and nothing but the tabs.
+    ("split_right", "Split right", "Chia đôi sang phải"),
+    ("split_down", "Split down", "Chia đôi xuống dưới"),
+    (
+        "unsplit",
+        "Unsplit: this pane back to a tab of its own",
+        "Bỏ chia: đưa ô này về tab riêng",
+    ),
+    (
+        "swap_panes",
+        "Swap with the pane before, after",
+        "Đổi chỗ với ô trước, ô sau",
+    ),
+    // Short: the palette finds a row by the letters of its name, in order.
+    ("focus_mode", "Focus mode", "Chế độ tập trung"),
+    ("hide_sidebar", "Hide the sidebar", "Ẩn thanh bên"),
+    ("show_sidebar", "Show the sidebar", "Hiện thanh bên"),
+    ("rename_tab", "Rename tab", "Đổi tên tab"),
+    // What the pointer does that no key says.
+    ("keys_mouse", "With the mouse", "Bằng chuột"),
+    ("middle_click", "Middle-click", "Chuột giữa"),
+    ("double_click", "Double-click", "Nhấp đúp"),
+    ("drag", "Drag", "Kéo thả"),
+    (
+        "drag_tab",
+        "A tab onto an edge of what is open: split there, or change places",
+        "Tab vào một mép của ô đang mở: chia ở phía đó, hoặc đổi chỗ",
+    ),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

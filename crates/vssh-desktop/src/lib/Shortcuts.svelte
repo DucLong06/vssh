@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import Keys from './Keys.svelte'
   import Modal from './Modal.svelte'
   import { sheet, type Group, type View } from './keymap'
 
@@ -38,7 +39,7 @@
       spellcheck="false"
       class="w-full bg-transparent py-4 text-base text-fg outline-none placeholder:text-dim"
     />
-    <kbd>Esc</kbd>
+    <Keys keys="Esc" />
   </label>
   <!-- The scroll is the outer box's: columns with a height of their own would overflow sideways. -->
   <div class="max-h-[62vh] overflow-y-auto border-t border-edge">
@@ -50,9 +51,9 @@
           {#each group.rows as [keys, label] (label)}
             <div class="flex items-center justify-between gap-4 border-b border-edge/50 py-1 last:border-0">
               <dt class="min-w-0 text-fg first-letter:uppercase">{label}</dt>
-              <dd class="flex shrink-0 gap-1">
+              <dd class="flex shrink-0 gap-2">
                 <!-- The space is for whoever reads the text: J K, not JK. -->
-                {#each keys as key (key)}<kbd>{key}</kbd>{' '}{/each}
+                {#each keys as key (key)}<Keys keys={key} />{' '}{/each}
               </dd>
             </div>
           {/each}

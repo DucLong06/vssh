@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Host } from './api'
   import { t } from './i18n.svelte'
+  import Keys from './Keys.svelte'
   import { KEY } from './keymap'
   import { addr } from './streamer.svelte'
 
@@ -48,7 +49,7 @@
   {#if leader}
     <!-- Half a chord: said until its second key comes, and where the rest of them are. -->
     <span role="status" class="truncate text-yellow">
-      <kbd>{KEY.leader[0]}</kbd>
+      <Keys keys={KEY.leader[0]} />
       {t('leader_waiting')}
     </span>
   {/if}

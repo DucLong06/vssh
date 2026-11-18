@@ -11,6 +11,7 @@
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
   import { eta, human, join } from './paths'
+  import Keys from './Keys.svelte'
   import { KEY, tip } from './keymap'
 
   type Props = {
@@ -18,8 +19,10 @@
     host: string
     /** Its tab is in front. */
     active: boolean
+    /** The keys are its own: of the panes on screen, the one in front. */
+    front?: boolean
   }
-  let { host, active }: Props = $props()
+  let { host, active, front = true }: Props = $props()
 
   /** How many transfers run at once: each is a connection of its own, and sshd lets only so many start together. */
   const AT_ONCE = 3
@@ -271,7 +274,7 @@
 
   // In front, the keys are the local pane's first.
   $effect(() => {
-    if (active) views.local?.focus()
+    if (active && front) views.local?.focus()
   })
 
   // The menu takes the keys while it is open.
@@ -457,7 +460,7 @@
       <li role="none">
         <button type="button" role="menuitem" onclick={() => pick((side, entry) => copy([side, [entry.name]]))} class={item}>
           {t('copy')}
-          <kbd aria-hidden="true" class="float-right">{KEY.copy[0]}</kbd>
+          <span aria-hidden="true" class="float-right"><Keys keys={KEY.copy[0]} /></span>
         </button>
       </li>
     {/if}

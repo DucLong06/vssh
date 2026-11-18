@@ -6,6 +6,7 @@
   import { t } from './i18n.svelte'
   import { ask, critical, down, live, sick, trail, up } from './live.svelte'
   import QuickPeek from './QuickPeek.svelte'
+  import Keys from './Keys.svelte'
   import { KEY, tip } from './keymap'
   import Sparkline from './Sparkline.svelte'
 
@@ -294,7 +295,7 @@
         <div class="mt-2 flex gap-2">
           <button type="button" onclick={onpalette} aria-label={t('palette')} aria-keyshortcuts="Control+K" class="{control} flex items-center gap-2">
             {t('palette')}
-            <kbd>{KEY.palette[0]}</kbd>
+            <Keys keys={KEY.palette[0]} />
           </button>
           {#if onadd}
             <button type="button" onclick={onadd} class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90">

@@ -13,8 +13,10 @@
     /** The session this is the terminal of. */
     id: number
     label: string
-    /** Its tab is in front. */
+    /** It is on screen: its tab is in front, or it is a pane beside the one that is. */
     active: boolean
+    /** The keys are its own: of the panes on screen, the one in front. */
+    front?: boolean
     /** Its shell ended, and why, if it said. */
     closed: boolean
     why: Shown | null
@@ -23,7 +25,7 @@
     onstate: (state: PtyState) => void
     onreconnect: () => void
   }
-  let { id, label, active, closed, why, oninput, onstate, onreconnect }: Props = $props()
+  let { id, label, active, front = true, closed, why, oninput, onstate, onreconnect }: Props = $props()
 
   let box: HTMLElement
   let term: Terminal
@@ -75,8 +77,11 @@
   $effect(() => {
     if (!active) return
     fit.fit()
-    term.focus()
+    if (front) term.focus()
   })
+
+  /** The keys back to it, from wherever they were. */
+  export const focus = () => term.focus()
 
   /** Connects the session, again if it was connected before, at the terminal's size. */
   export function start() {
