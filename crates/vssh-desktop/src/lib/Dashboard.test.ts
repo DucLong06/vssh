@@ -394,3 +394,20 @@ test('a host nobody asked: its card\'s Quick peek button asks it, as v does; the
   expect(screen.getByRole('searchbox')).toHaveAttribute('title', 'Search hosts, #tag (/, Ctrl+F)')
   clearMocks()
 })
+
+test('with Ctrl a card\'s letters are not its keys: Ctrl+F on a card is the search and opens no files', async () => {
+  const user = userEvent.setup()
+  const on = { onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), ondelete: vi.fn(), onconnect: vi.fn() }
+  render(Dashboard, props(on))
+  screen.getByRole('article', { name: 'web-01' }).focus()
+  await user.keyboard('{Control>}f{/Control}')
+  expect(screen.getByRole('searchbox')).toHaveFocus()
+  expect(on.onfiles).not.toHaveBeenCalled()
+  // Nor the others: Ctrl+L, Ctrl+E, Ctrl+D and Ctrl+Enter are nobody's here.
+  screen.getByRole('article', { name: 'web-01' }).focus()
+  await user.keyboard('{Control>}led{Enter}{/Control}')
+  for (const asked of Object.values(on)) expect(asked).not.toHaveBeenCalled()
+  // Without it they are the card's, as before.
+  await user.keyboard('f')
+  expect(on.onfiles).toHaveBeenCalledWith('web-01')
+})

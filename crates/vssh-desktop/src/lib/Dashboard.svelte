@@ -163,8 +163,9 @@
   }
 
   async function onkeydown(e: KeyboardEvent, alias: string) {
-    // Not from the card's own button: there Enter is a click already.
-    if (e.target !== e.currentTarget) return
+    // Not from the card's own button: there Enter is a click already. Nor with
+    // Ctrl: Ctrl+F on a card is the search, not the card's f.
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey) return
     const step = e.altKey && { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key]
     if (e.key === 'Enter') {
       connect(alias)
