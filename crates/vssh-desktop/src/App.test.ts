@@ -2678,3 +2678,67 @@ test('D12 in Vietnamese: the search, the tags\' row, the question whose, the bro
   expect(status()).toHaveTextContent('Đang phát: 2')
   expect(stray()).toEqual([])
 })
+
+// --- D13: the hosts as a JSON file, and the word that a newer version is out -------
+
+test('the bar over the cards has the hosts out to a JSON file and in from one; what came in is on the dashboard at once', async () => {
+  const offered = [{ alias: 'web-01', hostname: '10.0.0.5', user: 'deploy', port: null, taken: true }]
+  const user = shell({ export_hosts_json: () => 4, import_hosts_json_preview: () => offered, import_hosts_json: () => ['web-01'] })
+  await card('web-01')
+  await user.click(screen.getByRole('button', { name: 'Export hosts (JSON)' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Export hosts (JSON)' })
+  await user.click(within(dialog).getByRole('button', { name: 'Export' }))
+  expect(await within(dialog).findByRole('status')).toHaveTextContent('4 hosts saved to ~/vssh-hosts.json')
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(asked('list_hosts')).toHaveLength(1)
+
+  await user.click(screen.getByRole('button', { name: 'Import hosts (JSON)' }))
+  await user.click(await screen.findByRole('button', { name: 'Preview' }))
+  await user.click(await screen.findByRole('button', { name: 'Import 1' }))
+  await user.click(screen.getByRole('button', { name: 'Overwrite' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(asked('import_hosts_json')).toEqual([{ path: '~/vssh-hosts.json', only: ['web-01'], overwrite: true }])
+  expect(asked('list_hosts')).toHaveLength(2)
+  expect(await card('web-01')).toHaveAttribute('aria-current', 'true')
+})
+
+test('with no hosts yet the empty dashboard can take them from a JSON file', async () => {
+  const user = shell({ list_hosts: () => [] })
+  await user.click(await screen.findByRole('button', { name: 'Import hosts (JSON)' }))
+  expect(await screen.findByRole('dialog', { name: 'Import hosts (JSON)' })).toBeInTheDocument()
+  // Nothing to export from.
+  expect(screen.queryByRole('button', { name: 'Export hosts (JSON)' })).toBeNull()
+})
+
+test('five seconds after it starts the app asks once whether a newer version is out, and says so in the status bar', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const fetched = vi.fn(async () => ({ ok: true, json: async () => ({ tag_name: 'v99.0.0' }) }) as Response)
+  vi.stubGlobal('fetch', fetched)
+  try {
+    const user = shell({ 'plugin:app|version': () => '0.2.0', open_releases: () => null })
+    await card('web-01')
+    await vi.advanceTimersByTimeAsync(4900)
+    expect(fetched).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(fetched).toHaveBeenCalledExactlyOnceWith('https://api.github.com/repos/DucLong06/vssh/releases/latest', expect.anything())
+    await user.click(await within(status()).findByRole('button', { name: 'New version v99.0.0 — see it on GitHub' }))
+    expect(asked('open_releases')).toHaveLength(1)
+    await user.click(within(status()).getByRole('button', { name: 'Dismiss' }))
+    expect(within(status()).queryByRole('button', { name: /New version/ })).toBeNull()
+    // Not asked again while the app runs.
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(fetched).toHaveBeenCalledOnce()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+test('with no answer about a newer version the window says nothing of it', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  shell()
+  await card('web-01')
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(within(status()).queryByRole('status')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+})

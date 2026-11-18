@@ -19,6 +19,7 @@
   import Forwards from './lib/Forwards.svelte'
   import HostDelete from './lib/HostDelete.svelte'
   import HostForm from './lib/HostForm.svelte'
+  import HostsJson from './lib/HostsJson.svelte'
   import KeySetup from './lib/KeySetup.svelte'
   import { fromTarget } from './lib/hosts'
   import { i18n, t } from './lib/i18n.svelte'
@@ -35,12 +36,15 @@
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
   import Topbar from './lib/Topbar.svelte'
+  import { check } from './lib/update.svelte'
   import { heard as forwarded, sync as forwarding_of, tunnels } from './lib/tunnels.svelte'
   import Vault from './lib/Vault.svelte'
 
   /** How often the hosts are asked for their figures, and every how many rounds pinged. */
   const EVERY = 5000
   const PING_ROUNDS = 12
+  /** How long the app is left to start before it asks whether a newer version is out. */
+  const NEWS_AFTER = 5000
 
   let hosts = $state<Host[]>([])
   let snippets = $state<Snippet[]>([])
@@ -87,7 +91,7 @@
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
   /** `newtab`: the palette, asked for a tab: the host chosen there is connected to. `pick-`: asked whose files, whose forwards. */
-  type Dialog = 'palette' | 'newtab' | 'pick-files' | 'pick-forwards' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
+  type Dialog = 'palette' | 'newtab' | 'pick-files' | 'pick-forwards' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts' | 'export' | 'import'
   let modal = $state<Dialog | null>(null)
   /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
@@ -140,9 +144,11 @@
       else void restore()
     }, fail)
     const timer = setInterval(tick, EVERY)
+    const news = setTimeout(check, NEWS_AFTER)
     const forwards = listen<ForwardState>('forward-state', ({ payload }) => forwarded(payload))
     return () => {
       clearInterval(timer)
+      clearTimeout(news)
       void forwards.then((unlisten) => unlisten())
     }
   })
@@ -698,6 +704,8 @@
       }}
       onpalette={() => (modal = 'palette')}
       onadd={() => edit()}
+      onexport={() => (modal = 'export')}
+      onimport={() => (modal = 'import')}
       onedit={edit}
       ondelete={(alias) => {
         editing = alias
@@ -878,6 +886,8 @@
       onclose={() => (modal = null)}
     />
   {/key}
+{:else if modal === 'export' || modal === 'import'}
+  <HostsJson mode={modal} onimported={(aliases) => changed(aliases[0])} onclose={() => (modal = null)} />
 {:else if modal === 'delete' && editing}
   <HostDelete alias={editing} ondeleted={deleted} onclose={() => (modal = null)} />
 {:else if modal === 'keys' && editing}

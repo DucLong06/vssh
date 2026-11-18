@@ -38,6 +38,9 @@
     onadd?: () => void
     onedit?: (alias: string) => void
     ondelete?: (alias: string) => void
+    /** The hosts as a JSON file: out to one, in from one. */
+    onexport?: () => void
+    onimport?: () => void
     /** The cards chosen to act on together, as Space marks hosts in the TUI. */
     marked?: string[]
   }
@@ -58,6 +61,8 @@
     onadd,
     onedit,
     ondelete,
+    onexport,
+    onimport,
     marked = $bindable([]),
   }: Props = $props()
 
@@ -373,6 +378,9 @@
             {t('palette')}
             <Keys keys={KEY.palette[0]} />
           </button>
+          {#if onimport}
+            <button type="button" onclick={onimport} class={control}>{t('import_hosts_json')}</button>
+          {/if}
           {#if onadd}
             <button type="button" onclick={onadd} class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90">
               {t('add_host')}
@@ -385,7 +393,8 @@
     <!-- Two rows, from one margin: the search as wide as the view, with what it connects to and the new host;
          under it the tags, one row of them however many there are, and how the cards are laid out. -->
     <div class="sticky top-0 z-20 -mx-8 grid gap-2.5 border-b border-edge bg-bg px-8 pt-4 pb-4">
-      <div class="flex items-center gap-2.5">
+      <!-- It wraps in a window too narrow for it, as the row under it does. -->
+      <div class="flex flex-wrap items-center gap-2.5">
         <input
           bind:this={search}
           bind:value={query}
@@ -418,6 +427,13 @@
           <button type="button" onclick={direct} title="{t('quick_connect')} · {t('quick_connect_note')}" class="{control} max-w-[40%] truncate border-cyan/60 text-cyan">
             {t('connect_to').replace('{target}', target(query.trim()))}
           </button>
+        {/if}
+        <!-- Not while an address is being typed: the row is that connection's. -->
+        {#if onexport && !quick}
+          <button type="button" onclick={onexport} class={control}>{t('export_hosts_json')}</button>
+        {/if}
+        {#if onimport && !quick}
+          <button type="button" onclick={onimport} class={control}>{t('import_hosts_json')}</button>
         {/if}
         {#if onadd}
           <!-- The concept's one filled button. -->

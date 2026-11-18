@@ -12,6 +12,8 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
   this.open = false
   this.dispatchEvent(new Event('close'))
 }
+// No test asks the network: the update check gets no answer unless a test gives it one.
+globalThis.fetch = () => Promise.reject(new Error('no network in tests'))
 Element.prototype.scrollIntoView ??= () => {}
 // Nor anything under a point: a test that needs something there says what.
 document.elementFromPoint ??= () => null

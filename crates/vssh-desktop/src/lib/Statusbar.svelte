@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type { Host } from './api'
+  import { api, type Host } from './api'
   import { t } from './i18n.svelte'
   import Keys from './Keys.svelte'
   import { KEY } from './keymap'
   import { addr } from './streamer.svelte'
+  import { update } from './update.svelte'
 
   type Props = {
     hosts: number
@@ -53,7 +54,16 @@
       {t('leader_waiting')}
     </span>
   {/if}
+  {#if update.tag}
+    <!-- A newer version is out: one line, where it covers nothing. It opens the releases in the browser and fetches nothing itself; the × is for as long as the app runs. -->
+    <span role="status" class="ml-auto flex shrink-0 items-center text-cyan">
+      <button type="button" onclick={() => void api.openReleases().catch(() => {})} class={button}>
+        {t('update_available').replace('{name}', update.tag)}
+      </button>
+      <button type="button" aria-label={t('dismiss')} title={t('dismiss')} onclick={() => (update.tag = null)} class={button}>×</button>
+    </span>
+  {/if}
   {#if onsave}
-    <button type="button" onclick={onsave} class="{button} ml-auto shrink-0 text-cyan">{t('save_this_host')}</button>
+    <button type="button" onclick={onsave} class="{button} {update.tag ? '' : 'ml-auto'} shrink-0 text-cyan">{t('save_this_host')}</button>
   {/if}
 </footer>

@@ -57,7 +57,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("down", "down", "mất kết nối"),
     ("asking", "asking", "đang hỏi"),
     ("mem", "MEM", "RAM"),
-    ("search_hosts", "Search hosts, #tag", "Tìm máy chủ, #thẻ"),
+    (
+        "search_hosts",
+        "Find a host, or type user@hostname to connect",
+        "Tìm máy hoặc gõ user@hostname để kết nối nhanh",
+    ),
     ("group_by_tag", "Group by tag", "Nhóm theo thẻ"),
     ("sort", "Sort", "Sắp xếp"),
     ("sort_order", "My order", "Thứ tự của tôi"),
@@ -432,6 +436,56 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("rail_full", "Expand the sidebar", "Mở rộng thanh bên"),
     ("settings", "Settings", "Cài đặt"),
     ("connect_to", "Connect to {target}", "Kết nối tới {target}"),
+    // The hosts in the middle (D12): every tag, the broadcast's switches, the paste, whose files.
+    ("all_tags", "All", "Tất cả"),
+    (
+        "broadcast_hint",
+        "Broadcast: type once, run in every open session",
+        "Phát: gõ một lần, chạy ở mọi phiên đang mở",
+    ),
+    (
+        "broadcast_pane",
+        "Broadcast to this session, on or off",
+        "Bật hoặc tắt phát tới phiên này",
+    ),
+    (
+        "paste_session",
+        "Paste into the session in front",
+        "Dán vào phiên đang gõ",
+    ),
+    ("which_host", "which host?", "của máy nào?"),
+    // The hosts as a file, out and in again; and the word that a newer version is out.
+    ("export_hosts_json", "Export hosts (JSON)", "Xuất máy chủ (JSON)"),
+    ("import_hosts_json", "Import hosts (JSON)", "Nhập máy chủ (JSON)"),
+    (
+        "export_hosts_note",
+        "Every host as its form has it, in a new file. No password is written.",
+        "Mọi máy chủ như trong biểu mẫu của nó, vào một tệp mới. Không ghi mật khẩu nào.",
+    ),
+    ("export", "Export", "Xuất"),
+    (
+        "exported_hosts",
+        "{n} hosts saved to {name}",
+        "Đã lưu {n} máy chủ vào {name}",
+    ),
+    (
+        "import_empty",
+        "No hosts in that file.",
+        "Tệp đó không có máy chủ nào.",
+    ),
+    ("import_taken", "already here", "đã có"),
+    (
+        "import_taken_ask",
+        "{n} of them are here already: {name}. Overwrite them with the file's, or skip them?",
+        "{n} máy trong số đó đã có: {name}. Ghi đè bằng bản trong tệp, hay bỏ qua?",
+    ),
+    ("skip", "Skip", "Bỏ qua"),
+    (
+        "update_available",
+        "New version {name} — see it on GitHub",
+        "Có bản mới {name} — xem trên GitHub",
+    ),
+    ("dismiss", "Dismiss", "Tắt thông báo"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

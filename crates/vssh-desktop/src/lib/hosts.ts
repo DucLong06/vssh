@@ -1,7 +1,7 @@
 import type { Host } from './api'
 
 /** `user@hostname:port`, as much of it as the ssh config gives. */
-export function address(host: Host): string {
+export function address(host: Pick<Host, 'hostname' | 'user' | 'port'>): string {
   const user = host.user ? `${host.user}@` : ''
   const port = host.port ? `:${host.port}` : ''
   return host.hostname ? `${user}${host.hostname}${port}` : ''
