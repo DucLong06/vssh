@@ -83,3 +83,22 @@ test('Night is the theme until Day is chosen; the choice is kept as theme and re
   expect((await import('./theme.svelte')).theme.name).toBe('night')
   expect(document.documentElement.dataset.theme).toBe('night')
 })
+
+test('flat: a shadow is for what floats over the page (a dialog, a menu, a popover), and nothing else has one', () => {
+  const sources = import.meta.glob(['../**/*.svelte'], { query: '?raw', import: 'default', eager: true })
+  const shadowed = Object.entries(sources)
+    .filter(([, code]) => /\bshadow-|box-shadow|drop-shadow/.test(String(code)))
+    .map(([file, code]) => [file.split('/').pop(), [...new Set(String(code).match(/\bshadow-[\w/[\]-]+/g))]])
+  expect(shadowed).toEqual([
+    ['Files.svelte', ['shadow-float']],
+    ['Modal.svelte', ['shadow-float']],
+    ['QuickPeek.svelte', ['shadow-float']],
+  ])
+  // The token the cards had is there and is nothing, in both themes; no rule draws a shadow of its own.
+  expect(css.match(/--shadow-card: none;/g)).toHaveLength(2)
+  expect(css.match(/--shadow-float:/g)).toHaveLength(2)
+  expect(css).not.toMatch(/box-shadow/)
+  // Nor a glow in a colour, nor a wash down a card.
+  const all = Object.values(sources).join('\n')
+  expect(all).not.toMatch(/shadow-(blue|red|black)|bg-linear/)
+})

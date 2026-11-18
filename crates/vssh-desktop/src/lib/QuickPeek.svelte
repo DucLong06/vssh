@@ -68,7 +68,7 @@
   bind:this={box}
   role="dialog"
   aria-label="{t('quick_peek')}: {host.alias}"
-  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-[13px] shadow-card before:absolute before:inset-x-0 before:-top-2 before:h-2 motion-reduce:animate-none"
+  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-[13px] shadow-float before:absolute before:inset-x-0 before:-top-2 before:h-2 motion-reduce:animate-none"
 >
   <p class="flex items-center gap-2">
     <strong class="truncate text-sm font-semibold text-ink">{t('quick_peek')}: {host.alias}</strong>

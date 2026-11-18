@@ -412,6 +412,9 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "A tab onto an edge of what is open: split there, or change places",
         "Tab vào một mép của ô đang mở: chia ở phía đó, hoặc đổi chỗ",
     ),
+    // A forward's kind in words: ssh's L, R and D.
+    ("fwd_local", "Local", "Cục bộ"),
+    ("fwd_remote", "Remote", "Từ xa"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

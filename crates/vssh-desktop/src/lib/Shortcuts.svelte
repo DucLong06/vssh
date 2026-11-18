@@ -51,9 +51,9 @@
           {#each group.rows as [keys, label] (label)}
             <div class="flex items-center justify-between gap-4 border-b border-edge/50 py-1 last:border-0">
               <dt class="min-w-0 text-fg first-letter:uppercase">{label}</dt>
-              <dd class="flex shrink-0 gap-2">
-                <!-- The space is for whoever reads the text: J K, not JK. -->
-                {#each keys as key (key)}<Keys keys={key} />{' '}{/each}
+              <dd class="flex shrink-0 items-center gap-1.5">
+                <!-- The first is the key; the others do the same, and say so: Tab / N is not Tab then N. -->
+                {#each keys as key, at (key)}{#if at}<span aria-hidden="true" class="text-dim">/</span>{' '}{/if}<Keys keys={key} class={at ? 'opacity-60' : ''} />{' '}{/each}
               </dd>
             </div>
           {/each}

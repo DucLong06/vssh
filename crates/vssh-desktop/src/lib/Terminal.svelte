@@ -105,7 +105,7 @@
   {#if closed}
     <p
       role="status"
-      class="absolute top-3 right-4 z-10 flex max-w-[80%] items-center gap-3 rounded-xl border border-red bg-panel py-1.5 pr-1.5 pl-3 text-[13px] shadow-card"
+      class="absolute top-3 right-4 z-10 flex max-w-[80%] items-center gap-3 rounded-xl border border-red bg-panel py-1.5 pr-1.5 pl-3 text-[13px]"
     >
       <span class="shrink-0 text-red">● {t('disconnected')}</span>
       {#if why}

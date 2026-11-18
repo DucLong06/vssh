@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { listen } from '@tauri-apps/api/event'
   import { onMount, tick as rendered, untrack } from 'svelte'
   import {
     api,
     explain,
     type ConnError,
+    type ForwardState,
     type Host,
     type HostForm as Form,
     type PtyState,
@@ -32,6 +34,7 @@
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
   import Topbar from './lib/Topbar.svelte'
+  import { heard as forwarded, sync as forwarding_of, tunnels } from './lib/tunnels.svelte'
   import Vault from './lib/Vault.svelte'
 
   /** How often the hosts are asked for their figures, and every how many rounds pinged. */
@@ -124,7 +127,11 @@
       if (greeting) modal = 'vault'
     }, fail)
     const timer = setInterval(tick, EVERY)
-    return () => clearInterval(timer)
+    const forwards = listen<ForwardState>('forward-state', ({ payload }) => forwarded(payload))
+    return () => {
+      clearInterval(timer)
+      void forwards.then((unlisten) => unlisten())
+    }
   })
 
   // A failure is kept as data: the words for it follow the language, and
@@ -363,11 +370,12 @@
   const pane = (id: number) => ({
     hidden: !seen(id),
     'data-front': (split.length > 1 && id === active) || undefined,
+    'data-back': (split.length > 1 && id !== active) || undefined,
     style: `order: ${split.indexOf(id)}`,
     onfocusin: () => (active = id),
     onpointerdown: () => (active = id),
     class:
-      "relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-page after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-10 after:h-0.5 data-[front]:after:bg-blue",
+      "relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-page after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-10 after:h-0.5 data-[back]:*:opacity-70 data-[front]:after:bg-blue",
   })
 
   /** Opens a tab on a host of the config. Its terminal connects it. */
@@ -444,6 +452,7 @@
     for (const session of sessions.filter((session) => !session.quick && session.title === alias)) close(session.id)
     for (const view of files.filter((view) => view.host === alias)) close(view.id)
     marked = marked.filter((name) => name !== alias)
+    forwarding_of(alias, [])
     if (selected === alias) selected = null
     await changed()
   }
@@ -499,6 +508,7 @@
     onvault={() => (modal = 'vault')}
     {current}
     snippets={snippets.length}
+    tunnels={tunnels.size}
     onnav={go}
     onzen={() => (zen = true)}
   />
@@ -513,7 +523,7 @@
     <!-- A terminal or a file view is one frame with the tabs for its head; the dashboard is the page itself. -->
     <div
       data-framed={(active !== null && !zen) || undefined}
-      class="group/frame flex min-h-0 flex-1 flex-col data-[framed]:mx-8 data-[framed]:mt-5 data-[framed]:mb-6 data-[framed]:overflow-hidden data-[framed]:rounded-xl data-[framed]:border data-[framed]:border-edge data-[framed]:shadow-card"
+      class="group/frame flex min-h-0 flex-1 flex-col data-[framed]:mx-8 data-[framed]:mt-5 data-[framed]:mb-6 data-[framed]:overflow-hidden data-[framed]:rounded-xl data-[framed]:border data-[framed]:border-edge"
     >
     <!-- In focus mode the strip is also the way back to the rail. -->
     {#if sessions.length || files.length || zen}

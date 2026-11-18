@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { HTMLAttributes } from 'svelte/elements'
   import type { Host } from './api'
-  import { chip, tagsOf } from './hosts'
+  import { tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { critical, down, type Live, type Trail } from './live.svelte'
   import { KEY, tip } from './keymap'
@@ -89,7 +89,7 @@
   aria-label={host.alias}
   data-state={kind}
   data-marked={marked || undefined}
-  class="group relative flex h-full flex-col gap-3 rounded-2xl border border-transparent bg-panel p-4 shadow-card transition-[translate,border-color] duration-200 select-none hover:-translate-y-0.5 hover:border-dim/40 focus-visible:outline-offset-2 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 data-[state=down]:bg-linear-to-b data-[state=down]:from-red/6 data-[state=down]:to-transparent data-[state=down]:to-60% aria-[current]:ring-1 aria-[current]:ring-blue data-[marked]:border-magenta {extra}"
+  class="group relative flex h-full flex-col gap-3 rounded-2xl border border-edge bg-panel p-4 transition-colors select-none hover:border-dim/60 focus-visible:outline-[1.5px] focus-visible:-outline-offset-1 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 aria-[current]:outline-[1.5px] aria-[current]:-outline-offset-1 aria-[current]:outline-blue data-[marked]:border-magenta {extra}"
 >
   <header class="flex items-center gap-2">
     <h3 class="truncate text-base font-semibold tracking-tight text-ink">{host.alias}</h3>
@@ -117,8 +117,7 @@
       <ul aria-label={t('tags')} class="flex flex-wrap gap-1.5">
         {#each tagsOf(host) as tag (tag)}
           <li
-            class="rounded-md px-2 text-[11.5px] leading-[22px]"
-            style="color: {chip(tag)}; background: color-mix(in srgb, {chip(tag)} 12%, transparent)"
+            class="rounded-md bg-bar px-1.5 text-[11px] leading-5 text-dim"
           >{tag}</li>
         {/each}
       </ul>
@@ -127,7 +126,7 @@
       <!-- Beside the tags, and only when the card is pointed at or has the
            focus: twenty of these at once would be all one sees. -->
       <div
-        class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 shadow-card group-focus-within:opacity-100 group-hover:opacity-100"
+        class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
       >
         {#if onedit}
           <button type="button" onclick={onedit} aria-keyshortcuts="e" title={tip(t('edit'), KEY.edit)} class={mini}>{t('edit')}</button>

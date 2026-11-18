@@ -2,7 +2,7 @@
   import { tick } from 'svelte'
   import type { Host, Shown } from './api'
   import HostCard from './HostCard.svelte'
-  import { address, chip, groupOf, hasTag, tagsOf } from './hosts'
+  import { address, groupOf, hasTag, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { ask, critical, down, live, sick, trail, up } from './live.svelte'
   import QuickPeek from './QuickPeek.svelte'
@@ -267,7 +267,7 @@
 
   const control =
     'h-10 cursor-pointer rounded-xl border border-edge px-3.5 font-medium whitespace-nowrap text-fg hover:border-dim/50 hover:bg-selection'
-  const tile = 'min-w-0 rounded-2xl bg-panel px-4 pt-3 shadow-card'
+  const tile = 'min-w-0 rounded-2xl border border-edge bg-panel px-4 pt-3'
   const figure = 'text-2xl leading-tight font-semibold tracking-tight text-ink'
   const segment = { ok: 'bg-green', crit: 'bg-red', down: 'inset-ring-[1.5px] inset-ring-red', unknown: 'bg-bar' }
 </script>
@@ -286,7 +286,7 @@
       <div class="grid h-full place-content-center justify-items-center gap-3 text-center">
         <p
           aria-hidden="true"
-          class="grid size-14 place-items-center overflow-hidden rounded-2xl border border-edge bg-page shadow-lg shadow-blue/30"
+          class="grid size-14 place-items-center overflow-hidden rounded-2xl border border-edge bg-page"
         >
           <!-- The brand mark, as the rail draws it. -->
           <svg viewBox="0 0 512 512" class="h-14 w-14">
@@ -383,7 +383,7 @@
             aria-keyshortcuts="a"
             title={tip(t('add_host'), KEY.add)}
             onclick={onadd}
-            class="{control} border-blue bg-blue font-semibold text-page shadow-lg shadow-blue/20 hover:bg-blue/90"
+            class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90"
           >
             {t('add_host')}
           </button>
@@ -435,7 +435,7 @@
         {#if grouped}
           <h2 class="flex items-baseline gap-2 pt-1 pb-3 text-lg font-semibold">
             {#if name}
-              <span style="color: {chip(name)}">#{name}</span>
+              <span class="text-white">#{name}</span>
             {:else}
               <span class="text-white">{t('no_tags')}</span>
             {/if}

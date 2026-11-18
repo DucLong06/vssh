@@ -16,6 +16,7 @@ import { terminals } from './lib/fixtures/xterm'
 import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
 import { capital, sheet } from './lib/keymap'
+import { tunnels } from './lib/tunnels.svelte'
 import { fake, setStreamer } from './lib/streamer.svelte'
 import strings from './lib/strings.json'
 
@@ -86,6 +87,7 @@ afterEach(async () => {
   clearMocks()
   localStorage.clear()
   forget()
+  tunnels.clear()
   calls = []
   put = []
 })
@@ -931,6 +933,10 @@ test('L on a card, or its Forwards button, opens the host\'s port forwards', asy
   await vi.waitFor(() => expect(web).toHaveTextContent('● On'))
   screen.getByRole<HTMLDialogElement>('dialog').close()
   await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // It listens on behind the dialog that is shut: the rail counts it, until the shell says it ended.
+  expect(screen.getByRole('button', { name: 'Forwards 1' })).toBeInTheDocument()
+  await emit('forward-state', { host: 'web-02', kind: 'L', value: '8080 localhost:80', state: 'off', error: null })
+  await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Forwards 1' })).toBeNull())
 
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Forwards' }))
   expect(await screen.findByRole('dialog', { name: 'Forwards web-01' })).toBeInTheDocument()

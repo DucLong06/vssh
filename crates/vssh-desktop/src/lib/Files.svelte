@@ -454,7 +454,7 @@
     aria-label={entry?.name ?? t('files')}
     onkeydown={menukey}
     style="left: {Math.min(menu.x, innerWidth - 176)}px; top: {Math.min(menu.y, innerHeight - 152)}px"
-    class="fixed z-30 min-w-40 rounded-xl border border-edge bg-panel p-1 shadow-card"
+    class="fixed z-30 min-w-40 rounded-xl border border-edge bg-panel p-1 shadow-float"
   >
     {#if entry && !entry.is_dir}
       <li role="none">

@@ -28,6 +28,8 @@
     /** The view in front, how many snippets there are, and what a click on the rail asks for. */
     current?: Nav
     snippets?: number
+    /** How many forwards listen now, of all hosts. */
+    tunnels?: number
     onnav?: (to: Nav) => void
     /** Focus mode: the rail goes, and the tabs have the way back. */
     onzen?: () => void
@@ -44,6 +46,7 @@
     onvault,
     current,
     snippets,
+    tunnels = 0,
     onnav,
     onzen,
   }: Props = $props()
@@ -67,11 +70,11 @@
 </script>
 
 <!-- One row of the rail: an icon, a name, and a number where there is one to say. -->
-{#snippet item(to: Nav, icon: IconName, label: string, n?: number, off = false)}
+{#snippet item(to: Nav, icon: IconName, label: string, n?: number, off = false, tone = '')}
   <button type="button" onclick={() => onnav?.(to)} disabled={off} aria-current={current === to ? 'page' : undefined} class={nav}>
     <Icon name={icon} />
     {label}
-    {#if n !== undefined}<em class={count}>{n}</em>{/if}
+    {#if n !== undefined}<em class="{count} {tone}">{n}</em>{/if}
   </button>
 {/snippet}
 
@@ -176,7 +179,8 @@
   <!-- A host's files and its forwards: the selected host's. -->
   {@render item('files', 'folder', t('files'), undefined, !selected)}
   {@render item('snippets', 'code', t('snippets'), snippets)}
-  {@render item('forwards', 'fwd', t('forwards'), undefined, !selected)}
+  <!-- What listens goes on listening behind a dialog that is shut: said here, in the colour of what is up. -->
+  {@render item('forwards', 'fwd', t('forwards'), tunnels || undefined, !selected, 'text-green')}
   {#if onvault}
     <button type="button" onclick={onvault} class={nav}>
       <Icon name="lock" class={vault === 'unlocked' ? 'text-green' : ''} />
@@ -202,10 +206,10 @@
             type="button"
             aria-pressed={tag === name}
             onclick={() => (tag = tag === name ? null : name)}
-            style="color: {chip(name)}"
-            class="cursor-pointer rounded-full border border-edge px-2 text-xs leading-5 hover:bg-panel aria-pressed:border-current aria-pressed:bg-selection"
+            style:color={tag === name ? chip(name) : undefined}
+            class="cursor-pointer rounded-md bg-bar px-1.5 text-[11px] leading-5 text-dim hover:text-fg aria-pressed:inset-ring aria-pressed:inset-ring-current"
           >
-            #{name} <span class="text-white">{n}</span>
+            #{name} <span class="opacity-70">{n}</span>
           </button>
         </li>
       {/each}

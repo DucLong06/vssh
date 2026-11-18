@@ -81,10 +81,10 @@ test('a host\'s forwards: the kind of each, the port it listens on, where it lea
     'Delete',
   ])
   expect(cells()).toEqual([
-    ['L', '8080', 'localhost:80', '○ Off', '×'],
-    ['R', '9000', 'localhost:3000', '○ Off', '×'],
+    ['Local', '8080', 'localhost:80', '○ Off', '×'],
+    ['Remote', '9000', 'localhost:3000', '○ Off', '×'],
     // A SOCKS proxy leads wherever it is asked to.
-    ['D', '1080', '—', '○ Off', '×'],
+    ['SOCKS', '1080', '—', '○ Off', '×'],
   ])
 })
 
@@ -136,18 +136,18 @@ test('a forward that ends by itself is off again, and the kind of failure is sai
 test('Add: the kind, the port and where it leads; the new forward is in the table', async () => {
   const { user } = shell()
   await flip('L 8080 localhost:80')
-  expect(screen.getByRole('radio', { name: 'L' })).toBeChecked()
+  expect(screen.getByRole('radio', { name: 'Local' })).toBeChecked()
   await user.type(screen.getByRole('spinbutton', { name: 'Local port' }), '8443')
   await user.type(screen.getByRole('textbox', { name: 'Remote' }), 'localhost:443')
   await user.click(screen.getByRole('button', { name: 'Add' }))
   expect(asked('forward_add')).toEqual([{ host: 'web-01', kind: 'L', localPort: 8443, remote: 'localhost:443' }])
   await vi.waitFor(() => expect(rows()).toHaveLength(4))
-  expect(cells()[3]).toEqual(['L', '8443', 'localhost:443', '○ Off', '×'])
+  expect(cells()[3]).toEqual(['Local', '8443', 'localhost:443', '○ Off', '×'])
   // The form is ready for the next one.
   expect(screen.getByRole('spinbutton', { name: 'Local port' })).toHaveValue(null)
 
   // A dynamic forward has a port and nothing more.
-  await user.click(screen.getByRole('radio', { name: 'D' }))
+  await user.click(screen.getByRole('radio', { name: 'SOCKS' }))
   expect(screen.getByRole('textbox', { name: 'Remote' })).toBeDisabled()
   await user.type(screen.getByRole('spinbutton', { name: 'Local port' }), '1081')
   await user.click(screen.getByRole('button', { name: 'Add' }))

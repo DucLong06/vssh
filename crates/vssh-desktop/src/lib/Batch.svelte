@@ -2,7 +2,6 @@
   import { listen } from '@tauri-apps/api/event'
   import { onMount, tick, untrack } from 'svelte'
   import { api, explain, type Answered, type Host, type Lang, type Shown } from './api'
-  import { chip, groupOf } from './hosts'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
   import { KEY, tip } from './keymap'
@@ -177,8 +176,8 @@
       {#each rows as { host, answer } (host.alias)}
         <li data-host={host.alias} class="shrink-0 rounded-xl border border-edge bg-bg px-3 py-2">
           <p class="flex items-center gap-2">
-            <!-- The colour its group has on the dashboard. -->
-            <strong style:color={groupOf(host) ? chip(groupOf(host)) : undefined}>{host.alias}</strong>
+            <!-- No colour of its own: in a list of answers colour is read as the answer. -->
+            <strong class="text-ink">{host.alias}</strong>
             {#if answer?.error}
               <!-- The class of the failure, as a card says it: a host that failed is not left out. -->
               <span role="alert" title={answer.why?.chain} class="min-w-0 break-words">

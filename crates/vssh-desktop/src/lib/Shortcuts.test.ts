@@ -82,3 +82,12 @@ test('closing the dialog tells the app; in Vietnamese it is Vietnamese', async (
   screen.getByRole<HTMLDialogElement>('dialog').close()
   expect(onclose).toHaveBeenCalledOnce()
 })
+
+test('keys that do the same are said as that: a stroke between them, the first one the key', () => {
+  open()
+  const next = within(screen.getByRole('region', { name: 'In a session, after Ctrl+A' })).getByText('Next tab').nextElementSibling!
+  expect(next.textContent?.replace(/\s+/g, ' ').trim()).toBe('Tab / N')
+  expect([...next.querySelectorAll('kbd')].map((key) => key.className.includes('opacity-60'))).toEqual([false, true])
+  // One key: no stroke.
+  expect(within(screen.getByRole('region', { name: 'Anywhere' })).getByText('Command palette').nextElementSibling!.textContent).not.toContain('/')
+})

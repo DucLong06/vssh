@@ -7,7 +7,6 @@ import type { Host } from './api'
 import Batch from './Batch.svelte'
 import errors from './fixtures/errors.json'
 import fixture from './fixtures/hosts.json'
-import { chip } from './hosts'
 import shown from './fixtures/shown.json'
 import { setLang } from './i18n.svelte'
 
@@ -200,11 +199,11 @@ test('the foot has buttons, not a row of keys: Filter for the pointer, with the 
   await vi.waitFor(() => expect(filter).toHaveFocus())
 })
 
-test('a host\'s name has the colour of its tag, as its group has on the dashboard', () => {
+test('a host\'s name has no colour of its own: in a list of answers colour is the answer', () => {
   shell()
   const name = (host: string) => within(row(host)).getByText(host)
-  expect(name('web-01').style.color).toBe(chip('prod'))
-  expect(name('db-primary').style.color).toBe(chip('db'))
+  expect(name('web-01').style.color).toBe('')
+  expect(name('db-primary').style.color).toBe('')
 })
 
 test('Copy all puts what every host answered on the clipboard, a failure in its words; y does the same', async () => {

@@ -179,3 +179,20 @@ test("the rail in Vietnamese: the table's words, and no other", () => {
   // The name of the app is drawn, not said: it is the same in every language.
   expect(screen.getByRole('navigation').textContent).not.toMatch(/vssh/)
 })
+
+test('forwards that listen are counted on their row, also with the dialog shut; none: no number', () => {
+  const { rerender } = render(Sidebar, props({ selected: 'web-01', tunnels: 2 }))
+  expect(screen.getByRole('button', { name: 'Forwards 2' })).toBeInTheDocument()
+  void rerender(props({ selected: 'web-01', tunnels: 0 }))
+  expect(screen.getByRole('button', { name: 'Forwards' })).toBeInTheDocument()
+})
+
+test('a tag is grey until the list is narrowed to it: colour is for what is chosen, and for a state', async () => {
+  const user = userEvent.setup()
+  render(Sidebar, props())
+  const prod = screen.getByRole('button', { name: /#prod/ })
+  expect(prod.style.color).toBe('')
+  await user.click(prod)
+  expect(prod.style.color).toMatch(/^var\(--color-/)
+  expect(screen.getByRole('button', { name: /#web/ }).style.color).toBe('')
+})
