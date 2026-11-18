@@ -45,23 +45,23 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 - **Terminal tabs.** `Enter` or "Connect" opens a real shell in a tab (a PTY over russh, drawn by xterm.js). Mark several cards with `Space` and `Enter` connects to all of them. A tab shows its state and, on Linux hosts, the command running in it. Selecting text copies it. When a shell ends the tab offers "Reconnect".
 - **Broadcast.** `Ctrl-A` `b` turns broadcast on for a tab, `Ctrl-A` `B` for all: what you type goes to every tab that has it on. Those tabs turn yellow and the status bar says "Broadcasting: N".
 - **When a connection fails** a dialog says why, in the same classes as the terminal app, down to which hop of a jump chain failed. A host key that changed shows the new fingerprint and the `known_hosts` line it conflicts with, and asks: Accept once, Trust, or Cancel.
-- **SFTP, two panes.** `f` on a card, or its "Files" button: this machine on the left, the host on the right, in a tab of its own. `Space` marks, `c` copies to the other side; so do the two arrows between the panes and dragging rows across. A file that exists on the other side waits for a yes. Right-click for Copy, New folder, Rename, Delete. Each transfer has a line under the panes: bar, per cent, speed, time left, Cancel; three run at once. `.` shows hidden files, `/` filters. Files only: directories are not copied.
+- **SFTP, two panes.** `f` on a card, or "Files" in its right-click menu: this machine on the left, the host on the right, in a tab of its own. `Space` marks, `c` copies to the other side; so do the two arrows between the panes and dragging rows across. A file that exists on the other side waits for a yes. Right-click for Upload or Download, New folder, Rename, Delete, Refresh. Each transfer has a line under the panes: bar, per cent, speed, time left, Cancel; three run at once. `.` shows hidden files, `/` filters. Files only: directories are not copied.
 - **Snippets.** `s`, or "Snippets" in the rail: saved commands, for one host or for all. A snippet may have parameters (`systemctl restart {{unit}}`); they are asked for when it runs. It runs on the hosts you marked.
 - **Batch runs.** Mark hosts with `Space`, press `x`, type one command. It runs on all of them at once, each over its own connection; every host shows its output, or the reason it failed. `j`/`k` scroll, `/` filters by host, "Copy all" takes the lot.
-- **Port forwards.** `L` on a card, or its "Forwards" button: the host's forwards in a table — local (`L`), remote (`R`) or dynamic SOCKS (`D`), the port, where it leads, whether it runs. Switch one on or off, add one, delete one. A port that is taken is said in the form, with another port to try.
+- **Port forwards.** `L` on a card, or "Forwards" in its right-click menu: the host's forwards in a table — Local, Remote or SOCKS, the port, where it leads, whether it runs. Switch one on or off, add one, delete one. A port that is taken is said in the form, with another port to try.
 - **Hosts.** `a` or "Add host", `e` to edit, `d` to delete (it asks first). The form has alias, host, user, port, how to sign in (vault password, key file or agent), jump host, tags, group, pinned, notes; it can import the hosts of another ssh config, with a preview. Hosts are written to `~/.ssh/config` as normal `Host` blocks.
 - **Quick connect.** In the palette: `user@host[:port]`, and nothing is saved. With such a session in front the status bar offers "Save this host".
 - **Vault.** Passwords of your hosts, encrypted with Argon2id + XChaCha20-Poly1305 under one passphrase. A locked vault asks for it as the app starts and stays unlocked until the app is closed. The dialog also creates a vault, changes the passphrase and exports an encrypted backup. A forgotten passphrase cannot be recovered.
-- **Streamer mode.** The eye button in the top bar: every address the window shows becomes a made-up one from the documentation ranges (`203.0.113.x`, `198.51.100.x`), the same for the same host every time. Only what is shown changes: the config, the database and what is sent to a host keep the real ones. Host aliases and what a shell prints are left as they are.
-- **Themes.** TokyoNight Night (the default) and Day, switched in the last row of the rail. The terminal itself stays Night in both.
-- **English and Vietnamese.** The `EN` / `VI` button in the top bar switches the window's language; a connection failure is worded in it too.
-- **Command palette.** `Ctrl-K`, or the search in the top bar: every host and every action, by fuzzy search.
+- **Streamer mode.** In the settings (the cog at the foot of the rail): every address the window shows becomes a made-up one from the documentation ranges (`203.0.113.x`, `198.51.100.x`), the same for the same host every time. Only what is shown changes: the config, the database and what is sent to a host keep the real ones. Host aliases and what a shell prints are left as they are.
+- **Themes.** TokyoNight Night (the default) and Day, switched in the settings. The terminal itself stays Night in both.
+- **English and Vietnamese.** The settings switch the window's language; a connection failure is worded in it too.
+- **Command palette.** `Ctrl-K` (`Ctrl-Shift-K` in a terminal, where the plain key is the shell's), or the search at the top of the rail: every host and every action, by fuzzy search. `Ctrl-T` opens it for a new tab.
 
 ### Keys
 
 | Where | Key | Action |
 |-------|-----|--------|
-| Anywhere | `Ctrl-K` | command palette |
+| Anywhere | `Ctrl-K`; in a terminal `Ctrl-Shift-K` | command palette |
 | Dashboard | `/` | search hosts, `#tag` for a tag |
 | | `a` | add a host |
 | | `s` | snippets |
@@ -77,7 +77,7 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 | | `Ctrl-A`, then `b` / `B` | broadcast: this tab / all tabs |
 | | `Ctrl-A`, then `y` | copy the last command's output |
 | | `Ctrl-A`, then `q` | back to the dashboard |
-| | `Ctrl-A`, then `x` or `d`; `Ctrl-W` | close the tab |
+| | `Ctrl-A`, then `x` or `d`; `Ctrl-W`, in a terminal `Ctrl-Shift-W` | close the tab |
 | | `Ctrl-A` `Ctrl-A` | send `Ctrl-A` to the host |
 | Files | `j` `k` `g` `G` | move, first, last |
 | | `Enter` or `l` / `h` | into a directory / up |
