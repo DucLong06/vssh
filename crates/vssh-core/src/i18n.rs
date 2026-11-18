@@ -57,7 +57,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("down", "down", "mất kết nối"),
     ("asking", "asking", "đang hỏi"),
     ("mem", "MEM", "RAM"),
-    ("search_hosts", "Search hosts, #tag", "Tìm máy chủ, #thẻ"),
+    (
+        "search_hosts",
+        "Find a host, or type user@hostname to connect",
+        "Tìm máy hoặc gõ user@hostname để kết nối nhanh",
+    ),
     ("group_by_tag", "Group by tag", "Nhóm theo thẻ"),
     ("sort", "Sort", "Sắp xếp"),
     ("sort_order", "My order", "Thứ tự của tôi"),
@@ -432,6 +436,24 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("rail_full", "Expand the sidebar", "Mở rộng thanh bên"),
     ("settings", "Settings", "Cài đặt"),
     ("connect_to", "Connect to {target}", "Kết nối tới {target}"),
+    // The hosts in the middle (D12): every tag, the broadcast's switches, the paste, whose files.
+    ("all_tags", "All", "Tất cả"),
+    (
+        "broadcast_hint",
+        "Broadcast: type once, run in every open session",
+        "Phát: gõ một lần, chạy ở mọi phiên đang mở",
+    ),
+    (
+        "broadcast_pane",
+        "Broadcast to this session, on or off",
+        "Bật hoặc tắt phát tới phiên này",
+    ),
+    (
+        "paste_session",
+        "Paste into the session in front",
+        "Dán vào phiên đang gõ",
+    ),
+    ("which_host", "which host?", "của máy nào?"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.
