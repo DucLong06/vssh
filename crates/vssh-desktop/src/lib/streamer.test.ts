@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte'
+import { render, screen, within } from '@testing-library/svelte'
 import { expect, test, vi } from 'vitest'
 import type { Host } from './api'
 import fixture from './fixtures/hosts.json'
@@ -50,12 +50,13 @@ test('a card follows the switch and keeps its address through a re-render', asyn
   const { rerender } = render(HostCard, { host: web01 })
   const card = screen.getByRole('article', { name: 'web-01' })
   const masked = `deploy@${fake('web-01')}:2222`
-  expect(card).toHaveTextContent(masked)
-  expect(card).not.toHaveTextContent('10.0.0.5')
+  // A card with nothing wrong says its address to the pointer on its name.
+  const name = within(card).getByRole('heading')
+  expect(name).toHaveAttribute('title', masked)
   await rerender({ host: { ...web01 }, marked: true })
-  expect(card).toHaveTextContent(masked)
+  expect(name).toHaveAttribute('title', masked)
   setStreamer(false)
-  await vi.waitFor(() => expect(card).toHaveTextContent('deploy@10.0.0.5:2222'))
+  await vi.waitFor(() => expect(name).toHaveAttribute('title', 'deploy@10.0.0.5:2222'))
 })
 
 test('the switch is kept as streamer_mode and read when the app starts', async () => {

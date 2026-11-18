@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may call the app's own commands and write to the clipboard, and nothing else.",
+  "description": "The main window may call the app's own commands, write to the clipboard and, for Paste in a terminal's menu, read it; and nothing else.",
   "windows": ["main"],
-  "permissions": ["core:default", "clipboard-manager:allow-write-text"]
+  "permissions": ["core:default", "clipboard-manager:allow-write-text", "clipboard-manager:allow-read-text"]
 }

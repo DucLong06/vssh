@@ -32,6 +32,30 @@
 #                       the config: one to files-01's port, one that wants a
 #                       port sshd itself has
 #
+# In between, the desktop's keys (D10), where the real web view and the real
+# xterm.js have to agree with the tests' jsdom:
+#
+#   Ctrl-Tab            and Ctrl-Shift-Tab, from inside a terminal: the tabs
+#   the cheatsheet      by ?, by the settings' row, by Ctrl-/ and by F1
+#   Ctrl-T              the palette: an address typed there is connected to as
+#                       it stands; in a terminal Ctrl-T and ? are still the shell's
+#   Ctrl-F              the hosts' search
+#   Ctrl-Shift-D        a second shell beside the first; a click chooses the
+#                       pane, a tab dragged to an edge moves it there
+#   Ctrl-Shift-B        focus mode: no rail; Ctrl-B is still the shell's
+#   a middle click      closes a tab
+#
+# And the pointer's ways and the rail (D11):
+#
+#   Ctrl-W, Ctrl-K      in a terminal they are the shell's: a word deleted, a
+#                       line cut, and the tab still there; with Shift the window's
+#   a busy tab          is asked about before it goes, and Enter is not a yes
+#   the right button    on a card copies its address, in a terminal pastes
+#   a tab               let go on another in the strip stands before it
+#   the line            between two panes follows the pointer
+#   the rail            narrow: its icons, a wider terminal, kept by the web view
+#   what was open       is open again when the app comes back, after the vault
+#
 # Then the vault, the host form and the key setup (D6):
 #
 #   the vault           made by a passphrase, a sealed backup exported; at the
@@ -59,13 +83,16 @@
 #                       web view and are as they were when the app comes back
 #
 # Screenshots land in docs/img/desktop-d1*.png, desktop-d2*.png, desktop-d3*.png,
-# desktop-d4*.png, desktop-d5*.png, desktop-d6*.png, desktop-d7*.png and
-# desktop-d9-rail*.png
+# desktop-d4*.png, desktop-d5*.png, desktop-d6*.png, desktop-d7*.png,
+# desktop-d9-rail*.png, desktop-d10-{shortcuts,split,focus}*.png and
+# desktop-d11-compact*.png
 # (.vi.png: the Vietnamese UI; d3-fail: a connection that fails, d3-closed:
 # one that drops; d4-sftp: the file view with transfers under way; d5-batch:
 # what four hosts answered to one command; d6-vault: the vault's manager,
 # d6-host: the host form; d7-day: the Day theme, d7-streamer: streamer mode;
-# d9-rail: the rail with every row in use);
+# d9-rail: the rail with every row in use; d10-shortcuts: the cheatsheet,
+# d10-split: two shells side by side, d10-focus: the same with no rail;
+# d11-compact: the rail as icons);
 # those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
@@ -293,11 +320,32 @@ xdotool windowfocus "$win"
 first_card() { xdotool key --window "$win" slash Tab Tab Tab Tab; }
 # The dashboard back at its top: the wheel, in the gutter between the two
 # columns of cards. A quick peek that opens under a card scrolls the page.
-top() { xdotool mousemove --window "$win" 672 420 click --repeat 40 --delay 10 4; xdotool mousemove --window "$win" 600 20; sleep 0.5; }
-# The language button, in the top bar.
-language() { xdotool mousemove --window "$win" 978 44 click 1; }
-# The pointer where it rests on nothing: no card's peek, no button's tooltip.
-aside() { xdotool mousemove --window "$win" 600 20; sleep 0.5; }
+top() { xdotool mousemove --window "$win" 672 420 click --repeat 40 --delay 10 4; aside; }
+# The pointer where it rests on nothing: the right of the dashboard's head, which
+# is under the tabs when there are some. No card's peek, no button's tooltip.
+aside() { xdotool mousemove --window "$win" 1000 70; sleep 0.5; }
+# The settings, at the rail's foot: a menu whose first row has the keys. Down to
+# the row asked for, and Enter: 1 the language, 2 the theme, 3 streamer mode,
+# 4 focus mode, 5 the cheatsheet. RAIL: the middle of the rail, which may be narrow.
+RAIL=120
+setting() {
+    xdotool mousemove --window "$win" "$RAIL" 636 click 1
+    sleep 0.5
+    n=$1
+    while [ "$n" -gt 1 ]; do xdotool key --window "$win" Down; n=$((n - 1)); done
+    xdotool key --window "$win" Return
+    aside
+}
+language() { setting 1; }
+# What the web view keeps of a setting: its localStorage, a database of WebKit's.
+kept() {
+    sleep 3
+    python3 - "$home/.local/share/io.github.duclong06.vssh/localstorage/tauri_localhost_0.localstorage" "$1" <<'PY'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1], timeout=10).execute("SELECT value FROM ItemTable WHERE key=?", (sys.argv[2],)).fetchone()
+print(row[0].decode("utf-16-le") if row else "none")
+PY
+}
 
 # The quick peek, by its key: on the first card, which is being polled.
 first_card
@@ -320,15 +368,18 @@ top
 xdotool mousemove --window "$win" 875 440
 sleep 1
 shot target/smoke/hover.png
-xdotool mousemove --window "$win" 600 20
+aside
 
-# A person asking about the host nobody connected to: the last card, five
-# tab stops per card further on (the card, Edit, Forwards, Files, Connect),
-# and one more for each of the three that are down (Try again). That is a
-# decision: its key goes on record, as with `v` in the TUI, and from then on
-# it is polled like the others.
+# A person asking about the host nobody connected to: the last card. On the
+# way, a tall card is five tab stops (the card, Edit, Forwards, Files, Connect)
+# and one more if it is down (Try again): web-02, then db-replica, cache-01 and
+# legacy. A low one is two (the card, Connect): web-01 and db-primary; and one
+# more for the card before the last, which nobody asked either (its Quick peek
+# button). That is
+# a decision: its key goes on record, as with `v` in the TUI, and from then
+# on it is polled like the others.
 first_card
-xdotool key --window "$win" --repeat 38 Tab
+xdotool key --window "$win" --repeat 30 Tab
 xdotool key --window "$win" v
 sleep 3
 shot target/smoke/asked.png
@@ -345,6 +396,12 @@ xdotool mousemove --window "$win" 880 605 mousedown 1
 for x in 860 800 700 600 500 470; do xdotool mousemove --window "$win" "$x" 607; sleep 0.1; done
 xdotool mouseup 1
 shot target/smoke/dragged.png
+# The order somebody made is the web view's to keep: db-primary leads it now.
+case "$(kept vssh.order)" in
+'["db-primary","web-01",'*) ;;
+*) echo "FAIL: a card dragged onto its neighbour did not take its place: the order kept is $(kept vssh.order)"; exit 1 ;;
+esac
+step "a card dragged onto its neighbour stands before it, and the web view kept the order"
 
 # The same without a mouse: Alt-Right moves the first card one place along.
 first_card
@@ -389,9 +446,10 @@ sleep 6
 key() { xdotool key --window "$win" "$@"; sleep 0.3; }
 # What a person types at the terminal in front, and Enter.
 run() { xdotool type --window "$win" --delay 20 "$1"; key Return; sleep 1; }
-# The palette finds the host's card; Enter on the card opens its tab.
+# The palette finds the host's card; Enter on the card opens its tab. With
+# Shift the palette's key is the window's in a terminal too.
 open_tab() {
-    key ctrl+k
+    key ctrl+shift+k
     xdotool type --window "$win" "$1"
     key Return
     key Return
@@ -414,6 +472,16 @@ run 'touch typed'
 there 2205/typed "the second tab is not a shell of its own"
 [ ! -e "$home/sshd/2204/both" ] || { echo "FAIL: shell-01 heard what was typed in shell-02"; exit 1; }
 step "a second tab is a second shell; without broadcast each hears only itself"
+
+# The desktop's keys for the tabs, which no shell is sent: Ctrl-Shift-Tab is
+# the tab before, Ctrl-Tab the one after. What is typed then says where it went.
+key ctrl+shift+Tab
+run 'touch stepped-back'
+there 2204/stepped-back "Ctrl-Shift-Tab did not bring shell-01's tab to the front"
+key ctrl+Tab
+run 'touch stepped-on'
+there 2205/stepped-on "Ctrl-Tab did not bring shell-02's tab back to the front"
+step "Ctrl-Shift-Tab and Ctrl-Tab went through the tabs, from inside a terminal"
 
 # Broadcast on both tabs: one line typed, two shells run it.
 key ctrl+a b
@@ -453,9 +521,10 @@ night=$(pixel docs/img/desktop-d3-terminal.png 900 500)
 [ "$night" = "1a1b26" ] || { echo "FAIL: the terminal's background is $night, not 1a1b26"; exit 1; }
 step "the terminal is the Night theme too"
 # Both tabs broadcast: the pill in front has the full yellow border along its
-# top, the one behind a dimmer one, and neither the strip's own colour.
-front=$(pixel docs/img/desktop-d3-terminal.png 500 114)
-behind=$(pixel docs/img/desktop-d3-terminal.png 750 114)
+# top, the one behind a dimmer one, and neither the strip's own colour. The
+# strip is the top row of the window.
+front=$(pixel docs/img/desktop-d3-terminal.png 450 8)
+behind=$(pixel docs/img/desktop-d3-terminal.png 700 8)
 [ "$front" = e0af68 ] && [ "$behind" != "$front" ] && [ "$behind" != 1f2335 ] ||
     { echo "FAIL: broadcasting tabs' borders are $front in front and $behind behind"; exit 1; }
 step "while broadcasting, the tab in front is told apart (#$front, behind #$behind)"
@@ -478,8 +547,9 @@ shot target/smoke/accepted-once.png
 [ "$(accepted)" -eq $((logins + 1)) ] || { echo "FAIL: Accept once did not connect"; cat "$home/sshd/log"; exit 1; }
 [ "$(grep -F '[127.0.0.3]:2201' "$home/.ssh/known_hosts" | cut -d' ' -f2,3)" = "$old" ] || { echo "FAIL: Accept once wrote to known_hosts"; exit 1; }
 step "a changed host key: nothing before the answer; Accept once connects and writes nothing"
-# Once was once. Trust puts the key the host has now on record.
-key ctrl+w
+# Once was once. Trust puts the key the host has now on record. In a terminal
+# the window's key to close a tab is the one with Shift.
+key ctrl+shift+w
 open_tab moved-box
 key Tab
 key Tab
@@ -487,7 +557,7 @@ key Return
 sleep 3
 [ "$(grep -F '[127.0.0.3]:2201' "$home/.ssh/known_hosts" | cut -d' ' -f2,3)" = "$key" ] || { echo "FAIL: Trust did not replace the key on record"; cat "$home/.ssh/known_hosts"; exit 1; }
 step "Trust: the key on record is the one the host has now"
-key ctrl+w
+key ctrl+shift+w
 
 # A jump host that is down, second of two: the first is logged in to, and
 # the dialog says where it stopped. moved-box is trusted now and joins the
@@ -501,12 +571,12 @@ shot docs/img/desktop-d3-fail.png
 step "a jump chain that breaks at hop 2 got through hop 1"
 key Escape
 # The same in Vietnamese. The dialog is modal: the language goes first.
-key ctrl+w
+key ctrl+shift+w
 language
 open_tab far-box
 shot docs/img/desktop-d3-fail.vi.png
 key Escape
-key ctrl+w
+key ctrl+shift+w
 language
 
 # A session that ends under its tab: shell-01's shell kills what it runs
@@ -521,7 +591,7 @@ terminal
 shot docs/img/desktop-d3-closed.vi.png
 language
 # The banner's red border, top right of the terminal.
-red=$(pixel docs/img/desktop-d3-closed.png 960 167)
+red=$(pixel docs/img/desktop-d3-closed.png 992 61)
 [ "$red" = f7768e ] || { echo "FAIL: no red banner on the closed tab (#$red)"; exit 1; }
 step "a session that ended leaves a red banner on its tab"
 
@@ -552,14 +622,14 @@ sftps() { wc -l <"$home/sshd/sftp-asked" 2>/dev/null || echo 0; }
 size() { stat -c %s "$1" 2>/dev/null || echo 0; }
 # The palette finds the host's card; f on the card opens its files.
 open_files() {
-    key ctrl+k
+    key ctrl+shift+k
     xdotool type --window "$win" "$1"
     key Return
     key f
     sleep 4
 }
-# The rows of the two panes: 23 px each, the middle of the first at y 240.
-row() { echo $((240 + 23 * $1)); }
+# The rows of the two panes: 23 px each, the middle of the first at y 133.
+row() { echo $((133 + 23 * $1)); }
 LOCAL=420 REMOTE=860
 click_row() { xdotool mousemove --window "$win" "$1" "$(row "$2")" click "${3:-1}"; sleep 0.5; }
 # A row dragged from one pane into the other.
@@ -584,11 +654,12 @@ sleep 3
 cmp -s "$home/notes.txt" "$files/notes.txt" || fail "c did not copy notes.txt to the host"
 step "c copied the selected file up to the host, byte for byte"
 
-# The right button under the host's rows: New folder is all there is to ask.
+# The right button under the host's rows: the pane's own menu. Upload, for
+# what this machine's pane has chosen, then New folder.
 xdotool mousemove --window "$win" "$REMOTE" 540 click 3
 sleep 0.5
 shot target/smoke/files-menu.png
-key Return
+key Down Return
 xdotool type --window "$win" made-here
 key Return
 sleep 3
@@ -596,7 +667,8 @@ sleep 3
 step "the right button's menu made a folder on the host"
 
 # The host's rows now: made-here, releases, shared, deploy.log, nginx.conf,
-# notes.txt. On a file the menu is Copy, New folder, Rename, Delete.
+# notes.txt. On a file the menu is Download, New folder, Rename, Delete, and
+# under a line Refresh.
 click_row "$REMOTE" 3 3
 key Down Down Return
 xdotool type --window "$win" deploy.old
@@ -605,7 +677,7 @@ sleep 3
 [ -e "$files/deploy.old" ] && [ ! -e "$files/deploy.log" ] || fail "Rename did not rename deploy.log"
 # Delete asks first: Cancel has the focus, Delete is next.
 click_row "$REMOTE" 4 3
-key Up Return
+key Down Down Down Return
 sleep 0.5
 key Tab Return
 sleep 3
@@ -641,7 +713,7 @@ done
 step "two transfers at once, each with its line ($(size "$files/backup.sql") and $(size "$files/site.tar.gz") bytes so far)"
 
 # Cancel on the first line stops that one where it is; the other goes on.
-xdotool mousemove --window "$win" 1025 571 click 1
+xdotool mousemove --window "$win" 1057 595 click 1
 sleep 2
 stopped=$(size "$files/backup.sql")
 going=$(size "$files/site.tar.gz")
@@ -690,14 +762,13 @@ sleep 6
 # The palette finds a host's card; Space marks it. Two that answer, one that
 # refuses, one that lets nobody in.
 mark() {
-    key ctrl+k
+    key ctrl+shift+k
     xdotool type --window "$win" "$1"
     key Return
     key space
 }
 for name in shell-01 shell-02 cache-01 legacy; do mark "$name"; done
-# The pointer where it rests on nothing.
-xdotool mousemove --window "$win" 600 20
+aside
 
 # s: the snippets, with the one the database got meanwhile. Add has the
 # focus, Run is the next stop; its form asks for the one parameter, and Enter
@@ -753,7 +824,7 @@ language
 
 # L on a card: its forwards. The first switch has the focus.
 forwards() {
-    key ctrl+k
+    key ctrl+shift+k
     xdotool type --window "$win" "$1"
     key Return
     key L
@@ -813,7 +884,7 @@ step "the app is still running after the snippets, the batches and the forwards"
 # An action of the palette by its English name, whatever the language is; or
 # a host, whose card then has the focus.
 action() {
-    key ctrl+k
+    key ctrl+shift+k
     xdotool type --window "$win" "$1"
     key Return
     sleep 1
@@ -993,13 +1064,13 @@ key Escape
 # brings it to the front, and what is typed then is typed in its shell.
 for name in shell-01 cache-01 legacy shell-02; do mark "$name"; done
 rail() { xdotool mousemove --window "$win" 120 "$1" click 1; sleep 1; }
-rail 262
+rail 294
 run 'touch rail'
 there 2205/rail "the rail's Sessions row did not bring shell-02's terminal to the front"
 step "the rail's Sessions row brought the open session to the front"
 # Its first row is the dashboard again: there x is a key, and asks for a
 # command for the selected host.
-rail 87
+rail 129
 key x
 xdotool type --window "$win" --delay 20 'touch rail-back'
 key Return
@@ -1013,6 +1084,288 @@ language
 top
 shot docs/img/desktop-d9-rail.vi.png
 language
+
+# --- D10: the cheatsheet, and the desktop's keys ------------------------------
+# How many colours a strip of a screenshot has, one pixel high: x, y, width.
+colours() { ffmpeg -loglevel error -i "$1" -vf "crop=$4:1:$2:$3" -f rawvideo -pix_fmt rgb24 - | od -An -v -tx1 -w3 | sort -u | wc -l; }
+# No row of keys under the window: right of the selected host's address the
+# status bar is its own ground and nothing else, at the height of its text,
+# where "Enter Connect · Space select · v Quick peek · ..." used to be.
+for picture in docs/img/desktop-d9-rail.png docs/img/desktop-d9-rail.vi.png; do
+    [ "$(colours "$picture" 450 682 600)" -eq 1 ] || fail "$picture: there is something in the status bar where the row of keys was"
+done
+step "the status bar has no row of keys, in either language"
+
+# The cheatsheet's panel is on screen left of its search glass, where the rail
+# is while it is shut.
+sheet() { [ "$(pixel "$1" 112 112)" = 1f2335 ]; }
+key question
+shot docs/img/desktop-d10-shortcuts.png
+sheet docs/img/desktop-d10-shortcuts.png || fail "? did not open the cheatsheet"
+# Its field has the keys: what is typed narrows the rows.
+xdotool type --window "$win" tab
+shot target/smoke/shortcuts-search.png
+key Escape
+shot target/smoke/shortcuts-shut.png
+sheet target/smoke/shortcuts-shut.png && fail "Esc did not close the cheatsheet"
+# The settings' last row; then Ctrl-/.
+setting 5
+shot target/smoke/shortcuts-button.png
+sheet target/smoke/shortcuts-button.png || fail "the settings' row did not open the cheatsheet"
+key Escape
+key ctrl+slash
+shot target/smoke/shortcuts-chord.png
+sheet target/smoke/shortcuts-chord.png || fail "Ctrl-/ did not open the cheatsheet"
+key Escape
+# And F1, in Vietnamese.
+language
+key F1
+shot docs/img/desktop-d10-shortcuts.vi.png
+sheet docs/img/desktop-d10-shortcuts.vi.png || fail "F1 did not open the cheatsheet"
+key Escape
+language
+step "the cheatsheet opened by ?, by the settings' row, by Ctrl-/ and by F1, and Esc closed it"
+
+# Ctrl-T is a new tab: the palette asks where to. shell-01's port, as whoever
+# runs this: a host has that address and is found first, and the address as it
+# stands is the last row, one Up from the first.
+key ctrl+t
+typed 127.0.0.1:2204
+shot target/smoke/new-tab.png
+key Up Return
+sleep 3
+run 'touch new-tab'
+there 2204/new-tab "Ctrl-T's palette did not open a tab on the address typed, shell-01's port"
+# In a terminal the same keys are the shell's, as they were: Ctrl-T is
+# readline's transpose (ab becomes ba), and ? is a character.
+xdotool type --window "$win" --delay 20 'touch ab'
+key ctrl+t
+key Return
+sleep 1
+there 2204/ba "Ctrl-T in a terminal did not reach the shell: readline did not swap the two letters"
+run "touch 'asked?'"
+there '2204/asked?' "? in a terminal did not reach the shell"
+shot target/smoke/terminal-keys.png
+key ctrl+shift+w
+step "Ctrl-T's palette connected to an address as it was typed; in a terminal Ctrl-T and ? stayed the shell's"
+
+# From the last tab Ctrl-Tab comes round to the dashboard. There Ctrl-F is the
+# search: what is typed is a filter, not the dashboard's keys, and the one
+# card it leaves is four tab stops on.
+key ctrl+Tab
+key ctrl+f
+xdotool type --window "$win" shell-01
+shot target/smoke/find.png
+key Tab Tab Tab Tab Return
+sleep 3
+run 'touch found'
+there 2204/found "Ctrl-F did not put the keys in the hosts' search"
+key ctrl+shift+w
+step "Ctrl-Tab came round to the dashboard, and Ctrl-F there searched the hosts"
+
+# --- D10: panes, focus mode, and the tabs under the pointer --------------------
+# What the shell in front says of itself, in shell-01's directory: the columns
+# of its terminal, and which terminal it is.
+cols() { run "stty size >$1"; cut -d' ' -f2 "$home/sshd/2204/$1"; }
+tty_of() { run "tty >$1"; cat "$home/sshd/2204/$1"; }
+# The middle of the tab in front: in the strip of tabs it alone has the
+# terminal's ground. Right of the rail, which has it too.
+front_tab() {
+    shot target/smoke/strip.png >/dev/null
+    ffmpeg -loglevel error -i target/smoke/strip.png -vf "crop=820:1:260:11" -f rawvideo -pix_fmt rgb24 - | od -An -v -tx1 -w3 | tr -d ' ' |
+        awk '$0 == "1a1b26" { if (!n++) first = NR; last = NR } END { print 260 + int((first + last) / 2) }'
+}
+# The panes are in the frame under the tabs: its left half, its right half.
+LEFT=470 RIGHT=870
+pane() { xdotool mousemove --window "$win" "$1" 420 click 1; sleep 0.5; }
+
+open_tab shell-01
+whole=$(cols whole)
+first=$(tty_of first-tty)
+# The tab in front, the third, let go on the left half of the first: it stands
+# before it now, and the digits follow the strip. By Ctrl-A 2 and back by
+# Ctrl-A 1, the shell that was the third tab is the first.
+at=$(front_tab)
+xdotool mousemove --window "$win" "$at" 24 mousedown 1
+for x in $((at - 10)) $((at - 30)) 500 420 370 350; do xdotool mousemove --window "$win" "$x" 24; sleep 0.15; done
+shot target/smoke/tab-moving.png
+xdotool mouseup 1
+sleep 1
+key ctrl+a 2
+key ctrl+a 1
+[ "$(tty_of moved-tty)" = "$first" ] || fail "a tab let go on the first one in the strip is not the first now"
+step "a tab let go on another in the strip stands before it, and the digits follow"
+# Ctrl-Shift-D: another shell on shell-01 beside this one, and the keys are its.
+key ctrl+shift+d
+sleep 3
+second=$(tty_of second-tty)
+[ -n "$second" ] && [ "$second" != "$first" ] || fail "Ctrl-Shift-D: what was typed next went to the same shell ($first, $second)"
+half=$(cols half)
+[ "$half" -lt $((whole * 2 / 3)) ] || fail "the pane beside the first is $half columns of $whole: nothing was split"
+aside
+shot docs/img/desktop-d10-split.png
+language
+shot docs/img/desktop-d10-split.vi.png
+language
+# A click in a pane brings it to the front.
+pane "$LEFT"
+[ "$(tty_of clicked-tty)" = "$first" ] || fail "a click in the left pane did not give it the keys"
+step "Ctrl-Shift-D split the tab: two shells side by side ($half of $whole columns each), a click chooses"
+
+# The left pane's tab, dragged to the right edge of the panes: the two change places.
+at=$(front_tab)
+xdotool mousemove --window "$win" "$at" 24 mousedown 1
+for x in $((at + 10)) $((at + 30)) 700 800 900 1000 1040; do xdotool mousemove --window "$win" "$x" 420; sleep 0.15; done
+shot target/smoke/tab-dragged.png
+xdotool mouseup 1
+sleep 1
+pane "$RIGHT"
+[ "$(tty_of right-tty)" = "$first" ] || fail "the tab dragged to the right edge is not the pane on the right"
+pane "$LEFT"
+[ "$(tty_of left-tty)" = "$second" ] || fail "after the drag the other shell is not the pane on the left"
+step "a tab dragged to an edge of the panes changed their places"
+
+# The line between the two panes, held and taken to the right: the pane on the
+# left is wider by it.
+pane "$LEFT"
+even=$(cols even)
+xdotool mousemove --window "$win" 672 420 mousedown 1
+for x in 690 720 760 800 820; do xdotool mousemove --window "$win" "$x" 420; sleep 0.1; done
+xdotool mouseup 1
+sleep 1
+pane "$LEFT"
+wider=$(cols wider)
+[ "$wider" -gt "$even" ] || fail "the line between the panes did not follow the pointer: the left pane is $wider columns, $even before"
+shot target/smoke/pane-resized.png
+step "the line between two panes followed the pointer: the left one is $wider columns, from $even"
+
+# Focus mode, by the key no shell is sent: the rail goes, and the panes are wider.
+# The pane in front is the left one, which the line just made the wider.
+# The pointer rests in a pane: where it rests on nothing with the rail there, a tab is now.
+inside() { xdotool mousemove --window "$win" 550 520; sleep 0.5; }
+language
+key ctrl+shift+b
+inside
+shot docs/img/desktop-d10-focus.vi.png
+key ctrl+shift+b
+language
+key ctrl+shift+b
+inside
+shot docs/img/desktop-d10-focus.png
+wide=$(cols wide)
+[ "$wide" -gt "$wider" ] || fail "focus mode: the pane is $wide columns, as before ($wider): the rail is still there"
+# Plain Ctrl-B is the shell's, as it was: readline goes back a letter, and the X lands before the b.
+xdotool type --window "$win" --delay 20 'touch ab'
+key ctrl+b
+xdotool type --window "$win" X
+key Return
+sleep 1
+there 2204/aXb "Ctrl-B in a terminal did not reach the shell"
+[ "$(cols still-wide)" = "$wide" ] || fail "Ctrl-B in a terminal left focus mode"
+# Esc is the shell's there too: readline takes it for Meta and the key after
+# it with it, here a Ctrl-U that is nobody's. Ctrl-A z is the way back from
+# the keyboard.
+key Escape ctrl+u
+[ "$(cols esc-wide)" = "$wide" ] || fail "Esc in a terminal left focus mode"
+key ctrl+a z
+[ "$(cols back)" = "$wider" ] || fail "Ctrl-A z did not bring the rail back"
+step "focus mode by Ctrl-Shift-B: no rail ($wide columns in the pane in front, from $wider); Ctrl-B and Esc stayed the shell's, Ctrl-A z came back"
+
+# The wheel's button on a tab closes it: the pane that is left has the whole frame again.
+xdotool mousemove --window "$win" "$(front_tab)" 24 click 2
+sleep 1
+aside
+[ "$(cols alone)" = "$whole" ] || fail "a middle click on the tab in front did not close its pane"
+[ "$(tty_of alone-tty)" = "$first" ] || fail "the pane left after the close is not the other shell"
+step "a middle click closed the tab of one pane; the other took the frame"
+
+# --- D11: the shell's own keys, the right button, the rail narrow --------------
+# shell-01's tab is in front. Ctrl-W there is readline's: the word before the
+# cursor goes, and the tab does not. Ctrl-K cuts from the cursor to the end.
+xdotool type --window "$win" --delay 20 'touch word-kept word-gone'
+key ctrl+w
+key Return
+sleep 1
+there 2204/word-kept "after Ctrl-W in a terminal the shell is not there to run what was typed: the tab was closed"
+[ ! -e "$home/sshd/2204/word-gone" ] || fail "Ctrl-W in a terminal did not reach the shell: the word before the cursor was not deleted"
+xdotool type --window "$win" --delay 20 'touch cutXYZ'
+key Left Left Left ctrl+k Return
+sleep 1
+there 2204/cut "Ctrl-K in a terminal did not reach the shell: the end of the line was not cut"
+step "in a terminal Ctrl-W deleted a word and Ctrl-K cut a line: the shell's keys, and the tab is still there"
+
+# A tab whose shell runs something is asked about before it goes. Cancel has
+# the focus: Enter keeps the tab, and its shell is there for the next line.
+run 'sleep 300'
+sleep 6
+key ctrl+shift+w
+shot target/smoke/close-busy.png
+key Return
+key ctrl+c
+run 'touch asked-first'
+there 2204/asked-first "a tab that was running a command was closed without a yes"
+step "Ctrl-Shift-W on a tab that runs a command asked first, and Enter kept the tab"
+
+# The right button in a terminal: its menu's first row that can be chosen is
+# Paste (nothing is selected to copy), and what the clipboard has is typed.
+if command -v xclip >/dev/null; then
+    printf 'touch pasted-by-menu' | xclip -selection clipboard
+    xdotool mousemove --window "$win" 700 400 click 3
+    sleep 0.5
+    shot target/smoke/terminal-menu.png
+    key Return
+    sleep 1
+    key Return
+    sleep 1
+    there 2204/pasted-by-menu "Paste in the terminal's menu did not type what the clipboard had"
+    step "the right button in a terminal pasted the clipboard into the shell"
+fi
+
+# The rail narrow, by its corner's button: the terminal is wider by what the
+# rail gave up, and the web view keeps the choice.
+full=$(cols rail-full)
+xdotool mousemove --window "$win" 218 34 click 1
+sleep 1
+terminal
+narrow=$(cols rail-narrow)
+[ "$narrow" -gt "$full" ] || fail "the rail's corner did not make it narrow: the terminal is $narrow columns, $full before"
+[ "$(kept vssh.rail)" = compact ] || fail "the web view kept the rail as $(kept vssh.rail), not compact"
+RAIL=28
+key ctrl+a 0
+# The hosts' search still has what Ctrl-F was given: Esc in it empties it.
+key ctrl+f Escape
+top
+shot docs/img/desktop-d11-compact.png
+language
+top
+shot docs/img/desktop-d11-compact.vi.png
+language
+# And all of it again, by the same button, which is under the mark now.
+xdotool mousemove --window "$win" 28 76 click 1
+sleep 1
+RAIL=120
+[ "$(kept vssh.rail)" = full ] || fail "the web view kept the rail as $(kept vssh.rail), not full"
+aside
+step "the rail narrow: its icons, a terminal of $narrow columns from $full, and the web view kept it"
+
+# The right button on a card: the palette brings web-01's into view, low in
+# the right column, and Copy address is the fifth row of its menu. Then the
+# first tab, shell-01's, in front again: it is what the app is closed with.
+if command -v xclip >/dev/null; then
+    key ctrl+k
+    xdotool type --window "$win" web-01
+    key Return
+    sleep 1
+    xdotool mousemove --window "$win" 800 630 click 3
+    sleep 0.5
+    shot target/smoke/card-menu.png
+    key Down Down Down Down Return
+    sleep 1
+    copied=$(xclip -o -selection clipboard)
+    [ "$copied" = "127.0.0.1:2201" ] || fail "Copy address in a card's menu copied '$copied'"
+    step "the menu of a card copied its host's address"
+fi
+key ctrl+a 1
 
 # The app again: the vault is there and shut, and it is asked for first thing.
 again() {
@@ -1035,8 +1388,13 @@ done
 shot target/smoke/vault-wrong.png
 typed 'smoke master'
 key Return
-sleep 3
+sleep 6
 shot target/smoke/vault-unlocked.png
+# What was open is open again, once the vault was answered: shell-01's tab was
+# the one in front, and is a shell with the keys again.
+run 'touch open-again'
+there 2204/open-again "the tab that was open when the app was closed is not open again"
+step "the app came back with the tabs it had, after the vault's question"
 
 # The same refusal in Vietnamese. The question is modal and comes first, so
 # the language is chosen before the app goes: the web view keeps it.
@@ -1056,31 +1414,23 @@ step "the app is still running after the vault, the host form and the key setup"
 
 # --- D7: the toolbar's second row, the Day theme, streamer mode ---------------
 # The app is in Vietnamese.
-# The two switches: streamer mode in the top bar, the theme in the rail's last row.
-streamer() { xdotool mousemove --window "$win" 1048 44 click 1; aside; }
-theme() { xdotool mousemove --window "$win" 120 636 click 1; aside; }
-# What the web view keeps of a setting: its localStorage, a database of WebKit's.
-kept() {
-    sleep 3
-    python3 - "$home/.local/share/io.github.duclong06.vssh/localstorage/tauri_localhost_0.localstorage" "$1" <<'EOF'
-import sqlite3, sys
-row = sqlite3.connect(sys.argv[1], timeout=10).execute("SELECT value FROM ItemTable WHERE key=?", (sys.argv[2],)).fetchone()
-print(row[0].decode("utf-16-le") if row else "none")
-EOF
-}
+# The two switches, rows of the settings.
+streamer() { setting 3; }
+theme() { setting 2; }
 pixels() { file=$1; shift; while [ $# -ge 2 ]; do printf '%s ' "$(pixel "$file" "$1" "$2")"; shift 2; done; }
 
 # With cards marked the Vietnamese controls have no room beside the search:
 # they are on a second row, all of them. Its first button starts where the
 # search does: left of x 276 the band is the band's own in both rows, and at
 # x 276 both have their border. Under the second row the band is its own to
-# its end: no card shows through.
+# its end: no card shows through. (The tabs that came back with the app are
+# the window's top row: the dashboard's head and its band are under them.)
 for name in shell-01 shell-02; do mark "$name"; done
 aside
 shot target/smoke/toolbar-wrap.vi.png
-rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 105 275 155 500 185)
+rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 155 275 205 500 235)
 [ "$rows" = "1a1b26 1a1b26 1a1b26 " ] || fail "the toolbar's two rows do not start at one margin, or a card shows through: $rows"
-case "$(pixels target/smoke/toolbar-wrap.vi.png 276 105 276 155)" in
+case "$(pixels target/smoke/toolbar-wrap.vi.png 276 155 276 205)" in
 *1a1b26*) fail "the toolbar's two rows do not both start at x 276" ;;
 esac
 step "with cards marked, the Vietnamese toolbar is two rows from one margin"
@@ -1100,12 +1450,17 @@ step "the Day theme: background #e1e2e7, cards #d0d5e3, and the web view kept th
 open_tab shell-01
 run 'echo dark in the day'
 shot target/smoke/day-terminal.vi.png
-term=$(pixels target/smoke/day-terminal.vi.png 276 400 900 500)
+term=$(pixels target/smoke/day-terminal.vi.png 244 400 900 500)
 [ "$term" = "a1a6c5 1a1b26 " ] || fail "in Day the terminal's border and ground are $term, not a1a6c5 1a1b26"
 step "in Day the terminal is still Night's, with the theme's border around it"
-key ctrl+w
+# The tab that goes leaves the front to the one beside it, of those that came
+# back with the app: the dashboard is asked for by its own key.
+key ctrl+shift+w
+key ctrl+a 0
 language
 first_card
+# Twice: the dashboard came back far down, at the card of the host whose tab went.
+top
 top
 shot docs/img/desktop-d7-day.png
 
@@ -1127,7 +1482,7 @@ open_tab shell-02
 run 'touch streamed'
 there 2205/streamed "in streamer mode a tab did not reach shell-02"
 shot target/smoke/streamer-terminal.vi.png
-key ctrl+w
+key ctrl+shift+w
 [ "$(cksum <"$config")" = "$before" ] || fail "streamer mode changed the ssh config"
 grep -qE '203\.0\.113\.|198\.51\.100\.' "$config" "$home/.ssh/known_hosts" && fail "a made-up address was written down"
 step "streamer mode: kept by the web view, the config untouched, a tab still on the real host"

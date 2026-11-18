@@ -13,6 +13,8 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
   this.dispatchEvent(new Event('close'))
 }
 Element.prototype.scrollIntoView ??= () => {}
+// Nor anything under a point: a test that needs something there says what.
+document.elementFromPoint ??= () => null
 // Nor a layout to observe.
 globalThis.ResizeObserver ??= class {
   observe() {}

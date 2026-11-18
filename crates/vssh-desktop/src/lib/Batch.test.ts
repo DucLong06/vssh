@@ -7,7 +7,6 @@ import type { Host } from './api'
 import Batch from './Batch.svelte'
 import errors from './fixtures/errors.json'
 import fixture from './fixtures/hosts.json'
-import { chip } from './hosts'
 import shown from './fixtures/shown.json'
 import { setLang } from './i18n.svelte'
 
@@ -181,11 +180,30 @@ test('once a command runs the answers have the keys: j and k scroll them, / filt
   expect(line()).toHaveValue('uptime')
 })
 
-test('a host\'s name has the colour of its tag, as its group has on the dashboard', () => {
+test('the foot has buttons, not a row of keys: Filter for the pointer, with the keys in its tooltip; Ctrl+F is / from the command line too', async () => {
+  const { user } = shell()
+  const foot = screen.getByRole('contentinfo')
+  expect(foot.querySelector('kbd')).toBeNull()
+  expect(within(foot).getAllByRole('button').map((button) => button.title)).toEqual(['Filter (/, Ctrl+F)', 'Copy all (Y)'])
+  expect(screen.queryByRole('searchbox')).toBeNull()
+  await user.click(within(foot).getByRole('button', { name: 'Filter' }))
+  const filter = await screen.findByRole('searchbox', { name: 'Filter' })
+  await vi.waitFor(() => expect(filter).toHaveFocus())
+  // No slash in the field, as a terminal's prompt has: the word alone.
+  expect(filter).toHaveAttribute('placeholder', 'Filter')
+  expect(within(foot).getByRole('button', { name: 'Filter' })).toHaveAttribute('aria-pressed', 'true')
+  // In the command line an f is a letter, and Ctrl+F is the filter.
+  await user.click(line())
+  await user.keyboard('f{Control>}f{/Control}')
+  expect(line()).toHaveValue('f')
+  await vi.waitFor(() => expect(filter).toHaveFocus())
+})
+
+test('a host\'s name has no colour of its own: in a list of answers colour is the answer', () => {
   shell()
   const name = (host: string) => within(row(host)).getByText(host)
-  expect(name('web-01').style.color).toBe(chip('prod'))
-  expect(name('db-primary').style.color).toBe(chip('db'))
+  expect(name('web-01').style.color).toBe('')
+  expect(name('db-primary').style.color).toBe('')
 })
 
 test('Copy all puts what every host answered on the clipboard, a failure in its words; y does the same', async () => {

@@ -46,7 +46,11 @@
   --radius-lg: 8px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
-  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 12px 32px rgb(0 0 0 / 0.3);
+  /* Flat: what stands on the page is told from it by its ground and a line.
+     A shadow is for what floats over the page and goes again: a dialog, a
+     menu, a popover. Nothing else has one. */
+  --shadow-card: none;
+  --shadow-float: 0 16px 40px rgb(0 0 0 / 0.45);
   /* What opens from under something slides out of it. */
   --animate-slide: slide 0.18s ease-out;
   @keyframes slide {
@@ -85,7 +89,8 @@
   --color-cyan: #005876; /* #007197 */
   --color-orange: #7e4100; /* #b15c00 */
   --color-teal: #0b5d4d; /* #118c74 */
-  --shadow-card: 0 4px 14px rgb(0 0 0 / 0.08);
+  --shadow-card: none;
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.16);
 }
 
 /* `day:` on a class: only under the Day theme. */
@@ -113,13 +118,33 @@ body {
     outline: 2px solid var(--color-blue);
     outline-offset: -2px;
   }
-  /* A key is a keycap wherever it is named. */
+  /* A key is a keycap wherever it is named (Keys.svelte): one cap a key of
+     a chord, in the window's own letters, with a line under it. No
+     frame and no monospace: that is how a terminal writes a key. */
   kbd {
-    padding: 1px 6px;
-    border: 1px solid var(--color-edge);
-    border-radius: 6px;
-    background: var(--color-page);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    display: inline-flex;
+    gap: 3px;
+    vertical-align: middle;
+    font: 500 11px/1 var(--font-sans);
+  }
+  kbd > span:not(.sr-only) {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 5px;
+    background: var(--color-bar);
+    color: var(--color-white);
+    border-bottom: 1px solid rgb(0 0 0 / 0.28);
+  }
+  /* A port is typed: the toolkit's own arrows are a light box in a dark field. */
+  input[type='number'] {
+    appearance: textfield;
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
   }
 }

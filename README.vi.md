@@ -45,23 +45,23 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 - **Tab terminal.** `Enter` hoặc nút "Kết nối" mở một shell thật trong tab (PTY qua russh, vẽ bằng xterm.js). Đánh dấu nhiều thẻ bằng `Space` rồi `Enter` để kết nối tới tất cả. Tab cho biết trạng thái của nó và, với máy chủ Linux, lệnh đang chạy trong đó. Bôi chọn chữ là chép. Khi shell kết thúc, tab có nút "Kết nối lại".
 - **Phát (broadcast).** `Ctrl-A` `b` bật phát cho một tab, `Ctrl-A` `B` cho mọi tab: những gì bạn gõ được gửi tới mọi tab đang bật. Các tab đó chuyển màu vàng và thanh trạng thái ghi "Đang phát: N".
 - **Khi kết nối thất bại**, một hộp thoại cho biết vì sao, theo cùng các loại lỗi như ứng dụng terminal, tới cả chặng nào của chuỗi máy trung gian bị lỗi. Khoá máy chủ thay đổi thì hộp thoại hiện dấu vân tay mới cùng dòng `known_hosts` mà nó xung đột, và hỏi: Chấp nhận một lần, Tin cậy, hoặc Huỷ.
-- **SFTP hai khung.** `f` trên một thẻ máy chủ, hoặc nút "Tệp": máy mình bên trái, máy chủ bên phải, trong một tab riêng. `Space` đánh dấu, `c` chép sang bên kia; hai mũi tên giữa hai khung và việc kéo các dòng sang cũng vậy. Tệp đã có ở bên kia thì chờ bạn đồng ý ghi đè. Chuột phải để Sao chép, Tạo thư mục, Đổi tên, Xoá. Mỗi lượt truyền có một dòng dưới hai khung: thanh tiến độ, phần trăm, tốc độ, thời gian còn lại, Huỷ; ba lượt chạy cùng lúc. `.` hiện tệp ẩn, `/` lọc. Chỉ chép tệp: không chép thư mục.
+- **SFTP hai khung.** `f` trên một thẻ máy chủ, hoặc "Tệp" trong menu chuột phải của thẻ: máy mình bên trái, máy chủ bên phải, trong một tab riêng. `Space` đánh dấu, `c` chép sang bên kia; hai mũi tên giữa hai khung và việc kéo các dòng sang cũng vậy. Tệp đã có ở bên kia thì chờ bạn đồng ý ghi đè. Chuột phải để Tải lên hoặc Tải xuống, Tạo thư mục, Đổi tên, Xoá, Làm mới. Mỗi lượt truyền có một dòng dưới hai khung: thanh tiến độ, phần trăm, tốc độ, thời gian còn lại, Huỷ; ba lượt chạy cùng lúc. `.` hiện tệp ẩn, `/` lọc. Chỉ chép tệp: không chép thư mục.
 - **Đoạn lệnh (snippet).** `s`, hoặc "Đoạn lệnh" trên thanh điều hướng: các lệnh đã lưu, cho một máy hoặc cho mọi máy. Đoạn lệnh có thể có tham số (`systemctl restart {{unit}}`); tham số được hỏi khi chạy. Nó chạy trên các máy bạn đã đánh dấu.
 - **Chạy hàng loạt.** Đánh dấu các máy bằng `Space`, nhấn `x`, gõ một lệnh. Lệnh chạy cùng lúc trên mọi máy đó, mỗi máy một kết nối riêng; từng máy hiện kết quả của nó, hoặc lý do lỗi. `j`/`k` để cuộn, `/` lọc theo máy, "Chép tất cả" lấy toàn bộ.
-- **Chuyển tiếp cổng.** `L` trên một thẻ máy chủ, hoặc nút "Chuyển tiếp": các chuyển tiếp của máy trong một bảng — local (`L`), remote (`R`) hoặc dynamic SOCKS (`D`), cổng, đích, đang chạy hay không. Bật hoặc tắt, thêm, xoá. Cổng đã bị dùng thì biểu mẫu báo ngay, kèm một cổng khác để thử.
+- **Chuyển tiếp cổng.** `L` trên một thẻ máy chủ, hoặc "Chuyển tiếp" trong menu chuột phải của thẻ: các chuyển tiếp của máy trong một bảng — Local, Remote hoặc SOCKS, cổng, đích, đang chạy hay không. Bật hoặc tắt, thêm, xoá. Cổng đã bị dùng thì biểu mẫu báo ngay, kèm một cổng khác để thử.
 - **Máy chủ.** `a` hoặc nút "Thêm máy chủ", `e` để sửa, `d` để xoá (có hỏi trước). Biểu mẫu gồm tên gọi, máy chủ, người dùng, cổng, cách đăng nhập (mật khẩu trong kho, tệp khoá hoặc agent), máy trung gian, thẻ, nhóm, ghim, ghi chú; có thể nhập các máy chủ từ một ssh config khác, có xem trước. Máy chủ được ghi vào `~/.ssh/config` thành các khối `Host` bình thường.
 - **Kết nối nhanh.** Trong bảng lệnh: `user@host[:port]`, và không có gì được lưu. Khi một phiên như vậy đang ở trước mặt, thanh trạng thái có nút "Lưu máy chủ này".
 - **Kho mật khẩu.** Mật khẩu các máy chủ của bạn, mã hoá bằng Argon2id + XChaCha20-Poly1305 dưới một mật khẩu kho. Kho đang khoá sẽ hỏi mật khẩu khi ứng dụng khởi động và ở trạng thái mở cho tới khi đóng ứng dụng. Hộp thoại này cũng tạo kho, đổi mật khẩu kho và xuất một bản sao lưu đã mã hoá. Quên mật khẩu kho thì không lấy lại được.
-- **Chế độ phát trực tiếp.** Nút hình con mắt trên thanh trên cùng: mọi địa chỉ cửa sổ hiển thị trở thành địa chỉ giả thuộc các dải dành cho tài liệu (`203.0.113.x`, `198.51.100.x`), cùng một máy thì luôn cùng một địa chỉ. Chỉ phần hiển thị thay đổi: file cấu hình, cơ sở dữ liệu và những gì gửi tới máy chủ vẫn dùng địa chỉ thật. Tên gọi của máy chủ và những gì shell in ra được giữ nguyên.
-- **Giao diện.** TokyoNight Tối (mặc định) và Sáng, đổi ở dòng cuối của thanh điều hướng. Riêng terminal luôn giữ màu Tối.
-- **Tiếng Anh và tiếng Việt.** Nút `EN` / `VI` trên thanh trên cùng đổi ngôn ngữ của cửa sổ; lỗi kết nối cũng được diễn đạt bằng ngôn ngữ đó.
-- **Bảng lệnh.** `Ctrl-K`, hoặc ô tìm kiếm trên thanh trên cùng: mọi máy chủ và mọi lệnh, tìm kiếm mờ.
+- **Chế độ phát trực tiếp.** Trong phần cài đặt (bánh răng ở chân thanh điều hướng): mọi địa chỉ cửa sổ hiển thị trở thành địa chỉ giả thuộc các dải dành cho tài liệu (`203.0.113.x`, `198.51.100.x`), cùng một máy thì luôn cùng một địa chỉ. Chỉ phần hiển thị thay đổi: file cấu hình, cơ sở dữ liệu và những gì gửi tới máy chủ vẫn dùng địa chỉ thật. Tên gọi của máy chủ và những gì shell in ra được giữ nguyên.
+- **Giao diện.** TokyoNight Tối (mặc định) và Sáng, đổi trong phần cài đặt. Riêng terminal luôn giữ màu Tối.
+- **Tiếng Anh và tiếng Việt.** Phần cài đặt đổi ngôn ngữ của cửa sổ; lỗi kết nối cũng được diễn đạt bằng ngôn ngữ đó.
+- **Bảng lệnh.** `Ctrl-K` (trong terminal là `Ctrl-Shift-K`, vì phím trần là của shell), hoặc ô tìm kiếm ở đầu thanh điều hướng: mọi máy chủ và mọi lệnh, tìm kiếm mờ. `Ctrl-T` mở bảng lệnh để mở tab mới.
 
 ### Phím tắt
 
 | Ở đâu | Phím | Tác dụng |
 |-------|------|----------|
-| Mọi nơi | `Ctrl-K` | bảng lệnh |
+| Mọi nơi | `Ctrl-K`; trong terminal là `Ctrl-Shift-K` | bảng lệnh |
 | Bảng điều khiển | `/` | tìm máy chủ, `#thẻ` để lọc theo thẻ |
 | | `a` | thêm máy chủ |
 | | `s` | đoạn lệnh |
@@ -77,7 +77,7 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 | | `Ctrl-A`, rồi `b` / `B` | phát: tab này / mọi tab |
 | | `Ctrl-A`, rồi `y` | chép kết quả của lệnh cuối |
 | | `Ctrl-A`, rồi `q` | về bảng điều khiển |
-| | `Ctrl-A`, rồi `x` hoặc `d`; `Ctrl-W` | đóng tab |
+| | `Ctrl-A`, rồi `x` hoặc `d`; `Ctrl-W`, trong terminal là `Ctrl-Shift-W` | đóng tab |
 | | `Ctrl-A` `Ctrl-A` | gửi `Ctrl-A` tới máy chủ |
 | Tệp | `j` `k` `g` `G` | di chuyển, về đầu, về cuối |
 | | `Enter` hoặc `l` / `h` | vào thư mục / lên thư mục cha |

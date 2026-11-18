@@ -2,9 +2,9 @@
   import { listen } from '@tauri-apps/api/event'
   import { onMount, tick, untrack } from 'svelte'
   import { api, explain, type Answered, type Host, type Lang, type Shown } from './api'
-  import { chip, groupOf } from './hosts'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
+  import { KEY, tip } from './keymap'
 
   type Props = {
     /** The hosts the command is run on. */
@@ -106,13 +106,17 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    // Ctrl-F is the desktop's key for what `/` is, from a field too.
+    const find = (e.ctrlKey || e.metaKey) && e.key === 'f'
     // In a field a letter is a letter.
-    if (e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey || e.altKey || !(e.key in keys)) return
+    const other = e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey || e.altKey || !(e.key in keys)
+    if (other && !find) return
     e.preventDefault()
-    keys[e.key]()
+    keys[find ? '/' : e.key]()
   }
 
   const field = 'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim'
+  const action = 'cursor-pointer rounded-lg border border-edge px-3 py-0.5 font-medium text-fg hover:bg-selection'
 </script>
 
 <Modal label={title} wide {onclose}>
@@ -152,7 +156,7 @@
         bind:value={filter}
         type="search"
         aria-label={t('filter')}
-        placeholder="/  {t('filter')}"
+        placeholder={t('filter')}
         onkeydown={(e) => {
           if (e.key !== 'Enter') return
           filtering = false
@@ -166,14 +170,14 @@
       bind:this={list}
       tabindex="0"
       aria-label={t('hosts')}
-      aria-keyshortcuts="j k / y"
+      aria-keyshortcuts="j k / Control+F y"
       class="flex max-h-[45vh] flex-col gap-2 overflow-y-auto rounded-xl outline-none"
     >
       {#each rows as { host, answer } (host.alias)}
         <li data-host={host.alias} class="shrink-0 rounded-xl border border-edge bg-bg px-3 py-2">
           <p class="flex items-center gap-2">
-            <!-- The colour its group has on the dashboard. -->
-            <strong style:color={groupOf(host) ? chip(groupOf(host)) : undefined}>{host.alias}</strong>
+            <!-- No colour of its own: in a list of answers colour is read as the answer. -->
+            <strong class="text-ink">{host.alias}</strong>
             {#if answer?.error}
               <!-- The class of the failure, as a card says it: a host that failed is not left out. -->
               <span role="alert" title={answer.why?.chain} class="min-w-0 break-words">
@@ -198,16 +202,24 @@
     </ul>
   </div>
   <footer class="flex items-center gap-4 border-t border-edge px-6 py-3 text-[13px] text-white">
-    <span><kbd class="text-magenta">j k</kbd> {t('scroll')}</span>
-    <span><kbd class="text-magenta">/</kbd> {t('filter').toLowerCase()}</span>
-    <span><kbd class="text-magenta">esc</kbd> {t('close')}</span>
+    <button
+      type="button"
+      aria-pressed={filtering || filter !== ''}
+      aria-keyshortcuts="/ Control+F"
+      title={tip(t('filter'), KEY.search)}
+      onclick={keys['/']}
+      class="{action} aria-pressed:bg-selection aria-pressed:text-blue"
+    >
+      {t('filter')}
+    </button>
     <span role="status" class="ml-auto text-green">{copied ? t('copied') : ''}</span>
     <button
       type="button"
       aria-keyshortcuts="y"
+      title={tip(t('copy_all'), KEY.copyAll)}
       disabled={!done}
       onclick={copy}
-      class="cursor-pointer rounded-lg border border-edge px-3 py-0.5 font-medium text-fg hover:bg-selection disabled:cursor-default disabled:opacity-60"
+      class="{action} disabled:cursor-default disabled:opacity-60"
     >
       {t('copy_all')}
     </button>

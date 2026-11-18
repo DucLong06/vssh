@@ -1,11 +1,14 @@
 <script lang="ts">
   import { tick } from 'svelte'
-  import type { Host, Shown } from './api'
+  import { api, type Host, type Shown } from './api'
   import HostCard from './HostCard.svelte'
-  import { address, chip, groupOf, hasTag, tagsOf } from './hosts'
+  import { address, groupOf, hasTag, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { ask, critical, down, live, sick, trail, up } from './live.svelte'
   import QuickPeek from './QuickPeek.svelte'
+  import Keys from './Keys.svelte'
+  import { KEY, tip } from './keymap'
+  import Menu, { pointed, type MenuItem } from './Menu.svelte'
   import Sparkline from './Sparkline.svelte'
 
   type Props = {
@@ -64,11 +67,14 @@
   let query = $state('')
   /** The user's own order: aliases, as they were last dragged. */
   let order = $state<string[]>(saved())
-  /** The card being dragged. */
+  /** The card being dragged, and the one it is over: where it would land. */
   let dragging: string | null = null
+  let over = $state<string | null>(null)
   /** The card whose quick peek is open, and whether the pointer opened it. */
   let peeking = $state<{ alias: string; hover: boolean } | null>(null)
   let resting: ReturnType<typeof setTimeout> | undefined
+  /** The right button's menu, and the card it is about. */
+  let menu = $state<{ x: number; y: number; alias: string } | null>(null)
   let search = $state<HTMLInputElement>()
   let grid = $state<HTMLElement>()
 
@@ -162,8 +168,9 @@
   }
 
   async function onkeydown(e: KeyboardEvent, alias: string) {
-    // Not from the card's own button: there Enter is a click already.
-    if (e.target !== e.currentTarget) return
+    // Not from the card's own button: there Enter is a click already. Nor with
+    // Ctrl: Ctrl+F on a card is the search, not the card's f.
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey) return
     const step = e.altKey && { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key]
     if (e.key === 'Enter') {
       connect(alias)
@@ -175,7 +182,7 @@
       peek(alias)
     } else if (e.key === 'f') {
       onfiles?.(alias)
-    } else if (e.key === 'L') {
+    } else if (e.key === 'l' || e.key === 'L') {
       // Stopped here: the dialog has the focus before the key is done, and the key is not for it.
       e.preventDefault()
       onforwards?.(alias)
@@ -203,6 +210,11 @@
     // The TUI's keys. Not while typing, with Ctrl (Ctrl-R), or under a dialog.
     // Nor behind a terminal tab.
     const away = hidden || document.querySelector('dialog[open]')
+    // The desktop's key for what `/` is, from a field too.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !away) {
+      e.preventDefault()
+      search?.focus()
+    }
     if (typing || e.ctrlKey || e.metaKey || e.altKey || away) return
     if (e.key === '/') {
       e.preventDefault()
@@ -224,6 +236,24 @@
       void ask(peeking.alias, false)
     }
   }
+
+  /** What the right button offers on a card: what its keys do, and its address for the clipboard. */
+  const items = $derived.by((): MenuItem[] => {
+    if (!menu) return []
+    const alias = menu.alias
+    const host = hosts.find((host) => host.alias === alias)
+    return [
+      { label: t('connect'), keys: KEY.connect[0], run: () => onconnect(alias) },
+      ...(onfiles ? [{ label: t('files'), keys: KEY.files[0], run: () => onfiles(alias) }] : []),
+      ...(onforwards ? [{ label: t('forwards'), keys: KEY.forwards[0], run: () => onforwards(alias) }] : []),
+      ...(onedit ? [{ label: t('edit'), keys: KEY.edit[0], run: () => onedit(alias) }] : []),
+      // The address as the config has it, whatever the window shows of it.
+      { label: t('copy_address'), off: !host || !address(host), run: () => void api.copy(address(host!)) },
+      null,
+      { label: t('palette'), keys: KEY.palette[0], run: onpalette },
+      ...(ondelete ? [null, { label: t('delete'), keys: 'D', danger: true, run: () => ondelete(alias) }] : []),
+    ]
+  })
 
   const sorts = $derived<[Sort, string][]>([
     ['order', t('sort_order')],
@@ -259,7 +289,7 @@
 
   const control =
     'h-10 cursor-pointer rounded-xl border border-edge px-3.5 font-medium whitespace-nowrap text-fg hover:border-dim/50 hover:bg-selection'
-  const tile = 'min-w-0 rounded-2xl bg-panel px-4 pt-3 shadow-card'
+  const tile = 'min-w-0 rounded-2xl border border-edge bg-panel px-4 pt-3'
   const figure = 'text-2xl leading-tight font-semibold tracking-tight text-ink'
   const segment = { ok: 'bg-green', crit: 'bg-red', down: 'inset-ring-[1.5px] inset-ring-red', unknown: 'bg-bar' }
 </script>
@@ -278,7 +308,7 @@
       <div class="grid h-full place-content-center justify-items-center gap-3 text-center">
         <p
           aria-hidden="true"
-          class="grid size-14 place-items-center overflow-hidden rounded-2xl border border-edge bg-page shadow-lg shadow-blue/30"
+          class="grid size-14 place-items-center overflow-hidden rounded-2xl border border-edge bg-page"
         >
           <!-- The brand mark, as the rail draws it. -->
           <svg viewBox="0 0 512 512" class="h-14 w-14">
@@ -309,8 +339,9 @@
         <h2 class="text-lg font-semibold text-ink">{t('no_hosts')}</h2>
         <p class="text-white">{t('no_hosts_hint')}</p>
         <div class="mt-2 flex gap-2">
-          <button type="button" onclick={onpalette} aria-label={t('palette')} class="{control} font-mono text-[13px]">
-            Ctrl-K
+          <button type="button" onclick={onpalette} aria-label={t('palette')} aria-keyshortcuts="Control+K" class="{control} flex items-center gap-2">
+            {t('palette')}
+            <Keys keys={KEY.palette[0]} />
           </button>
           {#if onadd}
             <button type="button" onclick={onadd} class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90">
@@ -330,8 +361,9 @@
         bind:value={query}
         type="search"
         aria-label={t('search_hosts')}
-        aria-keyshortcuts="/"
-        placeholder="/  {t('search_hosts')}"
+        aria-keyshortcuts="/ Control+F"
+        title={tip(t('search_hosts'), KEY.search)}
+        placeholder={t('search_hosts')}
         onkeydown={(e) => {
           if (e.key !== 'Escape') return
           query = ''
@@ -359,6 +391,7 @@
           <button
             type="button"
             aria-keyshortcuts="x"
+            title={tip(t('run_command'), KEY.run)}
             onclick={() => onbatch?.()}
             class="{control} border-magenta/70 text-magenta"
           >
@@ -370,8 +403,9 @@
           <button
             type="button"
             aria-keyshortcuts="a"
+            title={tip(t('add_host'), KEY.add)}
             onclick={onadd}
-            class="{control} border-blue bg-blue font-semibold text-page shadow-lg shadow-blue/20 hover:bg-blue/90"
+            class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90"
           >
             {t('add_host')}
           </button>
@@ -423,7 +457,7 @@
         {#if grouped}
           <h2 class="flex items-baseline gap-2 pt-1 pb-3 text-lg font-semibold">
             {#if name}
-              <span style="color: {chip(name)}">#{name}</span>
+              <span class="text-white">#{name}</span>
             {:else}
               <span class="text-white">{t('no_tags')}</span>
             {/if}
@@ -433,13 +467,14 @@
         <!-- One column, two past 800 px of window, three past 1200. -->
         <ul
           aria-label={name || t('no_tags')}
-          class="grid grid-cols-1 gap-5 pb-6 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
+          class="grid grid-cols-1 gap-3 pb-5 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
         >
-          {#each list as host (host.alias)}
+          {#each list as host, at (host.alias)}
             <!-- Resting on a card shows what is known. It does not ask: a host
                  never connected to is not connected to by a pointer passing. -->
+            <!-- The hosts that need looking at come first and are tall; the first that is well starts a row of its own, of low ones. -->
             <li
-              class="relative"
+              class="relative {at > 0 && !sick(live[host.alias]) && sick(live[list[at - 1].alias]) ? 'col-start-1' : ''}"
               onpointerenter={() => {
                 resting = setTimeout(() => (peeking ??= { alias: host.alias, hover: true }), REST)
               }}
@@ -457,15 +492,27 @@
                 onforwards={onforwards && (() => onforwards(host.alias))}
                 onedit={onedit && (() => onedit(host.alias))}
                 onretry={() => void ask(host.alias, false)}
+                onpeek={() => peek(host.alias)}
                 trail={trail[host.alias]}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Space v f Shift+L e d Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v f l e d Delete Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null
                 }}
                 onkeydown={(e) => onkeydown(e, host.alias)}
+                ondblclick={(e) => {
+                  // Not twice over for a button of the card's own.
+                  if (!(e.target as HTMLElement).closest('button')) onconnect(host.alias)
+                }}
+                oncontextmenu={(e) => {
+                  e.preventDefault()
+                  clearTimeout(resting)
+                  peeking = null
+                  onselect?.(host.alias)
+                  menu = { ...pointed(e), alias: host.alias }
+                }}
                 draggable="true"
                 ondragstart={(e) => {
                   clearTimeout(resting)
@@ -474,17 +521,30 @@
                   // Some webviews do not start a drag that carries nothing.
                   e.dataTransfer?.setData('text/plain', host.alias)
                 }}
-                ondragover={(e) => e.preventDefault()}
+                data-drop={over === host.alias || undefined}
+                ondragenter={(e) => e.preventDefault()}
+                ondragover={(e) => {
+                  // A web view lets go only where it was let in and kept: at the entering as at the moving.
+                  e.preventDefault()
+                  // No peek opens under a card in hand: it would be what the card is let go on.
+                  clearTimeout(resting)
+                  if (dragging && dragging !== host.alias) over = host.alias
+                }}
+                ondragleave={(e) => {
+                  // By where the pointer is: a web view says a leave for every part of the card on the way across it.
+                  const box = e.currentTarget.getBoundingClientRect()
+                  if (e.clientX < box.left || e.clientX >= box.right || e.clientY < box.top || e.clientY >= box.bottom) over = null
+                }}
                 ondrop={(e) => {
                   e.preventDefault()
                   if (dragging) place(dragging, host.alias)
-                  dragging = null
+                  dragging = over = null
                 }}
-                ondragend={() => (dragging = null)}
-                class="cursor-grab scroll-mt-20"
+                ondragend={() => (dragging = over = null)}
+                class="cursor-grab scroll-mt-20 active:cursor-grabbing data-[drop]:border-blue data-[drop]:bg-blue/8"
               />
               {#if peeking?.alias === host.alias}
-                <QuickPeek {host} info={live[host.alias]} />
+                <QuickPeek {host} info={live[host.alias]} trail={trail[host.alias]} onrefresh={() => void ask(host.alias, false)} />
               {/if}
             </li>
           {/each}
@@ -495,3 +555,17 @@
     </div>
   {/if}
 </section>
+
+{#if menu}
+  <Menu
+    label={menu.alias}
+    x={menu.x}
+    y={menu.y}
+    {items}
+    onclose={(escaped) => {
+      // Esc gives the keys back to the card it was about.
+      if (escaped && menu) card(menu.alias)?.focus()
+      menu = null
+    }}
+  />
+{/if}

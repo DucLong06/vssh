@@ -5,6 +5,7 @@
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
   import { hide, streamer } from './streamer.svelte'
+  import { sync } from './tunnels.svelte'
 
   type Props = {
     /** The host of the ssh config whose forwards these are. */
@@ -77,6 +78,9 @@
     return () => void heard.then((unlisten) => unlisten())
   })
 
+  // The rail counts what listens, also once this dialog is shut.
+  $effect(() => sync(host, rows))
+
   // A failure is kept as data: the words for it follow the language.
   $effect(() => {
     const now = failed
@@ -107,6 +111,8 @@
 
   const field = 'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim disabled:opacity-60'
   const kinds = ['L', 'R', 'D'] as const
+  /** ssh's letters, in words. */
+  const kindly = $derived({ L: t('fwd_local'), R: t('fwd_remote'), D: 'SOCKS' })
   const mark = { on: '●', starting: '◌', off: '○' }
   const word = $derived({ on: t('on'), starting: t('starting'), off: t('off') })
   const tone = { on: 'text-green', starting: 'text-yellow', off: 'text-white' }
@@ -122,7 +128,7 @@
       <table class="w-full border-collapse text-left">
         <thead class="text-xs whitespace-nowrap text-dim">
           <tr>
-            <th scope="col" class="w-14 py-1 font-normal">{t('kind')}</th>
+            <th scope="col" class="w-20 py-1 font-normal">{t('kind')}</th>
             <th scope="col" class="w-28 py-1 font-normal">{t('local_port')}</th>
             <th scope="col" class="py-1 font-normal">{t('remote')}</th>
             <th scope="col" class="w-32 py-1 font-normal">{t('status')}</th>
@@ -132,7 +138,7 @@
         <tbody>
           {#each rows as row (row.kind + row.value)}
             <tr data-state={row.state} class="border-t border-edge">
-              <td class="py-1"><strong class="text-magenta">{row.kind}</strong></td>
+              <td class="py-1 text-[13px] text-white">{kindly[row.kind]}</td>
               <td class="py-1.5 font-mono text-[13px]">{row.port}</td>
               <td class="truncate py-1.5 font-mono text-[13px] {row.kind === 'D' ? 'text-white' : ''}">{leads(row) || '—'}</td>
               <td class="py-1">
@@ -176,13 +182,13 @@
     >
       <div class="grid grid-cols-[auto_7rem_1fr_auto] items-end gap-2 text-white">
         <!-- Radio buttons, drawn as one control: as the dashboard's sort. -->
-        <div role="radiogroup" aria-label={t('kind')} class="flex rounded-lg border border-edge bg-page p-1 font-mono">
+        <div role="radiogroup" aria-label={t('kind')} class="flex rounded-lg border border-edge bg-page p-1">
           {#each kinds as letter (letter)}
             <label
               class="cursor-pointer rounded-md px-2.5 py-1 text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue"
             >
               <input type="radio" bind:group={kind} value={letter} class="sr-only" />
-              {letter}
+              {kindly[letter]}
             </label>
           {/each}
         </div>

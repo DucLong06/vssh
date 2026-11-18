@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Host } from './api'
   import { t } from './i18n.svelte'
+  import Keys from './Keys.svelte'
+  import { KEY } from './keymap'
   import { addr } from './streamer.svelte'
 
   type Props = {
@@ -8,10 +10,6 @@
     snippets: number
     sessions: number
     selected?: Host
-    /** A terminal is in front: the keys are its keys. */
-    terminal?: boolean
-    /** A file view is in front. */
-    files?: boolean
     /** Ctrl-A was pressed and the next key is a command. */
     leader?: boolean
     /** How many tabs are broadcasting. */
@@ -25,8 +23,6 @@
     snippets,
     sessions,
     selected,
-    terminal = false,
-    files = false,
     leader = false,
     broadcasting = 0,
     onsnippets,
@@ -36,7 +32,7 @@
   const button = 'cursor-pointer rounded-md px-1.5 hover:bg-selection hover:text-fg'
 </script>
 
-<!-- One line: what has no room is the selected host's address, which its card has too. -->
+<!-- One line of figures. No keys: a button says its own in its tooltip, and the cheatsheet has them all. -->
 <footer class="col-span-2 flex h-9 items-center gap-4 border-t border-edge bg-black px-5 text-[12.5px] whitespace-nowrap text-white">
   <span class="shrink-0">{t('hosts')} <span class="font-semibold text-ink">{hosts}</span></span>
   <!-- The way to them for the pointer; `s` on the dashboard is the key. -->
@@ -47,42 +43,14 @@
   {#if broadcasting}
     <strong class="shrink-0 text-yellow">{t('broadcasting').replace('{n}', String(broadcasting))}</strong>
   {/if}
-  {#if terminal || leader}
-    <!-- The TUI's leader menu. Lit while the next key is a command. -->
-    <span role="status" class="truncate {leader ? 'text-yellow' : ''}">
-      <kbd class="text-magenta">Ctrl-A</kbd>
-      {t('leader_menu')}
-    </span>
-  {:else if files}
-    <span role="status" class="truncate">
-      <kbd class="text-magenta">Space</kbd>
-      {t('select')} ·
-      <kbd class="text-magenta">c</kbd>
-      {t('copy')} ·
-      <kbd class="text-magenta">/</kbd>
-      {t('filter')} ·
-      <kbd class="text-magenta">.</kbd>
-      {t('hidden_files')} ·
-      {t('right_click_more')}
-    </span>
-  {:else if selected}
+  {#if selected}
     <span class="truncate"><span class="font-semibold text-ink">{selected.alias}</span> <span class="font-mono text-xs">{addr(selected)}</span></span>
-    <!-- The keys of the selected card: its Connect button shows only under the pointer or the focus. -->
-    <span class="shrink-0">
-      <kbd class="text-magenta">Enter</kbd>
-      {t('connect')} ·
-      <kbd class="text-magenta">Space</kbd>
-      {t('select')} ·
-      <kbd class="text-magenta">v</kbd>
-      {t('quick_peek')} ·
-      <kbd class="text-magenta">f</kbd>
-      {t('files')} ·
-      <kbd class="text-magenta">x</kbd>
-      {t('run')} ·
-      <kbd class="text-magenta">L</kbd>
-      {t('forwards')} ·
-      <kbd class="text-magenta">e</kbd>
-      {t('edit')}
+  {/if}
+  {#if leader}
+    <!-- Half a chord: said until its second key comes, and where the rest of them are. -->
+    <span role="status" class="truncate text-yellow">
+      <Keys keys={KEY.leader[0]} />
+      {t('leader_waiting')}
     </span>
   {/if}
   {#if onsave}

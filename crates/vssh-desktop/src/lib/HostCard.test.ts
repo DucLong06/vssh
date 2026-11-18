@@ -23,10 +23,13 @@ const stats = (cpu: number | null, mem: [number, number] | null, disk: number | 
 const meter = (name: string) => screen.getByRole('meter', { name })
 const dot = (el: HTMLElement) => el.querySelector('header [aria-hidden]')
 
-test('a healthy host: name, address, tags, latency and three bars', () => {
+test('a healthy host is a low card of two lines: name, tags, latency, and three bars with their figures; its address is said to the pointer on its name', () => {
   const el = card({ ms: 12, peek })
-  expect(within(el).getByRole('heading', { name: 'web-01' })).toBeInTheDocument()
-  expect(el).toHaveTextContent('deploy@10.0.0.5:2222')
+  expect(el).toHaveAttribute('data-low')
+  expect(within(el).getByRole('heading', { name: 'web-01' })).toHaveAttribute('title', 'deploy@10.0.0.5:2222')
+  expect(el).not.toHaveTextContent('10.0.0.5')
+  // The minute behind the figures is the quick peek's to draw.
+  expect(el.querySelector('svg')).toBeNull()
   const tags = within(within(el).getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
   expect(tags.map((tag) => tag.textContent)).toEqual(['web', 'eu', 'prod'])
   expect(within(el).getByText('12 ms')).toBeInTheDocument()
@@ -56,6 +59,9 @@ test('CPU at 100%: a full red bar and a sick card; past 100 the figure and the b
   expect(meter('CPU').firstElementChild).toHaveStyle({ width: '100%' })
   expect(meter('MEM')).toHaveAttribute('data-level', 'crit')
   expect(el).toHaveAttribute('data-state', 'crit')
+  // One that needs looking at keeps its height, and its address on it.
+  expect(el).not.toHaveAttribute('data-low')
+  expect(el).toHaveTextContent('deploy@10.0.0.5:2222')
   // Overloaded is not down: it answers, so its dot is as green as a healthy host's.
   expect(dot(el)).toHaveClass('text-green')
 
@@ -83,7 +89,7 @@ test('a host without meminfo: the other bars, and a dash where memory would be',
 test('a host that answered nothing usable shows three dashes and no bar', () => {
   const el = card(stats(null, null, null))
   expect(screen.queryByRole('meter')).not.toBeInTheDocument()
-  expect(el).toHaveTextContent('CPU — MEM — / —')
+  expect(el.textContent?.replace(/\s+/g, '')).toContain('CPU—MEM—/—')
 })
 
 test.each(errors.map((error, i) => [error.class, error, shown.en[i]] as const))(
@@ -151,9 +157,12 @@ test("in Vietnamese the states are the TUI's words", () => {
   expect(screen.getByRole('article', { name: 'web-02' })).toHaveTextContent('đang hỏi web-02…')
 })
 
-test('a card that can open the host\'s files has a button for it, next to Connect', async () => {
+test('a tall card that can open the host\'s files has a button for it, next to Connect; a low one has Connect alone, and nothing lying on its name', async () => {
   const [onfiles, onconnect] = [vi.fn(), vi.fn()]
-  render(HostCard, { host: web01, onfiles, onconnect })
+  const low = render(HostCard, { host: web01, info: { ms: 12, peek }, onfiles, onconnect })
+  expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual(['Connect'])
+  low.unmount()
+  render(HostCard, { host: web01, info: stats(100, null, null), onfiles, onconnect })
   const buttons = screen.getAllByRole('button').map((button) => button.textContent?.trim())
   expect(buttons).toEqual(['Files', 'Connect'])
   await userEvent.click(screen.getByRole('button', { name: 'Files' }))
@@ -163,8 +172,8 @@ test('a card that can open the host\'s files has a button for it, next to Connec
 
 // --- D9: the concept's card ----------------------------------------------------
 
-test('CPU and memory have a sparkline each, drawn from the minute behind the figure; the disk has its bar alone', () => {
-  const { container } = render(HostCard, { host: web01, info: { ms: 12, peek }, trail: { cpu: [0, 50, 100], mem: [25, 75] } })
+test('on a host past a mark CPU and memory have a sparkline each, drawn from the minute behind the figure; the disk has its bar alone', () => {
+  const { container } = render(HostCard, { host: web01, info: stats(23, [4_200_000, 16_000_000], 95), trail: { cpu: [0, 50, 100], mem: [25, 75] } })
   const lines = [...container.querySelectorAll('svg path[stroke]')].map((path) => path.getAttribute('d'))
   expect(lines).toEqual(['M0,30 C30,30 30,16 60,16 S90,2 120,2', 'M0,23 C60,23 60,9 120,9'])
   // Blue for CPU, teal for memory, as the concept has them.
@@ -173,7 +182,7 @@ test('CPU and memory have a sparkline each, drawn from the minute behind the fig
 })
 
 test('with no minute behind it yet, a figure is its own level; one the host did not give draws nothing', () => {
-  const { container } = render(HostCard, { host: web01, info: stats(50, null, 61) })
+  const { container } = render(HostCard, { host: web01, info: stats(50, null, 95) })
   const [cpu, mem] = container.querySelectorAll('svg')
   expect(cpu.querySelector('path[stroke]')).toHaveAttribute('d', 'M0,16 L120,16')
   expect(mem.querySelectorAll('path')).toHaveLength(0)
@@ -190,7 +199,24 @@ test('a host that is down can be asked again from its card; one that answers has
 })
 
 test('the address is in the monospace face, the name is not', () => {
-  const el = card({ ms: 12, peek })
+  const el = card(stats(100, null, null))
   expect(within(el).getByText('deploy@10.0.0.5:2222')).toHaveClass('font-mono')
   expect(within(el).getByRole('heading', { name: 'web-01' })).not.toHaveClass('font-mono')
+})
+
+test('a button says its key in its tooltip; a host nobody asked has a button for its quick peek, not a letter in a sentence', async () => {
+  const onpeek = vi.fn()
+  render(HostCard, { host: web01, info: { ms: 0, peek: null }, onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), onpeek })
+  const el = screen.getByRole('article', { name: 'web-01' })
+  expect(el.querySelector('kbd')).toBeNull()
+  expect(within(el).getAllByRole('button').map((button) => button.title)).toEqual(['Connect (Enter)', 'Quick peek (V)'])
+  await userEvent.click(within(el).getByRole('button', { name: 'Quick peek' }))
+  expect(onpeek).toHaveBeenCalledOnce()
+  setLang('vi')
+  expect(await within(el).findByRole('button', { name: 'Xem nhanh' })).toHaveAttribute('title', 'Xem nhanh (V)')
+  setLang('en')
+  // A card that is tall has the three over its tags as well.
+  render(HostCard, { host: bare, info: stats(100, null, null), onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn() })
+  const tall = screen.getByRole('article', { name: 'bare' })
+  expect(within(tall).getAllByRole('button').map((button) => button.title)).toEqual(['Edit (E)', 'Forwards (L)', 'Files (F)', 'Connect (Enter)'])
 })

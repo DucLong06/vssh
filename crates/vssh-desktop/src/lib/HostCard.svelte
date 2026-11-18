@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { HTMLAttributes } from 'svelte/elements'
   import type { Host } from './api'
-  import { chip, tagsOf } from './hosts'
+  import { tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { critical, down, type Live, type Trail } from './live.svelte'
+  import { KEY, tip } from './keymap'
   import Sparkline from './Sparkline.svelte'
   import { compact, parts } from './stats'
   import { addr } from './streamer.svelte'
@@ -23,6 +24,8 @@
     onedit?: () => void
     /** Asks a host that is down once more. */
     onretry?: () => void
+    /** Opens its quick peek, which asks a host nobody asked yet. */
+    onpeek?: () => void
     /** Its last rounds, for the sparklines; without them the figure of now is the one point there is. */
     trail?: Trail
   } & HTMLAttributes<HTMLElement>
@@ -35,6 +38,7 @@
     onforwards,
     onedit,
     onretry,
+    onpeek,
     trail,
     class: extra = '',
     ...rest
@@ -49,6 +53,8 @@
     info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
   )
   const reached = $derived(typeof info?.ms === 'number')
+  /** A host that needs no looking at is two lines: its name, and its three figures. One that is down or past a mark keeps the room to say why. */
+  const low = $derived(kind !== 'down' && kind !== 'crit')
   const [green, yellow, red] = ['green', 'yellow', 'red'].map((name) => `var(--color-${name})`)
   const fill = {
     ok: green,
@@ -80,15 +86,50 @@
   </div>
 {/snippet}
 
+{#snippet tags()}
+  {#if tagsOf(host).length}
+    <ul aria-label={t('tags')} class="flex gap-1.5 {low ? 'overflow-hidden' : 'flex-wrap'}">
+      {#each tagsOf(host) as tag (tag)}
+        <li class="shrink-0 rounded-md bg-bar px-1.5 text-[11px] leading-5 text-dim">{tag}</li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
+<!-- Over the tags of a tall card, and only when it is pointed at or has the focus: twenty of these at once would be all one sees. -->
+{#snippet tools()}
+  {#if onfiles || onforwards || onedit}
+    <div class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+      {#if onedit}
+        <button type="button" onclick={onedit} aria-keyshortcuts="e" title={tip(t('edit'), KEY.edit)} class={mini}>{t('edit')}</button>
+      {/if}
+      {#if onforwards}
+        <button type="button" onclick={onforwards} aria-keyshortcuts="l" title={tip(t('forwards'), KEY.forwards)} class={mini}>{t('forwards')}</button>
+      {/if}
+      {#if onfiles}
+        <button type="button" onclick={onfiles} aria-keyshortcuts="f" title={tip(t('files'), KEY.files)} class={mini}>{t('files')}</button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet connect()}
+  {#if onconnect}
+    <button type="button" onclick={onconnect} title={tip(t('connect'), KEY.connect)} class="{ghost} shrink-0 text-fg">{t('connect')}</button>
+  {/if}
+{/snippet}
+
 <article
   {...rest}
   aria-label={host.alias}
   data-state={kind}
   data-marked={marked || undefined}
-  class="group relative flex h-full flex-col gap-3 rounded-2xl border border-transparent bg-panel p-4 shadow-card transition-[translate,border-color] duration-200 select-none hover:-translate-y-0.5 hover:border-dim/40 focus-visible:outline-offset-2 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 data-[state=down]:bg-linear-to-b data-[state=down]:from-red/6 data-[state=down]:to-transparent data-[state=down]:to-60% aria-[current]:ring-1 aria-[current]:ring-blue data-[marked]:border-magenta {extra}"
+  data-low={low || undefined}
+  class="group relative flex h-full flex-col rounded-2xl border border-edge bg-panel transition-colors {low ? 'gap-1.5 px-4 py-2.5' : 'gap-3 p-4'} select-none hover:border-dim/60 focus-visible:outline-[1.5px] focus-visible:-outline-offset-1 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 aria-[current]:outline-[1.5px] aria-[current]:-outline-offset-1 aria-[current]:outline-blue data-[marked]:border-magenta {extra}"
 >
   <header class="flex items-center gap-2">
-    <h3 class="truncate text-base font-semibold tracking-tight text-ink">{host.alias}</h3>
+    <!-- Low, the address is said to the pointer that rests on the name; the quick peek has it too. -->
+    <h3 title={(low && addr(host)) || undefined} class="shrink-0 truncate text-base font-semibold tracking-tight text-ink {low ? 'max-w-[45%]' : ''}">{host.alias}</h3>
     {#if marked}
       <span role="img" aria-label={t('selected')} class="text-magenta">✓</span>
     {/if}
@@ -96,6 +137,10 @@
       <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
     {/if}
     <!-- The concept's badge, in the TUI's words: how long the host takes to answer, or that it does not. -->
+    {#if low}
+      <!-- No buttons over a low card: they would lie on its name, and where it is held to be moved. The right button's menu and the keys have them. -->
+      <div class="flex h-7 min-w-0 flex-1 items-center overflow-hidden">{@render tags()}</div>
+    {/if}
     <span
       class="ml-auto inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap {info?.ms === null ? 'text-red inset-ring inset-ring-red/50' : info?.ms === undefined ? 'bg-bar text-dim' : kind === 'down' ? 'bg-bar text-white' : 'bg-green/12 text-green'}"
     >
@@ -107,36 +152,14 @@
       ></i>
       {latency}
     </span>
+    {#if low}{@render connect()}{/if}
   </header>
-  <div class="-mt-1 flex min-h-[22px] items-start">
-    {#if tagsOf(host).length}
-      <ul aria-label={t('tags')} class="flex flex-wrap gap-1.5">
-        {#each tagsOf(host) as tag (tag)}
-          <li
-            class="rounded-md px-2 text-[11.5px] leading-[22px]"
-            style="color: {chip(tag)}; background: color-mix(in srgb, {chip(tag)} 12%, transparent)"
-          >{tag}</li>
-        {/each}
-      </ul>
-    {/if}
-    {#if onfiles || onforwards || onedit}
-      <!-- Beside the tags, and only when the card is pointed at or has the
-           focus: twenty of these at once would be all one sees. -->
-      <div
-        class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 shadow-card group-focus-within:opacity-100 group-hover:opacity-100"
-      >
-        {#if onedit}
-          <button type="button" onclick={onedit} aria-keyshortcuts="e" class={mini}>{t('edit')}</button>
-        {/if}
-        {#if onforwards}
-          <button type="button" onclick={onforwards} aria-keyshortcuts="Shift+L" class={mini}>{t('forwards')}</button>
-        {/if}
-        {#if onfiles}
-          <button type="button" onclick={onfiles} aria-keyshortcuts="f" class={mini}>{t('files')}</button>
-        {/if}
-      </div>
-    {/if}
-  </div>
+  {#if !low}
+    <div class="-mt-1 flex min-h-[22px] items-start">
+      {@render tags()}
+      {@render tools()}
+    </div>
+  {/if}
 
   {#if info?.shown}
     <!-- The concept's box for a host that is down: which kind of failure, and what was said. -->
@@ -147,6 +170,18 @@
       <strong class="font-semibold text-red">✗ {info.shown.label}</strong>
       <span class="line-clamp-3 text-[13px] text-white">{info.shown.message}</span>
     </p>
+  {:else if info?.peek && low}
+    <!-- Three figures on one line, each with its bar: enough to see that nothing is wrong. -->
+    <div role="group" aria-label={compact(list)} class="grid grid-cols-3 gap-3 text-xs">
+      {#each ['CPU', t('mem'), '/'] as label (label)}
+        {@const part = list.find((part) => part.label === label)}
+        <div class="flex min-w-0 items-center gap-1.5">
+          <span class="text-dim">{label}</span>
+          {@render meter(label, part, 'h-1.5 min-w-3 flex-1 rounded-full')}
+          <span class="truncate font-semibold {part ? tone[part.level] : 'text-dim'}">{part?.value ?? '—'}</span>
+        </div>
+      {/each}
+    </div>
   {:else if info?.peek}
     <div role="group" aria-label={compact(list)} class="grid grid-cols-2 gap-x-3 gap-y-2.5">
       {#each ['CPU', t('mem'), '/'] as label (label)}
@@ -179,25 +214,30 @@
       {/each}
     </div>
   {:else if info?.peek === null}
-    <p class="flex-1 rounded-xl bg-bg px-3 py-2.5 text-[13px] text-white">
-      {t('not_checked')} <span class="text-dim">· <kbd>v</kbd> {t('quick_peek')}</span>
+    <p class="text-[13px] text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">
+      {t('not_checked')}
+      {#if onpeek}
+        <button type="button" onclick={onpeek} aria-keyshortcuts="v" title={tip(t('quick_peek'), KEY.peek)} class="{mini} ml-1">
+          {t('quick_peek')}
+        </button>
+      {/if}
     </p>
   {:else}
-    <p class="flex-1 rounded-xl bg-bg px-3 py-2.5 text-[13px] text-white">{t('asking')} {host.alias}…</p>
+    <p class="text-[13px] text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">{t('asking')} {host.alias}…</p>
   {/if}
 
-  <!-- The foot of the card. No <footer>: the window has one, the status bar. -->
-  <div class="mt-auto flex min-h-7 items-center gap-2">
-    {#if addr(host)}
-      <p class="min-w-0 flex-1 truncate font-mono text-xs text-white">{addr(host)}</p>
-    {/if}
-    <span class="ml-auto flex shrink-0 gap-1.5">
-      {#if onretry && kind === 'down'}
-        <button type="button" onclick={onretry} class={ghost}>{t('try_again')}</button>
+  {#if !low}
+    <!-- The foot of the card. No <footer>: the window has one, the status bar. -->
+    <div class="mt-auto flex min-h-7 items-center gap-2">
+      {#if addr(host)}
+        <p class="min-w-0 flex-1 truncate font-mono text-xs text-white">{addr(host)}</p>
       {/if}
-      {#if onconnect}
-        <button type="button" onclick={onconnect} class="{ghost} text-fg">{t('connect')}</button>
-      {/if}
-    </span>
-  </div>
+      <span class="ml-auto flex shrink-0 gap-1.5">
+        {#if onretry && kind === 'down'}
+          <button type="button" onclick={onretry} class={ghost}>{t('try_again')}</button>
+        {/if}
+        {@render connect()}
+      </span>
+    </div>
+  {/if}
 </article>

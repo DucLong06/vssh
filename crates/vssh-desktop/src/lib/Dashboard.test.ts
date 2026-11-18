@@ -226,8 +226,17 @@ test('a card dropped on another takes its place, and the order is remembered', a
   expect(web01).toHaveAttribute('draggable', 'true')
 
   await fireEvent.dragStart(bare)
+  // Over itself it would land where it is; over another, that one is lit until the pointer is off it.
+  await fireEvent.dragOver(bare)
+  expect(document.querySelector('[data-drop]')).toBeNull()
+  await fireEvent.dragOver(web01)
+  expect(web01).toHaveAttribute('data-drop')
+  expect(web01).toHaveClass('cursor-grab', 'data-[drop]:border-blue')
+  await fireEvent(web01, new MouseEvent('dragleave', { clientX: 5000, clientY: 5000, bubbles: true }))
+  expect(document.querySelector('[data-drop]')).toBeNull()
   await fireEvent.dragOver(web01)
   await fireEvent.drop(web01)
+  expect(document.querySelector('[data-drop]')).toBeNull()
   expect(names()).toEqual(['bare', 'web-01', 'web-02', 'db-primary'])
   // Down the list it lands after the card it was dropped on.
   await fireEvent.dragStart(screen.getByRole('article', { name: 'bare' }))
@@ -376,4 +385,111 @@ test('Try again on a card that is down asks its host, as a person asking', async
   expect(asked).toEqual([{ alias: 'web-02', passive: false }])
   await vi.waitFor(() => expect(screen.getByRole('article', { name: 'web-02' })).toHaveAttribute('data-state', 'ok'))
   clearMocks()
+})
+
+test('a host nobody asked: its card\'s Quick peek button asks it, as v does; the toolbar\'s buttons name their keys', async () => {
+  const asked: unknown[] = []
+  mockIPC((cmd, args) => {
+    asked.push([cmd, args])
+    return null
+  })
+  live.bare = { peek: null }
+  const user = userEvent.setup()
+  render(Dashboard, props({ onadd: vi.fn(), onbatch: vi.fn() }))
+  await user.click(within(screen.getByRole('article', { name: 'bare' })).getByRole('button', { name: 'Quick peek' }))
+  expect(screen.getByRole('dialog', { name: 'Quick peek: bare' })).toBeInTheDocument()
+  expect(asked).toEqual([['get_host_stats', { alias: 'bare', passive: false }]])
+  expect(screen.getByRole('button', { name: 'Add host' })).toHaveAttribute('title', 'Add host (A)')
+  expect(screen.getByRole('searchbox')).toHaveAttribute('title', 'Search hosts, #tag (/, Ctrl+F)')
+  clearMocks()
+})
+
+test('with Ctrl a card\'s letters are not its keys: Ctrl+F on a card is the search and opens no files', async () => {
+  const user = userEvent.setup()
+  const on = { onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), ondelete: vi.fn(), onconnect: vi.fn() }
+  render(Dashboard, props(on))
+  screen.getByRole('article', { name: 'web-01' }).focus()
+  await user.keyboard('{Control>}f{/Control}')
+  expect(screen.getByRole('searchbox')).toHaveFocus()
+  expect(on.onfiles).not.toHaveBeenCalled()
+  // Nor the others: Ctrl+L, Ctrl+E, Ctrl+D and Ctrl+Enter are nobody's here.
+  screen.getByRole('article', { name: 'web-01' }).focus()
+  await user.keyboard('{Control>}led{Enter}{/Control}')
+  for (const asked of Object.values(on)) expect(asked).not.toHaveBeenCalled()
+  // Without it they are the card's, as before.
+  await user.keyboard('f')
+  expect(on.onfiles).toHaveBeenCalledWith('web-01')
+})
+
+test('the right button on a card: what its keys do, as a menu, and its address for the clipboard; a double click connects', async () => {
+  const user = userEvent.setup()
+  const copied: unknown[] = []
+  mockIPC((cmd, args) => {
+    if (cmd === 'plugin:clipboard-manager|write_text') copied.push((args as { text: string }).text)
+    return null
+  })
+  const on = { onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), ondelete: vi.fn(), onpalette: vi.fn(), onselect: vi.fn() }
+  render(Dashboard, props(on))
+  const card = screen.getByRole('article', { name: 'web-01' })
+  const choose = async (name: string | RegExp) => {
+    await fireEvent.contextMenu(card, { clientX: 300, clientY: 200 })
+    await user.click(within(screen.getByRole('menu', { name: 'web-01' })).getByRole('menuitem', { name }))
+    expect(screen.queryByRole('menu')).toBeNull()
+  }
+  await fireEvent.contextMenu(card, { clientX: 300, clientY: 200 })
+  // The card the menu is about is the selected one.
+  expect(on.onselect).toHaveBeenLastCalledWith('web-01')
+  expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+    'Connect Enter',
+    'Files F',
+    'Forwards L',
+    'Edit E',
+    'Copy address',
+    'Command palette Ctrl+K',
+    'Delete D',
+  ])
+  // The arrows go through it, round the end; Esc gives the keys back to the card.
+  await user.keyboard('{ArrowUp}')
+  expect(screen.getByRole('menuitem', { name: /Delete/ })).toHaveFocus()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(card).toHaveFocus()
+  await choose(/Connect/)
+  expect(on.onconnect).toHaveBeenLastCalledWith('web-01')
+  await choose('Copy address')
+  expect(copied).toEqual(['deploy@10.0.0.5:2222'])
+  await choose(/Command palette/)
+  expect(on.onpalette).toHaveBeenCalledOnce()
+  await choose(/Delete/)
+  expect(on.ondelete).toHaveBeenLastCalledWith('web-01')
+  await choose(/Files/)
+  expect(on.onfiles).toHaveBeenLastCalledWith('web-01')
+  // A double click on the card connects; on its own button that is the button's two clicks.
+  on.onconnect.mockClear()
+  await user.dblClick(within(card).getByRole('heading', { name: 'web-01' }))
+  expect(on.onconnect).toHaveBeenCalledTimes(1)
+  await user.dblClick(within(card).getByRole('button', { name: 'Connect' }))
+  expect(on.onconnect).toHaveBeenCalledTimes(3)
+  clearMocks()
+})
+
+// --- D11: the well are low, the sick are tall -----------------------------------
+
+test('the hosts that need looking at are tall and come first; the first that is well starts a row of its own, of low cards', () => {
+  live['web-01'] = { ms: 12, peek }
+  live['web-02'] = { ms: 12, peek: cpu(100) }
+  live['db-primary'] = { ms: null, error: errors[2] as ConnError }
+  live['bare'] = { ms: 3, peek: null }
+  render(Dashboard, props())
+  // Flat: one list of them all.
+  fireEvent.click(screen.getByRole('button', { name: 'Group by tag' }))
+  const low = () => cards().map((card) => [card.getAttribute('aria-label'), card.hasAttribute('data-low'), card.parentElement!.classList.contains('col-start-1')])
+  return vi.waitFor(() =>
+    expect(low()).toEqual([
+      ['web-02', false, false],
+      ['db-primary', false, false],
+      ['web-01', true, true],
+      ['bare', true, false],
+    ]),
+  )
 })

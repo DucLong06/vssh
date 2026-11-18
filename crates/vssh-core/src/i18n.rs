@@ -76,7 +76,7 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("refresh", "refresh", "làm mới"),
     ("try_again", "try again", "thử lại"),
     ("secs_ago", "{n}s ago", "{n} giây trước"),
-    // The terminal tabs. The leader's keys are the TUI's.
+    // The terminal tabs.
     ("connecting", "connecting", "đang kết nối"),
     ("connected", "connected", "đã kết nối"),
     ("disconnected", "disconnected", "mất kết nối"),
@@ -96,11 +96,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("accept_once", "Accept once", "Chấp nhận một lần"),
     ("trust", "Trust", "Tin cậy"),
-    (
-        "leader_menu",
-        "0-9 tab · Tab next · y copy output · b broadcast · x close",
-        "0-9 tab · Tab kế tiếp · y chép kết quả · b phát · x đóng",
-    ),
     // The file view. The panes are named as the TUI names them.
     ("files", "Files", "Tệp"),
     ("local", "local", "máy mình"),
@@ -131,12 +126,6 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ),
     ("transfers", "Transfers", "Truyền tệp"),
     ("waiting", "waiting", "đang chờ"),
-    // The end of the file view's hint; its keys are words of the rows above.
-    (
-        "right_click_more",
-        "right-click more",
-        "chuột phải thao tác khác",
-    ),
     // `{done}` and `{total}` are sizes, `{name}` whose side the part is on.
     (
         "cancelled_left",
@@ -332,6 +321,117 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Từ giờ {name} đăng nhập bằng khoá.",
     ),
     ("start", "Start", "Bắt đầu"),
+    // The keys: the cheatsheet's own words, and what a key does where no
+    // button says it. The names of keys are the same in both languages.
+    ("shortcuts", "Keyboard shortcuts", "Phím tắt"),
+    ("search_shortcuts", "Search shortcuts", "Tìm phím tắt"),
+    (
+        "no_shortcut",
+        "No shortcut matches.",
+        "Không có phím tắt nào khớp.",
+    ),
+    ("keys_anywhere", "Anywhere", "Mọi nơi"),
+    (
+        "keys_session",
+        "In a session, after Ctrl+A",
+        "Trong phiên, sau Ctrl+A",
+    ),
+    ("keys_results", "Command results", "Kết quả lệnh"),
+    // In the status bar while Ctrl+A waits for its key.
+    (
+        "leader_waiting",
+        "waiting for the second key — ? lists them",
+        "đang chờ phím thứ hai — bấm ? để xem danh sách",
+    ),
+    (
+        "new_tab",
+        "New tab: quick connect",
+        "Tab mới: kết nối nhanh",
+    ),
+    ("close_tab", "Close tab", "Đóng tab"),
+    ("next_tab", "Next tab", "Tab kế tiếp"),
+    ("prev_tab", "Previous tab", "Tab trước"),
+    ("go_to_tab", "Go to tab", "Tới tab số"),
+    ("back_to_hosts", "Back to the hosts", "Về bảng máy chủ"),
+    (
+        "copy_output",
+        "Copy the last command's output",
+        "Chép kết quả lệnh vừa chạy",
+    ),
+    (
+        "broadcast_tab",
+        "Broadcast on this tab, on or off",
+        "Bật hoặc tắt phát ở tab này",
+    ),
+    (
+        "broadcast_all",
+        "Broadcast on every tab, on or off",
+        "Bật hoặc tắt phát ở mọi tab",
+    ),
+    (
+        "send_to_shell",
+        "Send Ctrl+A to the shell (Ctrl+W and Ctrl+K too)",
+        "Gửi Ctrl+A cho shell (cả Ctrl+W và Ctrl+K)",
+    ),
+    (
+        "run_command",
+        "Run a command on the selected hosts",
+        "Chạy lệnh trên các máy đã chọn",
+    ),
+    ("reorder", "Move the host among the others", "Đổi chỗ máy chủ"),
+    ("move", "Move up and down", "Lên, xuống"),
+    ("first_last", "First, last", "Đầu, cuối"),
+    ("open_folder", "Open folder", "Mở thư mục"),
+    ("parent_folder", "Parent folder", "Thư mục cha"),
+    ("right_click", "Right-click", "Chuột phải"),
+    // The window's own shape: panes side by side, and nothing but the tabs.
+    ("split_right", "Split right", "Chia đôi sang phải"),
+    ("split_down", "Split down", "Chia đôi xuống dưới"),
+    (
+        "unsplit",
+        "Unsplit: this pane back to a tab of its own",
+        "Bỏ chia: đưa ô này về tab riêng",
+    ),
+    (
+        "swap_panes",
+        "Swap with the pane before, after",
+        "Đổi chỗ với ô trước, ô sau",
+    ),
+    // Short: the palette finds a row by the letters of its name, in order.
+    ("focus_mode", "Focus mode", "Chế độ tập trung"),
+    ("hide_sidebar", "Hide the sidebar", "Ẩn thanh bên"),
+    ("show_sidebar", "Show the sidebar", "Hiện thanh bên"),
+    ("rename_tab", "Rename tab", "Đổi tên tab"),
+    // What the pointer does that no key says.
+    ("keys_mouse", "With the mouse", "Bằng chuột"),
+    ("middle_click", "Middle-click", "Chuột giữa"),
+    ("double_click", "Double-click", "Nhấp đúp"),
+    ("drag", "Drag", "Kéo thả"),
+    (
+        "drag_tab",
+        "A tab onto an edge of what is open: split there, or change places",
+        "Tab vào một mép của ô đang mở: chia ở phía đó, hoặc đổi chỗ",
+    ),
+    // A forward's kind in words: ssh's L, R and D.
+    ("fwd_local", "Local", "Cục bộ"),
+    ("fwd_remote", "Remote", "Từ xa"),
+    // Before a tab goes whose shell is in the middle of something.
+    (
+        "close_busy",
+        "{command} is running on {name}. Close the tab?",
+        "{command} đang chạy trên {name}. Đóng tab?",
+    ),
+    // The right button's menus.
+    ("paste", "Paste", "Dán"),
+    ("select_all", "Select all", "Chọn tất cả"),
+    ("close_others", "Close other tabs", "Đóng các tab khác"),
+    ("copy_address", "Copy address", "Chép địa chỉ"),
+    ("resize_panes", "Resize the panes", "Đổi cỡ các ô"),
+    // The rail, narrow; what was three switches in three places; a new tab's address.
+    ("rail_compact", "Compact sidebar: icons only", "Thu gọn thanh bên: chỉ biểu tượng"),
+    ("rail_full", "Expand the sidebar", "Mở rộng thanh bên"),
+    ("settings", "Settings", "Cài đặt"),
+    ("connect_to", "Connect to {target}", "Kết nối tới {target}"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

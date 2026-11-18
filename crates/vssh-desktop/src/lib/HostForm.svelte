@@ -2,7 +2,6 @@
   import { onMount, tick } from 'svelte'
   import { api, explain, type Host, type HostForm, type Shown, type VaultState } from './api'
   import HostImport from './HostImport.svelte'
-  import { chip } from './hosts'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
   import { streamer } from './streamer.svelte'
@@ -289,8 +288,7 @@
             <ul aria-label={t('tags')} class="contents">
               {#each tags as name (name)}
                 <li
-                  class="flex items-center gap-1 rounded-full border px-2 text-xs leading-5"
-                  style="color: {chip(name)}; border-color: color-mix(in srgb, {chip(name)} 40%, transparent)"
+                  class="flex items-center gap-1 rounded-md bg-bar px-1.5 text-xs leading-5 text-white"
                 >
                   <span>{name}</span>
                   <button
