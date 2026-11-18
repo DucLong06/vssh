@@ -1,14 +1,19 @@
-# vssh
+<p align="center">
+  <img src="docs/img/logo.png" alt="vssh — dấu nhắc terminal với chữ V nằm ngang, ssh là dòng lệnh" width="200">
+</p>
 
-<img src="docs/img/logo.png" alt="vssh — dấu nhắc terminal với chữ V nằm ngang, ssh là dòng lệnh" width="360">
+<h1 align="center">vssh</h1>
 
-[![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
-
-**Tiếng Việt** · [English](README.md) · Ứng dụng terminal: [README-terminal.vi.md](README-terminal.vi.md) · [README-terminal.md](README-terminal.md)
-
+<p align="center"><b>Việt Nam SSH</b> — chữ V trong vssh là Việt Nam 🇻🇳<br>
 Trình quản lý SSH đúng cách bạn làm việc: chọn máy chủ, kết nối, giữ nhiều phiên,
 chép file, quản lý chuyển tiếp cổng — mà vẫn giữ nguyên `~/.ssh/config` quen
-thuộc.
+thuộc.</p>
+
+<p align="center">Làm tại Việt Nam, bằng tiếng Việt và tiếng Anh</p>
+
+<p align="center"><a href="README.vi.md">Tiếng Việt</a> · <a href="README.md">English</a> · Ứng dụng terminal: <a href="README-terminal.vi.md">README-terminal.vi.md</a> · <a href="README-terminal.md">README-terminal.md</a></p>
+
+[![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
 
 Một lõi Rust, hai giao diện. **Ứng dụng desktop** là giao diện chính, và trang
 này viết về nó. **Ứng dụng terminal** là lựa chọn thứ hai: cùng một lõi, dùng

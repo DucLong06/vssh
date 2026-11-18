@@ -1,14 +1,19 @@
-# vssh
+<p align="center">
+  <img src="docs/img/logo.png" alt="vssh — a terminal prompt whose V is lying down, ssh as its command" width="200">
+</p>
 
-<img src="docs/img/logo.png" alt="vssh — a terminal prompt whose V is lying down, ssh as its command" width="360">
+<h1 align="center">vssh</h1>
 
-[![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
-
-**English** · [Tiếng Việt](README.vi.md) · Terminal app: [README-terminal.md](README-terminal.md) · [README-terminal.vi.md](README-terminal.vi.md)
-
+<p align="center"><b>Việt Nam SSH</b> — the V is for Việt Nam 🇻🇳<br>
 An SSH manager for the way you actually work: pick a host, connect, keep
 several sessions, copy files, juggle port forwards — without leaving your
-`~/.ssh/config` behind.
+`~/.ssh/config` behind.</p>
+
+<p align="center">Made in Vietnam, in Vietnamese and English</p>
+
+<p align="center">English · <a href="README.vi.md">Tiếng Việt</a> · Terminal app: <a href="README-terminal.md">README-terminal.md</a> · <a href="README-terminal.vi.md">README-terminal.vi.md</a></p>
+
+[![CI](https://github.com/DucLong06/vssh/actions/workflows/ci.yml/badge.svg)](https://github.com/DucLong06/vssh/actions/workflows/ci.yml)
 
 One Rust core, two frontends. The **desktop app** is the main one, and this
 page is about it. The **terminal app** is the second option: the same core
