@@ -25,8 +25,7 @@
   import { down, live, poll, relabel, up } from './lib/live.svelte'
   import Modal from './lib/Modal.svelte'
   import Palette from './lib/Palette.svelte'
-  import { bars, half, ids, none, place, rects, resize, shift, without, zone, type Bar, type Layout, type Rect, type Zone } from './lib/panes'
-  import QuickConnect from './lib/QuickConnect.svelte'
+  import { bars, half, ids, none, place, mapped, rects, resize, shift, without, zone, type Bar, type Layout, type Rect, type Zone } from './lib/panes'
   import Shortcuts from './lib/Shortcuts.svelte'
   import Sidebar, { type Nav } from './lib/Sidebar.svelte'
   import Batch from './lib/Batch.svelte'
@@ -69,6 +68,10 @@
   let frame = $state<HTMLElement>()
   /** Focus mode: no rail and no status bar, and a tab's view from edge to edge. */
   let zen = $state(false)
+  /** The rail as icons only; kept by the web view, as the theme is. */
+  let compact = $state(localStorage.getItem('vssh.rail') === 'compact')
+  /** What was open is open again, or there was nothing: from here on what is open is written down. */
+  let restored = $state(false)
   /** The tab somebody is asked about before it goes: its shell is running something. */
   let closing = $state<number | null>(null)
   /** Ctrl-A was pressed: the next key is a command, as in the TUI. */
@@ -83,7 +86,8 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
+  /** `newtab`: the palette, asked for a tab: the host chosen there is connected to. */
+  type Dialog = 'palette' | 'newtab' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
   let modal = $state<Dialog | null>(null)
   /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
@@ -132,6 +136,8 @@
       vault = now
       greeting = now === 'locked' && modal === null
       if (greeting) modal = 'vault'
+      // What was open comes back once the vault has been asked about: a session may need a password of it.
+      else void restore()
     }, fail)
     const timer = setInterval(tick, EVERY)
     const forwards = listen<ForwardState>('forward-state', ({ payload }) => forwarded(payload))
@@ -192,19 +198,56 @@
   /** On screen: the tab in front, and the panes it is open together with. */
   const seen = (id: number) => id in where
 
-  /** The head of the view in front: what it is called, and a line about it. */
+  /** The head of the dashboard: a line about its hosts. A tab's own head is its tab. */
   const head = $derived.by(() => {
-    if (front) {
-      // What a quick connect was typed as is an address: letter by letter.
-      const said = { connecting: t('connecting'), up: t('connected'), closed: t('disconnected') }[front.state]
-      return { title: called(front), sub: front.busy ? `${said} · ${t('running')} ${front.busy}` : said, mono: front.quick && !front.name }
-    }
-    const view = files.find((view) => view.id === active)
-    if (view) return { title: t('files'), sub: view.host }
     const lost = hosts.filter((host) => down(live[host.alias])).length
     const met = hosts.filter((host) => up(live[host.alias])).length
     return { title: t('status'), sub: `${hosts.length} ${t('hosts')} · ${met} ${t('reachable')} · ${lost} ${t('down')}` }
   })
+
+  // --- What is open, kept for the next time the app is: the tabs of the config's hosts, their names, the split, focus mode.
+  // A quick connect is not kept: nothing of one is written down.
+  const KEPT = 'vssh.workspace'
+  type Kept = { zen: boolean; tabs: { host: string; files?: boolean; name?: string }[]; layout: Layout; active: number }
+
+  $effect(() => {
+    if (!restored) return
+    const kept = order.filter((id) => id < 0 || sessions.some((session) => session.id === id && !session.quick))
+    const tabs = kept.map((id) => {
+      const session = sessions.find((session) => session.id === id)
+      return session ? { host: session.title, name: session.name } : { host: files.find((view) => view.id === id)!.host, files: true }
+    })
+    // By place in the strip: the ids are this run's.
+    const at = (id: number) => (kept.includes(id) ? kept.indexOf(id) : undefined)
+    const now: Kept = { zen, tabs, layout: mapped(layout, at), active: active === null ? -1 : (at(active) ?? -1) }
+    localStorage.setItem(KEPT, JSON.stringify(now))
+  })
+
+  /** Opens again what was open when the app was closed. A host that is gone since is left out, and its pane with it. */
+  async function restore() {
+    try {
+      const kept = JSON.parse(localStorage.getItem(KEPT) ?? 'null') as Kept | null
+      if (kept) {
+        const ids: (number | undefined)[] = []
+        for (const tab of kept.tabs) {
+          if (tab.files) {
+            browse(tab.host)
+            ids.push(files.find((view) => view.host === tab.host)!.id)
+          } else {
+            const id = await api.sessionOpen(tab.host).catch(() => undefined)
+            if (id !== undefined) sessions.push({ id, title: tab.host, name: tab.name, broadcast: false, quick: false, ...fresh })
+            ids.push(id)
+          }
+        }
+        layout = mapped(kept.layout, (at) => ids[at])
+        active = ids[kept.active] ?? null
+        zen = !!kept.zen
+      }
+    } catch {
+      // Not what this wrote: nothing is opened.
+    }
+    restored = true
+  }
 
   /** What the rail asks for: a view, or the dialog of what has no view of its own. */
   function go(to: Nav) {
@@ -312,7 +355,7 @@
       // help): from a terminal the cheatsheet is Ctrl-A ?, a new tab the palette.
     } else if (ctrl && e.key === 't') {
       mine()
-      modal = 'quick'
+      modal = 'newtab'
     } else if (e.key === 'F1' || (ctrl && e.key === '/') || (e.key === '?' && !typing)) {
       mine()
       modal = 'shortcuts'
@@ -545,7 +588,14 @@
   }}
 />
 
-<div class="grid h-full grid-rows-[minmax(0,1fr)_auto] {zen ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[244px_minmax(0,1fr)]'}">
+<!-- The rail's column goes from all of it to its icons without a jump. -->
+<div
+  class="grid h-full grid-rows-[minmax(0,1fr)_auto] transition-[grid-template-columns] duration-200 motion-reduce:transition-none {zen
+    ? 'grid-cols-[minmax(0,1fr)]'
+    : compact
+      ? 'grid-cols-[56px_minmax(0,1fr)]'
+      : 'grid-cols-[244px_minmax(0,1fr)]'}"
+>
   {#if !zen}
   <Sidebar
     {hosts}
@@ -561,25 +611,22 @@
     snippets={snippets.length}
     tunnels={tunnels.size}
     onnav={go}
+    {compact}
+    oncompact={(on) => {
+      compact = on
+      localStorage.setItem('vssh.rail', on ? 'compact' : 'full')
+    }}
+    onpalette={() => (modal = 'palette')}
+    onshortcuts={() => (modal = 'shortcuts')}
     onzen={() => (zen = true)}
   />
   {/if}
 
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
   <main class="flex min-h-0 min-w-0 flex-col bg-page">
-    <!-- In focus mode a tab's view is all there is: the tabs are its head. -->
-    {#if !zen || active === null}
-      <Topbar {...head} onpalette={() => (modal = 'palette')} onshortcuts={() => (modal = 'shortcuts')} />
-    {/if}
-    <!-- A terminal or a file view is one frame with the tabs for its head; the dashboard is the page itself. -->
-    <div
-      data-framed={(active !== null && !zen) || undefined}
-      class="group/frame flex min-h-0 flex-1 flex-col data-[framed]:mx-8 data-[framed]:mt-5 data-[framed]:mb-6 data-[framed]:overflow-hidden data-[framed]:rounded-xl data-[framed]:border data-[framed]:border-edge"
-    >
+    <!-- The tabs are the top row of every view, and a tab's view has no other head: no band, no margin, no frame around the frame. -->
     <!-- In focus mode the strip is also the way back to the rail. -->
     {#if sessions.length || files.length || zen}
-      <!-- Over the dashboard the tabs are a strip of their own in the header's band. -->
-      <div class={active === null ? 'bg-bg px-8 pb-4 *:rounded-xl *:border' : ''}>
         <Tabs
           sessions={listed}
           {files}
@@ -590,7 +637,7 @@
           leader={zen && leader}
           onpick={(id) => (active = id)}
           onclose={close}
-          onnew={() => (modal = 'quick')}
+          onnew={() => (modal = 'newtab')}
           onsplit={divide}
           onunsplit={() => unsplit()}
           onzen={() => (zen = false)}
@@ -606,7 +653,9 @@
             active = id
           }}
         />
-      </div>
+    {/if}
+    {#if active === null}
+      <Topbar {...head} />
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
     <Dashboard
@@ -707,7 +756,6 @@
         <div data-edge={aim.zone} style={pct(half(where[aim.id], aim.zone))} class="pointer-events-none absolute z-20 rounded-lg border-2 border-blue bg-blue/15"></div>
       {/if}
     </div>
-    </div>
   </main>
 
   {#if !zen}
@@ -758,18 +806,21 @@
   </Modal>
 {/if}
 
-{#if modal === 'palette'}
+{#if modal === 'palette' || modal === 'newtab'}
   <Palette
     {hosts}
     onhost={(alias) => {
+      const tab = modal === 'newtab'
+      modal = null
+      // Asked for a tab: the host is connected to.
+      if (tab) return void open(alias)
       // Its card is on the dashboard: from a terminal, that comes forward.
       selected = alias
       active = null
-      modal = null
       // Also when it was the selected one already; once the palette is gone, which held the focus.
       void rendered().then(() => dashboard?.focus(alias))
     }}
-    onquick={() => (modal = 'quick')}
+    onconnect={connect}
     onsnippets={() => (modal = 'snippets')}
     onadd={() => edit()}
     onvault={() => (modal = 'vault')}
@@ -815,11 +866,11 @@
     once={greeting}
     onclose={() => {
       modal = null
+      // Asked as the app opened: answered or left, what was open comes back now.
+      if (greeting) void restore()
       greeting = false
     }}
   />
-{:else if modal === 'quick'}
-  <QuickConnect onconnect={connect} onclose={() => (modal = null)} />
 {:else if modal === 'snippets'}
   <Snippets
     bind:snippets

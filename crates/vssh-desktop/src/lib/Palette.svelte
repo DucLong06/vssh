@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Host } from './api'
+  import type { Host, Shown } from './api'
   import { fuzzy } from './fuzzy'
   import { address, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
@@ -7,12 +7,13 @@
   import Keys from './Keys.svelte'
   import Modal from './Modal.svelte'
   import { KEY } from './keymap'
-  import { addr } from './streamer.svelte'
+  import { addr, streamer, target } from './streamer.svelte'
 
   type Props = {
     hosts: Host[]
     onhost: (alias: string) => void
-    onquick: () => void
+    /** Connects to what was typed, `[user@]host[:port]`, and saves nothing; rejects with the refusal, already in words. */
+    onconnect: (target: string) => Promise<void>
     onsnippets: () => void
     /** The host form, empty, and the vault: where the window has them. */
     onadd?: () => void
@@ -24,13 +25,29 @@
     onsplit?: (down: boolean) => void
     onclose: () => void
   }
-  let { hosts, onhost, onquick, onsnippets, onadd, onvault, onshortcuts, onzen, onsplit, onclose }: Props = $props()
+  let { hosts, onhost, onconnect, onsnippets, onadd, onvault, onshortcuts, onzen, onsplit, onclose }: Props = $props()
 
   /** `keys`: an action's own key, for the next time. */
   type Item = { key: string; label: string; detail: string; keys?: readonly string[]; action: boolean; run: () => void }
 
   let query = $state('')
   let at = $state(0)
+  /** Why what was typed could not be connected to. */
+  let refusal = $state<Shown | null>(null)
+  let busy = false
+
+  async function connect(to: string) {
+    if (busy) return
+    busy = true
+    refusal = null
+    try {
+      await onconnect(to)
+    } catch (error) {
+      refusal = error as Shown
+    } finally {
+      busy = false
+    }
+  }
 
   /** The loosest a match may be found by: the best of these, `null` if none. */
   const best = (...scores: (number | null)[]) =>
@@ -39,7 +56,6 @@
   const items = $derived.by(() => {
     // `en`: an action's name whatever language its label is in ("qc" finds the first).
     const actions = [
-      { key: 'quick-connect', label: t('quick_connect'), detail: 'user@host[:port]', keys: KEY.newTab, en: 'quick connect', run: onquick },
       { key: 'snippets', label: t('snippets'), detail: '', keys: KEY.snippets, en: 'snippets', run: onsnippets },
       ...(onadd ? [{ key: 'add-host', label: t('add_host'), detail: '', keys: KEY.add, en: 'add host', run: onadd }] : []),
       ...(onvault ? [{ key: 'vault', label: t('vault'), detail: '', en: 'vault', run: onvault }] : []),
@@ -61,12 +77,26 @@
       const rest = best(...[detail, ...tagsOf(host)].map((field) => fuzzy(query, field)))
       return { item, score: best(fuzzy(query, host.alias), rest === null ? null : rest + 100) }
     })
-    if (!query.trim()) return [...actions, ...rows].map((row) => row.item)
+    const typed = query.trim()
+    if (!typed) return [...actions, ...rows].map((row) => row.item)
     const found = actions.map(({ item, en }) => ({ item, score: best(fuzzy(query, item.label), fuzzy(query, en)) }))
-    return [...rows, ...found]
+    const matched = [...rows, ...found]
       .filter((row) => row.score !== null)
       .sort((a, b) => a.score! - b.score!)
       .map((row) => row.item)
+    if (/\s/.test(typed)) return matched
+    const direct = {
+      key: 'connect-to',
+      label: t('connect_to').replace('{target}', target(typed)),
+      detail: `${t('quick_connect')} · ${t('quick_connect_note')}`,
+      keys: KEY.connect,
+      action: true,
+      run: () => void connect(typed),
+    }
+    // What is typed is the name of nothing here: it is an address to connect to, as it stands.
+    if (!matched.length) return [direct]
+    // An address may look like a host's and be another: the way to it is there, after what was found.
+    return /[.:@]/.test(typed) ? [...matched, direct] : matched
   })
 
   function onkeydown(e: KeyboardEvent) {
@@ -87,7 +117,11 @@
   <Icon name="search" />
   <input
     bind:value={query}
-    oninput={() => (at = 0)}
+    oninput={() => {
+      at = 0
+      refusal = null
+    }}
+    data-masked={(streamer.on && /[.:@]/.test(query)) || undefined}
     {onkeydown}
     role="combobox"
     aria-label={t('search')}
@@ -98,7 +132,7 @@
     autocomplete="off"
     autocapitalize="off"
     spellcheck="false"
-    class="w-full bg-transparent py-4 text-base text-fg outline-none placeholder:text-dim"
+    class="w-full bg-transparent py-4 text-base text-fg outline-none placeholder:text-dim data-[masked]:[-webkit-text-security:disc]"
   />
   <Keys keys="Esc" />
   </label>
@@ -132,6 +166,9 @@
   </ul>
   {#if items.length === 0}
     <p role="status" class="border-t border-edge px-5 py-4 text-white">{t('no_match')}</p>
+  {/if}
+  {#if refusal}
+    <p role="alert" class="border-t border-edge px-5 py-3 text-red"><strong>{refusal.label}</strong> {refusal.message}</p>
   {/if}
   <footer class="flex gap-4 border-t border-edge px-5 py-3 text-[13px] text-white">
     <span><Keys keys="↑" /> <Keys keys="↓" /> <Keys keys="Enter" /> {t('select')}</span>

@@ -1,6 +1,8 @@
 <script lang="ts" module>
   /** A row of a menu; `null`: a line between two groups of them. */
-  export type MenuItem = { label: string; keys?: string; danger?: boolean; off?: boolean; run: () => void } | null
+  export type MenuItem = { label: string; keys?: string; note?: string; danger?: boolean; off?: boolean; run: () => void } | null
+  /** How tall a menu of these is: a row's height and the box's own. For keeping it inside the window, and for opening it upward. */
+  export const tall = (items: MenuItem[]) => items.reduce((sum, item) => sum + (item ? 28 : 9), 10)
   /** Where a menu opens, for what the right button or the menu key was on. */
   export const pointed = (e: MouseEvent) => {
     // The menu key says nothing of where: under what it is about.
@@ -19,8 +21,6 @@
   let { label, x, y, items, onclose }: Props = $props()
 
   let el = $state<HTMLElement>()
-  /** A row's height and the box's own, to keep all of it inside the window. */
-  const tall = $derived(items.reduce((sum, item) => sum + (item ? 28 : 9), 10))
 
   $effect(() => el?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus())
 
@@ -50,8 +50,8 @@
   aria-label={label}
   {onkeydown}
   oncontextmenu={(e) => e.preventDefault()}
-  style="left: {Math.max(4, Math.min(x, innerWidth - 228))}px; top: {Math.max(4, Math.min(y, innerHeight - tall - 4))}px"
-  class="fixed z-40 min-w-48 max-w-56 rounded-xl border border-edge bg-panel p-1 text-[13px] text-fg shadow-float"
+  style="left: {Math.max(4, Math.min(x, innerWidth - 292))}px; top: {Math.max(4, Math.min(y, innerHeight - tall(items) - 4))}px"
+  class="fixed z-40 min-w-48 max-w-72 rounded-xl border border-edge bg-panel p-1 text-[13px] text-fg shadow-float"
 >
   {#each items as item, at (at)}
     {#if item}
@@ -64,6 +64,7 @@
           class="flex w-full cursor-pointer items-center gap-4 rounded-lg px-3 py-1 text-left hover:bg-selection focus-visible:bg-selection focus-visible:outline-none disabled:cursor-default disabled:text-dim disabled:hover:bg-transparent {item.danger ? 'text-red' : ''}"
         >
           <span class="min-w-0 flex-1 truncate">{item.label}</span>
+          {#if item.note}<span class="text-dim">{item.note}</span>{/if}
           {#if item.keys}<span aria-hidden="true"><Keys keys={item.keys} /></span>{/if}
         </button>
       </li>

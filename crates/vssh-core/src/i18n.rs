@@ -427,6 +427,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("close_others", "Close other tabs", "Đóng các tab khác"),
     ("copy_address", "Copy address", "Chép địa chỉ"),
     ("resize_panes", "Resize the panes", "Đổi cỡ các ô"),
+    // The rail, narrow; what was three switches in three places; a new tab's address.
+    ("rail_compact", "Compact sidebar: icons only", "Thu gọn thanh bên: chỉ biểu tượng"),
+    ("rail_full", "Expand the sidebar", "Mở rộng thanh bên"),
+    ("settings", "Settings", "Cài đặt"),
+    ("connect_to", "Connect to {target}", "Kết nối tới {target}"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

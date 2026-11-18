@@ -67,6 +67,11 @@ const status = () => screen.getByRole('contentinfo')
 /** The palette's box. Behind its dialog the page is inert; jsdom does not know. */
 const palette = () => within(screen.getByRole('dialog')).getByRole('combobox')
 const card = (alias: string) => screen.findByRole('article', { name: alias })
+/** A row of the settings at the rail's foot, chosen: the language, the theme, streamer mode, focus mode, the cheatsheet. */
+const setting = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
+  await user.click(screen.getByRole('button', { name: /^(Settings|Cài đặt)$/ }))
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name }))
+}
 const fails = () => {
   throw refused
 }
@@ -135,7 +140,7 @@ test('a host that does not answer: its card says which kind of failure, in the l
   expect(down).toHaveAttribute('data-state', 'down')
   expect(await card('web-01')).toHaveAttribute('data-state', 'ok')
 
-  await user.click(screen.getByRole('button', { name: 'Language: EN' }))
+  await setting(user, /Language/)
   await vi.waitFor(() => expect(down).toHaveTextContent('✗ BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối'))
 })
 
@@ -431,7 +436,7 @@ test('a shell that ends leaves its tab red with a way back: reconnect starts the
   await vi.waitFor(() => expect(badge).toHaveTextContent('disconnected REFUSED Connection refused by 10.0.0.5:2222'))
   expect(within(await tab(/web-01/)).getByRole('img', { name: 'disconnected' })).toBeInTheDocument()
   // In the language of the window.
-  await user.click(screen.getByRole('button', { name: 'Language: EN' }))
+  await setting(user, /Language/)
   await vi.waitFor(() => expect(badge).toHaveTextContent('mất kết nối BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối'))
 
   terminals[0].resize(100, 30)
@@ -518,7 +523,7 @@ test('a host chosen in the palette is the selected one', async () => {
   expect(status().querySelector('kbd')).toBeNull()
   const titles = async () => within(await card('db-primary')).getAllByRole('button').map((button) => button.title)
   expect(await titles()).toEqual(['Edit (E)', 'Forwards (L)', 'Files (F)', 'Connect (Enter)'])
-  await user.click(screen.getByRole('button', { name: 'Language: EN' }))
+  await setting(user, /Language/)
   expect(await titles()).toEqual(['Sửa (E)', 'Chuyển tiếp (L)', 'Tệp (F)', 'Kết nối (Enter)'])
   // Chosen again from where the focus went (the button): the card has it back, for its keys.
   await user.keyboard('{Control>}k{/Control}')
@@ -548,11 +553,10 @@ test('quick connect from the palette opens a session and saves no host', async (
   })
   await screen.findByRole('button', { name: /db-primary/ })
   await user.keyboard('{Control>}k{/Control}')
-  await user.type(palette(), 'qc{Enter}')
-  await user.type(screen.getByLabelText('Host'), '10.0.0.9')
-  await user.type(screen.getByLabelText('User'), 'deploy')
-  // Behind a modal dialog the cards and their buttons are inert; jsdom does not know.
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }))
+  // No host answers to it: it is an address, connected to as it stands.
+  await user.type(palette(), 'deploy@10.0.0.9')
+  expect(screen.getByRole('option', { name: /Connect to deploy@10.0.0.9/ })).toHaveAttribute('aria-selected', 'true')
+  await user.keyboard('{Enter}')
 
   expect(await tab(/deploy@10.0.0.9/)).toHaveAttribute('aria-selected', 'true')
   await vi.waitFor(() => expect(asked('session_start')).toEqual([{ id: 7, cols: 80, rows: 24 }]))
@@ -564,26 +568,29 @@ test('quick connect from the palette opens a session and saves no host', async (
 
 test('a refused quick connect says why, in the language of the window', async () => {
   const user = shell({ quick_connect: fails })
-  await user.click(await screen.findByRole('button', { name: /Language/ }))
+  await card('web-01')
+  await setting(user, /Language/)
   await user.keyboard('{Control>}k{/Control}')
-  await user.type(palette(), 'qc{Enter}')
-  await user.type(screen.getByRole('textbox', { name: 'Máy chủ' }), 'web')
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Kết nối' }))
+  await user.type(palette(), '10.0.0.9{Enter}')
   expect(await screen.findByRole('alert')).toHaveTextContent('BỊ TỪ CHỐI 10.0.0.5:2222 từ chối kết nối')
-  expect(screen.getByRole('dialog', { name: 'Kết nối nhanh' })).toBeInTheDocument()
+  // The palette stays, with what was typed: another try is one key away.
+  expect(screen.getByRole('dialog', { name: 'Bảng lệnh' })).toBeInTheDocument()
+  expect(palette()).toHaveValue('10.0.0.9')
   expect(stray()).toEqual([])
+  await shut()
   expect(status()).toHaveTextContent('Phiên 0')
 })
 
 test('the language toggle changes every word and is remembered', async () => {
   const user = shell()
-  await user.click(await screen.findByRole('button', { name: 'Language: EN' }))
+  await card('web-01')
+  await setting(user, /Language/)
   expect(screen.getByRole('heading', { name: 'Máy chủ 4' })).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: 'Kết nối' })).toHaveLength(4)
   expect(status()).toHaveTextContent('Phiên 0')
   expect(localStorage.getItem('vssh.lang')).toBe('vi')
   expect(document.documentElement.lang).toBe('vi')
-  await user.click(screen.getByRole('button', { name: 'Ngôn ngữ: VI' }))
+  await setting(user, /Ngôn ngữ/)
   expect(screen.getByRole('heading', { name: 'Hosts 4' })).toBeInTheDocument()
 })
 
@@ -724,15 +731,16 @@ test('in Vietnamese no English string is left anywhere: cards in every state, th
   expect(stray()).toEqual([])
   await user.keyboard('{Escape}')
 
-  // A search that finds nothing, the palette, the quick-connect form.
+  // A search that finds nothing, the palette, an address typed there.
   await user.keyboard('/zzz')
   expect(screen.getByText('Không có máy chủ nào khớp.')).toBeInTheDocument()
   expect(stray()).toEqual([])
   await user.keyboard('{Escape}{Control>}k{/Control}')
   expect(screen.getByRole('dialog', { name: 'Bảng lệnh' })).toBeInTheDocument()
   expect(stray()).toEqual([])
-  await user.type(palette(), 'qc{Enter}')
-  expect(screen.getByRole('dialog', { name: 'Kết nối nhanh' })).toBeInTheDocument()
+  put.push('sandbox.example')
+  await user.type(palette(), 'sandbox.example')
+  expect(screen.getByRole('option', { name: /Kết nối tới sandbox.example/ })).toHaveTextContent('Kết nối nhanh · Không có gì được lưu.')
   expect(stray()).toEqual([])
 })
 
@@ -1156,12 +1164,7 @@ test('a quick connect in front can be kept: Save this host opens the form with w
   expect(screen.queryByRole('button', { name: 'Save this host' })).toBeNull()
 
   await user.keyboard(ctrlK)
-  await user.type(palette(), 'qc{Enter}')
-  const quick = await screen.findByRole('dialog', { name: 'Quick connect' })
-  await user.type(within(quick).getByLabelText('Host'), 'sandbox.example')
-  await user.type(within(quick).getByLabelText('User'), 'root')
-  await user.type(within(quick).getByLabelText('Port'), '2200')
-  await user.click(within(quick).getByRole('button', { name: 'Connect' }))
+  await user.type(palette(), 'root@sandbox.example:2200{Enter}')
   await tab(/root@sandbox.example:2200/)
 
   await user.click(within(status()).getByRole('button', { name: 'Save this host' }))
@@ -1300,17 +1303,14 @@ test('streamer mode: every address in the window is a made-up one, and nothing b
   await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent('REFUSED Connection refused by 10.0.0.5:2222'))
   expect(words()).toMatch(real)
 
-  const toggle = screen.getByRole('button', { name: /Streamer mode/ })
-  expect(toggle).toHaveAttribute('aria-pressed', 'false')
-  await user.click(toggle)
-  expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await setting(user, /Streamer mode/)
   expect(localStorage.getItem('vssh.streamer_mode')).toBe('true')
 
   // The cards, a failure's words on one, the sidebar, the status bar.
   expect(await card('web-01')).toHaveTextContent(`deploy@${one}:2222`)
   await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent(`REFUSED Connection refused by ${one}:2222`))
   expect(await card('web-02')).toHaveTextContent(`deploy@${two}`)
-  expect(screen.getByRole('navigation')).toHaveTextContent(`postgres@${fake('db-primary')}`)
+  expect(within(screen.getByRole('navigation')).getByRole('button', { name: /db-primary/ })).toHaveAttribute('title', `postgres@${fake('db-primary')}`)
   ;(await card('web-01')).focus()
   await vi.waitFor(() => expect(status()).toHaveTextContent(`web-01 deploy@${one}:2222`))
   expect(words()).not.toMatch(real)
@@ -1345,12 +1345,10 @@ test('streamer mode: every address in the window is a made-up one, and nothing b
 
   // A quick connect: typed unseen, sent as typed, and its tab is named for an address that is nobody's.
   await user.keyboard('{Control>}k{/Control}')
-  await user.type(palette(), 'qc{Enter}')
-  const quick = await screen.findByRole('dialog', { name: 'Quick connect' })
-  expect(within(quick).getByLabelText('Host')).toHaveAttribute('type', 'password')
-  await user.type(within(quick).getByLabelText('Host'), '10.0.0.9')
-  await user.type(within(quick).getByLabelText('User'), 'deploy')
-  await user.click(within(quick).getByRole('button', { name: 'Connect' }))
+  await user.type(palette(), 'deploy@10.0.0.9')
+  expect(palette()).toHaveAttribute('data-masked')
+  expect(words()).not.toMatch(real)
+  await user.click(screen.getByRole('option', { name: /Connect to deploy@/ }))
   expect(asked('quick_connect')).toEqual([{ host: 'deploy@10.0.0.9' }])
   expect(await tab(new RegExp(`deploy@${fake('10.0.0.9').replaceAll('.', '\\.')}`))).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByRole('tabpanel', { name: `deploy@${fake('10.0.0.9')}` })).toBeInTheDocument()
@@ -1363,7 +1361,7 @@ test('streamer mode: every address in the window is a made-up one, and nothing b
   expect(asked('session_open')).toEqual([{ alias: 'web-01' }])
 
   // Off again: the real ones, everywhere.
-  await user.click(toggle)
+  await setting(user, /Streamer mode/)
   expect(localStorage.getItem('vssh.streamer_mode')).toBe('false')
   expect(await tab(/deploy@10\.0\.0\.9/)).toBeInTheDocument()
   await user.keyboard(`${leader}0`)
@@ -1380,20 +1378,19 @@ test('streamer mode that was left on is on when the app opens, in Vietnamese too
   expect(streamer.on).toBe(true)
   setStreamer(true)
   setLang('vi')
-  shell()
+  const user = shell()
   expect(await card('web-01')).toHaveTextContent(`deploy@${fake('web-01')}:2222`)
-  expect(screen.getByRole('button', { name: /Chế độ phát trực tiếp/ })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: 'Cài đặt' }))
+  expect(screen.getByRole('menuitem', { name: /Chế độ phát trực tiếp/ })).toHaveTextContent('✓')
   expect(stray()).toEqual([])
 })
 
 // --- D7: the Day theme --------------------------------------------------------
 
-test('the theme toggle in the sidebar: Night until Day is chosen, a terminal dark in both', async () => {
+test('the theme in the settings: Night until Day is chosen, a terminal dark in both', async () => {
   const user = shell()
-  const toggle = screen.getByRole('button', { name: 'Theme: Night' })
   expect(document.documentElement.dataset.theme).toBe('night')
-  await user.click(toggle)
-  expect(toggle).toHaveAccessibleName('Theme: Day')
+  await setting(user, /Theme/)
   expect(document.documentElement.dataset.theme).toBe('day')
   expect(localStorage.getItem('vssh.theme')).toBe('day')
 
@@ -1405,9 +1402,11 @@ test('the theme toggle in the sidebar: Night until Day is chosen, a terminal dar
   expect(screen.getByRole('tabpanel', { name: 'web-01' })).toHaveClass('bg-term', 'day:border-edge')
 
   setLang('vi')
-  await vi.waitFor(() => expect(toggle).toHaveAccessibleName('Giao diện: Sáng'))
-  await user.click(toggle)
-  expect(toggle).toHaveAccessibleName('Giao diện: Tối')
+  await user.click(await screen.findByRole('button', { name: 'Cài đặt' }))
+  const row = screen.getByRole('menuitem', { name: /Giao diện/ })
+  expect(row).toHaveTextContent('Giao diện Sáng')
+  expect(stray()).toEqual([])
+  await user.click(row)
   expect(document.documentElement.dataset.theme).toBe('night')
   expect(stray()).toEqual([])
 })
@@ -1530,8 +1529,9 @@ test('the rail goes where the keys go: a session, the dashboard and its search, 
   ;(await card('web-02')).focus()
   await user.keyboard('{Enter}')
   await tab(/web-02/)
-  // The terminal is in front: the head of the page is its host, and the rail says where one is.
-  expect(screen.getByRole('heading', { level: 1, name: 'web-02' })).toBeInTheDocument()
+  // The terminal is in front: its tab is its head, with no band of a title over it, and the rail says where one is.
+  expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+  expect(document.querySelector('[data-framed]')).toBeNull()
   expect(rail('Sessions 1')).toHaveAttribute('aria-current', 'page')
   await user.click(rail('Status'))
   expect(await card('web-02')).toBeVisible()
@@ -1546,7 +1546,7 @@ test('the rail goes where the keys go: a session, the dashboard and its search, 
 
   await user.click(rail('Files'))
   expect(await tab(/Files web-02/)).toHaveAttribute('aria-selected', 'true')
-  expect(screen.getByRole('heading', { level: 1, name: 'Files' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   expect(rail('Files')).toHaveAttribute('aria-current', 'page')
   expect(asked('sftp_realpath')).toEqual([{ host: 'web-02', path: '' }])
 
@@ -1557,7 +1557,7 @@ test('the rail goes where the keys go: a session, the dashboard and its search, 
   expect(await screen.findByRole('dialog', { name: 'Snippets' })).toBeInTheDocument()
 })
 
-test('the top bar: the search opens the palette, and the line under Status counts who answers', async () => {
+test('the rail\'s search opens the palette, and the line under Status counts who answers', async () => {
   const user = shell({
     get_host_stats: ({ alias }) => {
       if (alias === 'web-02') throw refused
@@ -1565,7 +1565,10 @@ test('the top bar: the search opens the palette, and the line under Status count
     },
   })
   await vi.waitFor(() => expect(head()).toHaveTextContent('4 Hosts · 3 reachable · 1 down'))
-  await user.click(within(head()).getByRole('button', { name: 'Command palette' }))
+  // One search a view: the head has none, the dashboard's own field filters its cards.
+  expect(within(head()).queryByRole('button')).toBeNull()
+  expect(screen.getAllByRole('button', { name: 'Command palette' })).toHaveLength(1)
+  await user.click(rail('Command palette'))
   expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
 })
 
@@ -1582,7 +1585,7 @@ test('the rail and the top bar in Vietnamese: no word of theirs is left in Engli
 
 const sheetOpen = () => screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })
 
-test('the cheatsheet opens five ways: ?, F1, Ctrl+/, the top bar\'s keyboard, the palette; the keys of the view in front first', async () => {
+test('the cheatsheet opens five ways: ?, F1, Ctrl+/, the settings, the palette; the keys of the view in front first', async () => {
   const user = shell()
   await card('web-01')
   expect(sheetOpen()).toBeNull()
@@ -1591,9 +1594,7 @@ test('the cheatsheet opens five ways: ?, F1, Ctrl+/, the top bar\'s keyboard, th
     expect(sheetOpen(), keys).toBeInTheDocument()
     await shut()
   }
-  const keyboard = screen.getByRole('button', { name: 'Keyboard shortcuts' })
-  expect(keyboard).toHaveAttribute('title', 'Keyboard shortcuts (?, F1, Ctrl+/)')
-  await user.click(keyboard)
+  await setting(user, /Keyboard shortcuts/)
   // On the dashboard its keys come first; the rest follow.
   expect(within(sheetOpen()!).getAllByRole('region').map((group) => group.getAttribute('aria-label'))).toEqual([
     'Hosts',
@@ -1633,8 +1634,8 @@ test('with a terminal in front the window takes no key a shell uses: ?, F1, Ctrl
   // The session's keys first.
   expect(within(sheetOpen()!).getAllByRole('region')[0]).toHaveAccessibleName('In a session, after Ctrl+A')
   await shut()
-  // The keyboard in the top bar is there in every view.
-  await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }))
+  // The settings at the rail's foot are there in every view.
+  await setting(user, /Keyboard shortcuts/)
   expect(sheetOpen()).toBeInTheDocument()
 })
 
@@ -1673,14 +1674,19 @@ test('Ctrl+Tab and Ctrl+Shift+Tab go through the tabs, from a terminal too; Ctrl
   expect(asked('session_close')).toEqual([{ id: 2 }])
 })
 
-test('Ctrl+T is a new tab: the quick connect; Ctrl+F is the search, on the dashboard and in a file pane', async () => {
+test('Ctrl+T is a new tab: the palette, where a host chosen is connected to and an address is too; Ctrl+F is the search, on the dashboard and in a file pane', async () => {
   const user = shell()
   await card('web-01')
   await user.keyboard('{Control>}t{/Control}')
-  expect(screen.getByRole('dialog', { name: 'Quick connect' })).toBeInTheDocument()
-  await user.type(screen.getByLabelText('Host'), '10.0.0.9')
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }))
+  expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
+  // Asked for a tab, a host is connected to, not shown on the dashboard.
+  await user.type(palette(), 'db{Enter}')
+  expect(await tab(/1 db-primary/)).toHaveAttribute('aria-selected', 'true')
+  expect(asked('session_open')).toEqual([{ alias: 'db-primary' }])
+  await user.keyboard(`${leader}0{Control>}t{/Control}`)
+  await user.type(palette(), '10.0.0.9{Enter}')
   expect(await tab(/10.0.0.9/)).toHaveAttribute('aria-selected', 'true')
+  expect(asked('quick_connect')).toEqual([{ host: '10.0.0.9' }])
   await user.keyboard(`${leader}0`)
   const search = screen.getByRole('searchbox', { name: 'Search hosts, #tag' })
   // No slash in the field: its tooltip names the keys.
@@ -1965,13 +1971,12 @@ test('a tab dragged to an edge of what is open becomes a pane there; dragged aga
   expect(order()).toEqual(['Files web-01'])
 })
 
-test('focus mode: the rail and the status bar go, a tab\'s view is all there is; Ctrl+B, the rail\'s button, Ctrl+A z, and Esc back', async () => {
+test('focus mode: the rail and the status bar go, a tab\'s view is all there is; Ctrl+B, the settings\' row, Ctrl+A z, and Esc back', async () => {
   const user = shell()
   await card('web-01')
   const rail = () => screen.queryByRole('navigation')
-  const hide = () => screen.getByRole('button', { name: 'Hide the sidebar' })
-  expect(hide()).toHaveAttribute('title', 'Hide the sidebar (Ctrl+Shift+B, Ctrl+B)')
-  await user.click(hide())
+  const hide = () => setting(user, /Focus mode/)
+  await hide()
   expect(rail()).toBeNull()
   expect(screen.queryByRole('contentinfo')).toBeNull()
   // The dashboard keeps its head and its cards; the strip of tabs is there for the way back.
@@ -2005,7 +2010,6 @@ test('focus mode: the rail and the status bar go, a tab\'s view is all there is;
   expect(screen.queryByRole('heading', { name: 'web-01' })).toBeNull()
   expect(screen.getByRole('tablist')).toBeInTheDocument()
   expect(panels()).toEqual(['web-01'])
-  expect(frame().parentElement).not.toHaveAttribute('data-framed')
   // Esc is vim's there.
   await user.keyboard('{Escape}')
   expect(rail()).toBeNull()
@@ -2013,7 +2017,7 @@ test('focus mode: the rail and the status bar go, a tab\'s view is all there is;
   const keys = vi.spyOn(terminals[0], 'focus')
   await user.click(screen.getByRole('button', { name: 'Show the sidebar' }))
   expect(keys).toHaveBeenCalledTimes(1)
-  await user.click(hide())
+  await hide()
   expect(keys).toHaveBeenCalledTimes(2)
   expect(rail()).toBeNull()
   // Half a chord is said in the strip, where the status bar is not.
@@ -2021,8 +2025,6 @@ test('focus mode: the rail and the status bar go, a tab\'s view is all there is;
   expect(within(screen.getByRole('tablist').parentElement!).getByRole('status')).toHaveTextContent('Ctrl+A')
   await user.keyboard('z')
   expect(rail()).toBeInTheDocument()
-  expect(frame().parentElement).toHaveAttribute('data-framed')
-  expect(screen.getByRole('heading', { name: 'web-01' })).toBeInTheDocument()
   await user.keyboard(`${leader}z`)
   expect(rail()).toBeNull()
   // From the palette too.
@@ -2033,13 +2035,12 @@ test('focus mode: the rail and the status bar go, a tab\'s view is all there is;
   expect(asked('session_write')).toEqual([])
 })
 
-test('a tab renamed by a double click is called that in its tab, the head and the rail; with no name it is its host\'s again', async () => {
+test('a tab renamed by a double click is called that in its tab and the rail; with no name it is its host\'s again', async () => {
   const user = shell()
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
   await user.dblClick(await tab(/1 web-01/))
   await user.keyboard('migration{Enter}')
   expect(await tab(/1 migration/)).toHaveAttribute('aria-selected', 'true')
-  expect(screen.getByRole('heading', { name: 'migration' })).toBeInTheDocument()
   expect(within(screen.getByRole('list', { name: 'Sessions' })).getByRole('button')).toHaveTextContent('migration')
   expect(panels()).toEqual(['migration'])
   // The keys are the terminal's again.
@@ -2056,9 +2057,9 @@ test('a tab renamed by a double click is called that in its tab, the head and th
   await fireEvent(await tab(/2 web-01/), new MouseEvent('auxclick', { button: 1, bubbles: true }))
   expect(asked('session_close')).toEqual([{ id: 2 }])
   expect(panels()).toEqual(['web-01'])
-  // The + of the strip is a new tab: it asks where to.
+  // The + of the strip is a new tab: the palette asks where to.
   await user.click(screen.getByRole('button', { name: 'New tab: quick connect' }))
-  expect(screen.getByRole('dialog', { name: 'Quick connect' })).toBeInTheDocument()
+  expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
 })
 
 test('panes and focus mode in Vietnamese: the strip\'s buttons, the palette\'s rows and the rail\'s corner, with nothing in English', async () => {
@@ -2066,7 +2067,7 @@ test('panes and focus mode in Vietnamese: the strip\'s buttons, the palette\'s r
   const user = shell()
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
   await tab(/1 web-01/)
-  expect(screen.getByRole('button', { name: 'Ẩn thanh bên' })).toHaveAttribute('title', 'Ẩn thanh bên (Ctrl+Shift+B, Ctrl+B)')
+  expect(screen.getByRole('button', { name: 'Thu gọn thanh bên: chỉ biểu tượng' })).toHaveAttribute('aria-pressed', 'false')
   await user.click(screen.getByRole('button', { name: 'Chia đôi sang phải' }))
   await tab(/2 web-01/)
   expect(screen.getByRole('button', { name: 'Bỏ chia: đưa ô này về tab riêng' })).toBeInTheDocument()
@@ -2110,9 +2111,7 @@ test('a split of a quick connect connects to the same address again, and that is
   const user = shell()
   await card('web-01')
   await user.keyboard('{Control>}t{/Control}')
-  await user.type(screen.getByLabelText('Host'), '10.0.0.9')
-  await user.type(screen.getByLabelText('User'), 'deploy')
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }))
+  await user.type(palette(), 'deploy@10.0.0.9{Enter}')
   await tab(/1 deploy@10.0.0.9/)
   await user.keyboard(chord('D'))
   await tab(/2 deploy@10.0.0.9/)
@@ -2343,4 +2342,127 @@ test('the menus in Vietnamese: a tab\'s, a card\'s and a terminal\'s, with nothi
   await rightClick(screen.getByRole('tabpanel', { name: 'web-01' }))
   expect(offered()).toEqual(['Sao chép', 'Dán', 'Chọn tất cả'])
   expect(stray()).toEqual([])
+})
+
+// --- D11: the rail narrow, and what was open, open again ------------------------
+
+/** The app closed and opened again: the web view kept what it kept. */
+async function again(over: Record<string, (args: Args) => unknown> = {}) {
+  cleanup()
+  await new Promise((done) => setTimeout(done))
+  terminals.length = 0
+  calls = []
+  return shell(over)
+}
+const columns = () => screen.getByRole('main').parentElement!.className.match(/grid-cols-\[(\d+px)/)?.[1]
+
+test('the rail narrow: its corner\'s button leaves the icons, 56 pixels of them, and the next time the app opens it is as it was left', async () => {
+  const user = shell()
+  await card('web-01')
+  expect(columns()).toBe('244px')
+  await user.click(rail('Compact sidebar: icons only'))
+  expect(columns()).toBe('56px')
+  expect(localStorage.getItem('vssh.rail')).toBe('compact')
+  // Its rows are there by name, and go where they went; the hosts are the dashboard's.
+  expect(within(screen.getAllByRole('navigation')[0]).queryByRole('list')).toBeNull()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  await user.click(rail('Status'))
+  expect(await card('web-01')).toBeVisible()
+  await user.click(rail('Sessions 1'))
+  expect(await tab(/1 web-01/)).toHaveAttribute('aria-selected', 'true')
+  // Focus mode takes even that, and gives it back as it was.
+  await user.keyboard(`${chord('B')}${chord('B')}`)
+  expect(columns()).toBe('56px')
+
+  await again()
+  await card('web-01')
+  expect(columns()).toBe('56px')
+  await user.click(rail('Expand the sidebar'))
+  expect(columns()).toBe('244px')
+  expect(localStorage.getItem('vssh.rail')).toBe('full')
+  expect(screen.getByRole('list', { name: 'Hosts' })).toBeInTheDocument()
+})
+
+test('what was open is open the next time: the tabs of the config\'s hosts in their order, a tab\'s name, the split and its sizes, focus mode; a quick connect is not kept', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await user.dblClick(await tab(/1 web-01/))
+  await user.keyboard('migration{Enter}')
+  await user.keyboard(chord('D'))
+  await tab(/2 web-01/)
+  screen.getByRole('separator').focus()
+  await user.keyboard('{ArrowRight}{ArrowRight}')
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-02')).focus()
+  await user.keyboard('f')
+  await tab(/Files web-02/)
+  await user.keyboard(`${leader}0{Control>}t{/Control}`)
+  await user.type(palette(), 'deploy@10.0.0.9{Enter}')
+  await tab(/deploy@10.0.0.9/)
+  await user.click(await tab(/1 migration/))
+  await user.keyboard(chord('B'))
+  expect(screen.queryByRole('navigation')).toBeNull()
+  const sizes = spots()
+  expect(sizes.map((spot) => spot[2])).toEqual([60, 40])
+  expect(JSON.parse(localStorage.getItem('vssh.workspace')!)).toMatchObject({
+    zen: true,
+    tabs: [{ host: 'web-01', name: 'migration' }, { host: 'web-01' }, { host: 'web-02', files: true }],
+    active: 0,
+  })
+
+  await again()
+  // One after the other, as each is opened; then the one that was in front is.
+  await vi.waitFor(() => expect(picked()).toHaveTextContent('1 migration'))
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.match(/\d \S+/)?.[0])).toEqual(['0 Hosts', '1 migration', '2 web-01', '3 Files'])
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }, { alias: 'web-01' }])
+  expect(asked('quick_connect')).toEqual([])
+  expect(order()).toEqual(['migration', 'web-01'])
+  expect(spots()).toEqual(sizes)
+  expect(screen.queryByRole('navigation')).toBeNull()
+})
+
+test('a host that is gone since is not opened, and its pane is not there; what the web view kept and is not this is nothing', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  await user.keyboard(`${leader}0`)
+  await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
+  await tab(/2 web-02/)
+  await fireEvent.dragStart(await tab(/1 web-01/))
+  over('dragenter', 10, 50)
+  over('drop', 10, 50)
+  expect(order()).toEqual(['web-01', 'web-02'])
+
+  await again({
+    session_open: ({ alias }) => {
+      if (alias === 'web-01') throw refused
+      return 5
+    },
+  })
+  // The one in front was the one that is gone: the dashboard is, and the other is a tab by itself.
+  await user.click(await tab(/1 web-02/))
+  expect(screen.getAllByRole('tab')).toHaveLength(2)
+  expect(panels()).toEqual(['web-02'])
+  expect(screen.queryByRole('separator')).toBeNull()
+
+  localStorage.setItem('vssh.workspace', '{"tabs": 7}')
+  await again()
+  await card('web-01')
+  expect(screen.queryByRole('tablist')).toBeNull()
+  // And from then on what is open is written down as before.
+  await user.click(within(await card('bare')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 bare/)
+  expect(JSON.parse(localStorage.getItem('vssh.workspace')!).tabs).toEqual([{ host: 'bare' }])
+})
+
+test('with a vault that is locked, what was open waits for the answer: a session may need a password of it', async () => {
+  localStorage.setItem('vssh.workspace', JSON.stringify({ zen: false, tabs: [{ host: 'web-01' }], layout: { stacked: false, groups: [], size: {} }, active: 0 }))
+  shell({ vault_state: () => 'locked' })
+  await screen.findByRole('dialog', { name: 'Vault' })
+  await card('web-01')
+  expect(asked('session_open')).toEqual([])
+  await shut()
+  expect(await tab(/1 web-01/)).toHaveAttribute('aria-selected', 'true')
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }])
 })

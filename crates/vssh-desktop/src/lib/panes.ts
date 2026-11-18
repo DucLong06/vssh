@@ -83,6 +83,16 @@ export function shift(layout: Layout, id: number, by: number): Layout {
   return all.includes(id) && other !== undefined ? exchange(layout, id, other) : layout
 }
 
+/** The same split under other names for its panes; a pane with no name there is left out. */
+export function mapped(layout: Layout, to: (id: number) => number | undefined): Layout {
+  const kept = ids(layout).reduce((left, id) => (to(id) === undefined ? without(left, id) : left), layout)
+  return {
+    stacked: kept.stacked,
+    groups: kept.groups.map((group) => ({ ...group, panes: group.panes.map((id) => to(id)!) })),
+    size: Object.fromEntries(Object.entries(kept.size).map(([id, share]) => [to(Number(id)), share])),
+  }
+}
+
 /** A split of these panes side by side, or one over the other. */
 export const row = (panes: number[], stacked = false): Layout => tidy({ stacked, groups: panes.map((id) => ({ panes: [id], size: 1 })), size: {} })
 

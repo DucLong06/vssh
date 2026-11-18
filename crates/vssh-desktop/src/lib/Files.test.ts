@@ -163,7 +163,7 @@ function held() {
   return { waiting, start }
 }
 const menu = () => screen.getByRole('menu')
-const items = () => within(menu()).getAllByRole('menuitem').map((item) => item.textContent?.trim())
+const items = () => within(menu()).getAllByRole('menuitem').map((item) => item.textContent?.replace(/\s+/g, ' ').trim())
 const rightClick = (user: ReturnType<typeof userEvent.setup>, target: Element) =>
   user.pointer({ keys: '[MouseRight]', target })
 const dialog = () => screen.getByRole('dialog')

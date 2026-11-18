@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 import type { Host } from './api'
 import fixture from './fixtures/hosts.json'
-import { setLang } from './i18n.svelte'
+import { i18n, setLang } from './i18n.svelte'
+import { streamer } from './streamer.svelte'
+import { theme } from './theme.svelte'
 import Sidebar from './Sidebar.svelte'
 
 const hosts: Host[] = fixture
@@ -17,14 +19,10 @@ test('no hosts: nothing listed; the dashboard is where it says what to do', () =
   expect(screen.getByText('no tags')).toBeInTheDocument()
 })
 
-test('many hosts: every one is listed with its address, in the order given', () => {
+test('many hosts: every one is listed by its name, a short line each, in the order given; its address is said to the pointer that rests on it', () => {
   render(Sidebar, props())
-  expect(rows().map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-    '★ web-01 deploy@10.0.0.5:2222',
-    'web-02 deploy@10.0.0.6',
-    'db-primary postgres@db.internal.example.com',
-    'bare',
-  ])
+  expect(rows().map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['★ web-01', 'web-02', 'db-primary', 'bare'])
+  expect(rows().map((row) => row.getAttribute('title'))).toEqual(['deploy@10.0.0.5:2222', 'deploy@10.0.0.6', 'postgres@db.internal.example.com', null])
   expect(screen.getByRole('img', { name: 'pinned' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Hosts 4' })).toBeInTheDocument()
 })
@@ -173,7 +171,7 @@ test('the vault says what it is on its row', () => {
 test("the rail in Vietnamese: the table's words, and no other", () => {
   setLang('vi')
   rail()
-  for (const name of ['Trạng thái', 'Máy chủ 4', 'Phiên 1', 'Tệp', 'Đoạn lệnh 3', 'Chuyển tiếp', 'Kho', 'Giao diện: Tối']) {
+  for (const name of ['Trạng thái', 'Máy chủ 4', 'Phiên 1', 'Tệp', 'Đoạn lệnh 3', 'Chuyển tiếp', 'Kho', 'Cài đặt']) {
     expect(item(name), name).toBeInTheDocument()
   }
   // The name of the app is drawn, not said: it is the same in every language.
@@ -195,4 +193,102 @@ test('a tag is grey until the list is narrowed to it: colour is for what is chos
   await user.click(prod)
   expect(prod.style.color).toMatch(/^var\(--color-/)
   expect(screen.getByRole('button', { name: /#web/ }).style.color).toBe('')
+})
+
+// --- D11: the rail narrow, its search, and the settings in one place ------------
+
+test('compact: the rail is its icons, each named in a tooltip and to a reader of the screen; no lists, and the numbers at the icons\' corners', async () => {
+  const user = userEvent.setup()
+  const oncompact = vi.fn()
+  const { onnav } = rail({ compact: true, oncompact, tunnels: 2, onpalette: vi.fn() })
+  const nav = screen.getByRole('navigation')
+  expect(nav).toHaveAttribute('data-compact')
+  // Every row is still there, by the same name, and goes where it went.
+  for (const name of ['Status', 'Hosts 4', 'Sessions 1', 'Files', 'Snippets 3', 'Forwards 2', 'Vault', 'Settings']) {
+    expect(item(name).querySelector('svg'), name).not.toBeNull()
+  }
+  expect(item('Sessions 1')).toHaveAttribute('title', 'Sessions')
+  expect(item('Sessions 1').querySelector('span')).toHaveClass('sr-only')
+  expect(item('Command palette')).toHaveAttribute('title', 'Command palette (Ctrl+K, Ctrl+Shift+K)')
+  expect(item('Command palette')).not.toHaveTextContent(/Search/)
+  await user.click(item('Forwards 2'))
+  expect(onnav).toHaveBeenLastCalledWith('forwards')
+  // What an icon cannot hold is not there: the hosts, the sessions, the tags.
+  expect(screen.queryByRole('list')).toBeNull()
+  expect(nav).not.toHaveTextContent(/web-01|#prod|Tags/i)
+  // Its corner's button brings all of it back.
+  const wide = item('Expand the sidebar')
+  expect(wide).toHaveAttribute('aria-pressed', 'true')
+  await user.click(wide)
+  expect(oncompact).toHaveBeenLastCalledWith(false)
+})
+
+test('in full the corner\'s button asks for the narrow rail, and the rows say their names', async () => {
+  const user = userEvent.setup()
+  const oncompact = vi.fn()
+  rail({ oncompact })
+  expect(screen.getByRole('navigation')).not.toHaveAttribute('data-compact')
+  const narrow = item('Compact sidebar: icons only')
+  expect(narrow).toHaveAttribute('aria-pressed', 'false')
+  await user.click(narrow)
+  expect(oncompact).toHaveBeenLastCalledWith(true)
+  expect(item('Sessions 1')).not.toHaveAttribute('title')
+  expect(screen.getByRole('list', { name: 'Hosts' })).toBeInTheDocument()
+})
+
+test('the rail\'s first row is the way to the palette, with its key', async () => {
+  const user = userEvent.setup()
+  const onpalette = vi.fn()
+  rail({ onpalette })
+  const search = item('Command palette')
+  expect(search).toHaveTextContent('Search hosts and actions Ctrl+K')
+  expect(search).toHaveAttribute('aria-keyshortcuts', 'Control+K')
+  await user.click(search)
+  expect(onpalette).toHaveBeenCalledOnce()
+})
+
+test('the settings at the rail\'s foot: the language, the theme and streamer mode say what they are and change at a click; focus mode and the cheatsheet with their keys', async () => {
+  const user = userEvent.setup()
+  const on = { onzen: vi.fn(), onshortcuts: vi.fn() }
+  rail(on)
+  const cog = item('Settings')
+  expect(cog).toHaveAttribute('aria-expanded', 'false')
+  const rows = () => within(screen.getByRole('menu')).getAllByRole('menuitem').map((row) => row.textContent?.replace(/\s+/g, ' ').trim())
+  const choose = async (name: RegExp) => {
+    await user.click(item('Settings'))
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name }))
+    expect(screen.queryByRole('menu')).toBeNull()
+  }
+  await user.click(cog)
+  expect(cog).toHaveAttribute('aria-expanded', 'true')
+  expect(rows()).toEqual(['Language EN', 'Theme Night', 'Streamer mode (made-up addresses)', 'Focus mode Ctrl+Shift+B', 'Keyboard shortcuts ?'])
+  // A second click on the cog closes it.
+  await user.click(cog)
+  expect(screen.queryByRole('menu')).toBeNull()
+  await choose(/Language/)
+  expect(i18n.lang).toBe('vi')
+  await user.click(item('Cài đặt'))
+  expect(rows()).toEqual(['Ngôn ngữ VI', 'Giao diện Tối', 'Chế độ phát trực tiếp (địa chỉ giả)', 'Chế độ tập trung Ctrl+Shift+B', 'Phím tắt ?'])
+  // The words change with the next drawing: the key after it finds the rail in English.
+  setLang('en')
+  await user.keyboard('{Escape}')
+  await choose(/Theme/)
+  expect(theme.name).toBe('day')
+  expect(localStorage.getItem('vssh.theme')).toBe('day')
+  await choose(/Streamer mode/)
+  expect(streamer.on).toBe(true)
+  await user.click(item('Settings'))
+  expect(rows()).toContain('Streamer mode (made-up addresses) ✓')
+  expect(rows()).toContain('Theme Day')
+  await user.keyboard('{Escape}')
+  await choose(/Focus mode/)
+  expect(on.onzen).toHaveBeenCalledOnce()
+  await choose(/Keyboard shortcuts/)
+  expect(on.onshortcuts).toHaveBeenCalledOnce()
+})
+
+test('the tags of the rail are small, and three whole rows of them at most', () => {
+  render(Sidebar, props())
+  expect(screen.getByRole('list', { name: 'Tags' })).toHaveClass('max-h-[66px]')
+  expect(screen.getByRole('button', { name: '#db 1' })).toHaveClass('text-[10.5px]')
 })

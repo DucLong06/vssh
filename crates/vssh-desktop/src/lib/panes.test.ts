@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bars, half, ids, none, place, rects, resize, row, shift, without, zone } from './panes'
+import { bars, half, ids, none, place, rects, mapped, resize, row, shift, without, zone } from './panes'
 
 const shape = (layout: ReturnType<typeof none>) => [layout.stacked ? 'stacked' : 'beside', layout.groups.map((group) => group.panes)]
 
@@ -74,4 +74,15 @@ test('where a tab in hand is: the pane under it, an edge of it within three tent
   expect(zone(where, 1.2, 0.5)).toBeNull()
   expect(half(where[2], 'right')).toEqual({ x: 0.75, y: 0, w: 0.25, h: 1 })
   expect(half(where[2], 'centre')).toEqual(where[2])
+})
+
+test('a split under other names for its panes: the shape and the sizes go with them, and a pane with no name is left out', () => {
+  const three = resize(place(row([1, 2]), 3, 'bottom', 2), bars(place(row([1, 2]), 3, 'bottom', 2))[1], 0.25)
+  const named = mapped(three, (id) => id * 10)
+  expect(shape(named)).toEqual(['beside', [[10], [20, 30]]])
+  expect(rects(named)[20].h).toBeCloseTo(0.75)
+  expect(rects(mapped(named, (id) => id / 10))).toEqual(rects(three))
+  // Without one of the two on the right, the other has the side to itself.
+  expect(shape(mapped(three, (id) => (id === 3 ? undefined : id)))).toEqual(['beside', [[1], [2]]])
+  expect(mapped(row([1, 2]), (id) => (id === 1 ? undefined : id))).toEqual(none())
 })
