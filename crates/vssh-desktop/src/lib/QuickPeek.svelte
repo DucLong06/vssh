@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { Host } from './api'
   import { i18n, t } from './i18n.svelte'
-  import type { Live } from './live.svelte'
+  import type { Live, Trail } from './live.svelte'
   import { capital, KEY, tip } from './keymap'
+  import Sparkline from './Sparkline.svelte'
   import { parts, uptime } from './stats'
   import { addr, fake, streamer } from './streamer.svelte'
 
@@ -10,8 +11,9 @@
   // what the host said about itself the last time it was asked, and how long
   // ago that was.
   // `onrefresh`: asks the host again, as `r` does.
-  type Props = { host: Host; info?: Live; onrefresh?: () => void }
-  let { host, info, onrefresh }: Props = $props()
+  // `trail`: its last rounds, drawn here: a card that is well has no room for the minute behind its figures.
+  type Props = { host: Host; info?: Live; onrefresh?: () => void; trail?: Trail }
+  let { host, info, onrefresh, trail }: Props = $props()
 
   let box: HTMLElement
   let now = $state(Date.now())
@@ -109,6 +111,17 @@
         <dd class="truncate {value === undefined ? 'text-dim' : (colour ?? '')}">{value ?? '—'}</dd>
       {/each}
     </dl>
+    {#if trail?.cpu.length || trail?.mem.length}
+      <!-- A picture of the two figures above over the last minute: they say what it shows. -->
+      <div aria-hidden="true" class="mt-3 grid grid-cols-2 gap-2">
+        {#each [['CPU', trail.cpu, 'text-blue'], [t('mem'), trail.mem, 'text-teal']] as const as [label, past, colour] (label)}
+          <div class="overflow-hidden rounded-xl bg-bg">
+            <p class="px-3 pt-1.5 text-xs text-dim">{label}</p>
+            <Sparkline points={[...past]} class="w-full {colour}" />
+          </div>
+        {/each}
+      </div>
+    {/if}
   {:else if info?.peek === null && !info.asking}
     <p class="px-3 pt-3 text-white">{t('not_checked')}</p>
   {:else}

@@ -466,13 +466,14 @@
         <!-- One column, two past 800 px of window, three past 1200. -->
         <ul
           aria-label={name || t('no_tags')}
-          class="grid grid-cols-1 gap-5 pb-6 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
+          class="grid grid-cols-1 gap-3 pb-5 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
         >
-          {#each list as host (host.alias)}
+          {#each list as host, at (host.alias)}
             <!-- Resting on a card shows what is known. It does not ask: a host
                  never connected to is not connected to by a pointer passing. -->
+            <!-- The hosts that need looking at come first and are tall; the first that is well starts a row of its own, of low ones. -->
             <li
-              class="relative"
+              class="relative {at > 0 && !sick(live[host.alias]) && sick(live[list[at - 1].alias]) ? 'col-start-1' : ''}"
               onpointerenter={() => {
                 resting = setTimeout(() => (peeking ??= { alias: host.alias, hover: true }), REST)
               }}
@@ -529,7 +530,7 @@
                 class="cursor-grab scroll-mt-20"
               />
               {#if peeking?.alias === host.alias}
-                <QuickPeek {host} info={live[host.alias]} onrefresh={() => void ask(host.alias, false)} />
+                <QuickPeek {host} info={live[host.alias]} trail={trail[host.alias]} onrefresh={() => void ask(host.alias, false)} />
               {/if}
             </li>
           {/each}

@@ -67,6 +67,8 @@ const status = () => screen.getByRole('contentinfo')
 /** The palette's box. Behind its dialog the page is inert; jsdom does not know. */
 const palette = () => within(screen.getByRole('dialog')).getByRole('combobox')
 const card = (alias: string) => screen.findByRole('article', { name: alias })
+/** What a card with nothing wrong says of where its host is: to the pointer on its name. */
+const at = async (alias: string) => within(await card(alias)).getByRole('heading').title
 /** A row of the settings at the rail's foot, chosen: the language, the theme, streamer mode, focus mode, the cheatsheet. */
 const setting = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
   await user.click(screen.getByRole('button', { name: /^(Settings|Cài đặt)$/ }))
@@ -1307,7 +1309,7 @@ test('streamer mode: every address in the window is a made-up one, and nothing b
   expect(localStorage.getItem('vssh.streamer_mode')).toBe('true')
 
   // The cards, a failure's words on one, the sidebar, the status bar.
-  expect(await card('web-01')).toHaveTextContent(`deploy@${one}:2222`)
+  expect(await at('web-01')).toBe(`deploy@${one}:2222`)
   await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent(`REFUSED Connection refused by ${one}:2222`))
   expect(await card('web-02')).toHaveTextContent(`deploy@${two}`)
   expect(within(screen.getByRole('navigation')).getByRole('button', { name: /db-primary/ })).toHaveAttribute('title', `postgres@${fake('db-primary')}`)
@@ -1366,8 +1368,7 @@ test('streamer mode: every address in the window is a made-up one, and nothing b
   expect(await tab(/deploy@10\.0\.0\.9/)).toBeInTheDocument()
   await user.keyboard(`${leader}0`)
   // (The fixture's shell saved the form without its user.)
-  expect(await card('web-01')).toHaveTextContent('10.0.0.5')
-  expect(await card('web-01')).not.toHaveTextContent(one)
+  expect(await at('web-01')).toBe('10.0.0.5')
   await vi.waitFor(async () => expect(await card('web-02')).toHaveTextContent('REFUSED Connection refused by 10.0.0.5:2222'))
 })
 
@@ -1379,7 +1380,7 @@ test('streamer mode that was left on is on when the app opens, in Vietnamese too
   setStreamer(true)
   setLang('vi')
   const user = shell()
-  expect(await card('web-01')).toHaveTextContent(`deploy@${fake('web-01')}:2222`)
+  expect(await at('web-01')).toBe(`deploy@${fake('web-01')}:2222`)
   await user.click(screen.getByRole('button', { name: 'Cài đặt' }))
   expect(screen.getByRole('menuitem', { name: /Chế độ phát trực tiếp/ })).toHaveTextContent('✓')
   expect(stray()).toEqual([])

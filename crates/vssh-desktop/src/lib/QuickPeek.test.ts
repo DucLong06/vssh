@@ -224,3 +224,15 @@ test("in Vietnamese the rows are the TUI's", async () => {
   expect(within(popover()!).getByRole('button', { name: 'làm mới' })).toHaveAttribute('title', 'Làm mới (R)')
   expect(popover()!.querySelector('kbd')).toBeNull()
 })
+
+test('the minute behind CPU and memory is drawn in the peek, where a low card has no room for it; with no minute yet, nothing', async () => {
+  const { default: QuickPeek } = await import('./QuickPeek.svelte')
+  const { container, rerender } = render(QuickPeek, { host: hosts[0], info: { ms: 12, peek, at: Date.now() }, trail: { cpu: [0, 50, 100], mem: [25, 75] } })
+  const lines = [...container.querySelectorAll('svg path[stroke]')].map((path) => path.getAttribute('d'))
+  expect(lines).toEqual(['M0,30 C30,30 30,16 60,16 S90,2 120,2', 'M0,23 C60,23 60,9 120,9'])
+  // Blue for CPU, teal for memory, as the fleet's tiles have them.
+  expect([...container.querySelectorAll('svg')].map((svg) => svg.classList.contains('text-blue'))).toEqual([true, false])
+  expect(container.querySelectorAll('svg')[1]).toHaveClass('text-teal')
+  await rerender({ host: hosts[0], info: { ms: 12, peek, at: Date.now() }, trail: undefined })
+  expect(container.querySelector('svg')).toBeNull()
+})

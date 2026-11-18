@@ -463,3 +463,24 @@ test('the right button on a card: what its keys do, as a menu, and its address f
   expect(on.onconnect).toHaveBeenCalledTimes(3)
   clearMocks()
 })
+
+// --- D11: the well are low, the sick are tall -----------------------------------
+
+test('the hosts that need looking at are tall and come first; the first that is well starts a row of its own, of low cards', () => {
+  live['web-01'] = { ms: 12, peek }
+  live['web-02'] = { ms: 12, peek: cpu(100) }
+  live['db-primary'] = { ms: null, error: errors[2] as ConnError }
+  live['bare'] = { ms: 3, peek: null }
+  render(Dashboard, props())
+  // Flat: one list of them all.
+  fireEvent.click(screen.getByRole('button', { name: 'Group by tag' }))
+  const low = () => cards().map((card) => [card.getAttribute('aria-label'), card.hasAttribute('data-low'), card.parentElement!.classList.contains('col-start-1')])
+  return vi.waitFor(() =>
+    expect(low()).toEqual([
+      ['web-02', false, false],
+      ['db-primary', false, false],
+      ['web-01', true, true],
+      ['bare', true, false],
+    ]),
+  )
+})
