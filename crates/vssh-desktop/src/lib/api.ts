@@ -248,6 +248,8 @@ export const api = {
   /** Takes those of them that `only` names; one the app has is written over if `overwrite`, else left. Resolves to the aliases written. */
   importHostsJson: (path: string, only: string[], overwrite: boolean) =>
     invoke<string[]>('import_hosts_json', { path, only, overwrite }),
+  /** The project's releases, in the user's browser. */
+  openReleases: () => invoke<void>('open_releases'),
   /**
    * A new key for the host, proven to open it, then its password login is
    * turned off. Resolves to the private key's path; `key-setup-step` carries

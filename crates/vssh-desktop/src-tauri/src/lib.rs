@@ -351,6 +351,24 @@ fn resolve_conn_error(error: ConnError, lang: Lang) -> Shown {
     }
 }
 
+/// Where a new version is to be had.
+const RELEASES: &str = "https://github.com/DucLong06/vssh/releases/latest";
+
+/// Shows the releases in the user's browser. That address and no other: the
+/// window cannot make the app open what it likes.
+#[tauri::command(async)]
+fn open_releases() -> Reply<()> {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    match std::process::Command::new(opener).arg(RELEASES).status() {
+        Ok(status) if status.success() => Ok(()),
+        _ => Err(anyhow!("{opener} could not open {RELEASES}").into()),
+    }
+}
+
 /// The app without a window: its state and its commands, on any runtime.
 pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
     tauri::Builder::new()
@@ -404,6 +422,7 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             hosts::export_hosts_json,
             hosts::import_hosts_json_preview,
             hosts::import_hosts_json,
+            open_releases,
             key_setup::ssh_key_setup
         ])
 }

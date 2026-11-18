@@ -454,7 +454,7 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Dán vào phiên đang gõ",
     ),
     ("which_host", "which host?", "của máy nào?"),
-    // The hosts as a file, out and in again.
+    // The hosts as a file, out and in again; and the word that a newer version is out.
     ("export_hosts_json", "Export hosts (JSON)", "Xuất máy chủ (JSON)"),
     ("import_hosts_json", "Import hosts (JSON)", "Nhập máy chủ (JSON)"),
     (
@@ -480,6 +480,12 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "{n} máy trong số đó đã có: {name}. Ghi đè bằng bản trong tệp, hay bỏ qua?",
     ),
     ("skip", "Skip", "Bỏ qua"),
+    (
+        "update_available",
+        "New version {name} — see it on GitHub",
+        "Có bản mới {name} — xem trên GitHub",
+    ),
+    ("dismiss", "Dismiss", "Tắt thông báo"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

@@ -36,12 +36,15 @@
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
   import Topbar from './lib/Topbar.svelte'
+  import { check } from './lib/update.svelte'
   import { heard as forwarded, sync as forwarding_of, tunnels } from './lib/tunnels.svelte'
   import Vault from './lib/Vault.svelte'
 
   /** How often the hosts are asked for their figures, and every how many rounds pinged. */
   const EVERY = 5000
   const PING_ROUNDS = 12
+  /** How long the app is left to start before it asks whether a newer version is out. */
+  const NEWS_AFTER = 5000
 
   let hosts = $state<Host[]>([])
   let snippets = $state<Snippet[]>([])
@@ -141,9 +144,11 @@
       else void restore()
     }, fail)
     const timer = setInterval(tick, EVERY)
+    const news = setTimeout(check, NEWS_AFTER)
     const forwards = listen<ForwardState>('forward-state', ({ payload }) => forwarded(payload))
     return () => {
       clearInterval(timer)
+      clearTimeout(news)
       void forwards.then((unlisten) => unlisten())
     }
   })
