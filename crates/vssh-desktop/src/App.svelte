@@ -19,6 +19,7 @@
   import Forwards from './lib/Forwards.svelte'
   import HostDelete from './lib/HostDelete.svelte'
   import HostForm from './lib/HostForm.svelte'
+  import HostsJson from './lib/HostsJson.svelte'
   import KeySetup from './lib/KeySetup.svelte'
   import { fromTarget } from './lib/hosts'
   import { i18n, t } from './lib/i18n.svelte'
@@ -87,7 +88,7 @@
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
   /** `newtab`: the palette, asked for a tab: the host chosen there is connected to. `pick-`: asked whose files, whose forwards. */
-  type Dialog = 'palette' | 'newtab' | 'pick-files' | 'pick-forwards' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
+  type Dialog = 'palette' | 'newtab' | 'pick-files' | 'pick-forwards' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts' | 'export' | 'import'
   let modal = $state<Dialog | null>(null)
   /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
@@ -698,6 +699,8 @@
       }}
       onpalette={() => (modal = 'palette')}
       onadd={() => edit()}
+      onexport={() => (modal = 'export')}
+      onimport={() => (modal = 'import')}
       onedit={edit}
       ondelete={(alias) => {
         editing = alias
@@ -878,6 +881,8 @@
       onclose={() => (modal = null)}
     />
   {/key}
+{:else if modal === 'export' || modal === 'import'}
+  <HostsJson mode={modal} onimported={(aliases) => changed(aliases[0])} onclose={() => (modal = null)} />
 {:else if modal === 'delete' && editing}
   <HostDelete alias={editing} ondeleted={deleted} onclose={() => (modal = null)} />
 {:else if modal === 'keys' && editing}

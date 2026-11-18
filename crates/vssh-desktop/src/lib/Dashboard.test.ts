@@ -7,6 +7,7 @@ import Dashboard from './Dashboard.svelte'
 import errors from './fixtures/errors.json'
 import fixture from './fixtures/hosts.json'
 import peekFixture from './fixtures/peek.json'
+import { setLang } from './i18n.svelte'
 import { forget, live, trail } from './live.svelte'
 
 const hosts = fixture as Host[]
@@ -340,6 +341,27 @@ test('the bar over the cards is two rows from one margin: the search with the ne
   // The bar stays over the cards; its second row breaks only where even that is too narrow.
   expect(first.parentElement).toHaveClass('grid', 'sticky', 'bg-bg')
   expect(second).toHaveClass('flex', 'flex-wrap')
+})
+
+test('the bar has the hosts as a JSON file, out and in, before the one filled button; not while an address is typed', async () => {
+  const user = userEvent.setup()
+  const heard = { onadd: vi.fn(), onexport: vi.fn(), onimport: vi.fn(), onquick: vi.fn() }
+  render(Dashboard, props(heard))
+  const search = screen.getByRole('searchbox', { name: SEARCH })
+  const row = () => [...search.parentElement!.querySelectorAll(':scope > *')].map((el) => el.getAttribute('aria-label') ?? el.textContent?.trim())
+  expect(row()).toEqual([SEARCH, 'Export hosts (JSON)', 'Import hosts (JSON)', 'Add host'])
+  expect(search.parentElement).toHaveClass('flex-wrap')
+  await user.click(screen.getByRole('button', { name: 'Export hosts (JSON)' }))
+  expect(heard.onexport).toHaveBeenCalledOnce()
+  await user.click(screen.getByRole('button', { name: 'Import hosts (JSON)' }))
+  expect(heard.onimport).toHaveBeenCalledOnce()
+  // The row is the connection's while one is typed.
+  await user.type(search, 'root@10.1.1.1')
+  expect(row()).toEqual([SEARCH, 'Connect to root@10.1.1.1', 'Add host'])
+  setLang('vi')
+  await user.clear(search)
+  expect(screen.getByRole('button', { name: 'Xuất máy chủ (JSON)' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Nhập máy chủ (JSON)' })).toBeInTheDocument()
 })
 
 // --- D9: the concept's dashboard ------------------------------------------------

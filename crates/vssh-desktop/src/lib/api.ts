@@ -49,6 +49,9 @@ export type HostForm = {
   password?: string
 }
 
+/** A host of a hosts file, as much of its form as is shown; `taken`: the app has a host of that name. */
+export type Offered = Pick<HostForm, 'alias' | 'hostname' | 'user' | 'port'> & { taken: boolean }
+
 export type Stats = {
   /** 1-minute load per core, in per cent. */
   cpu: number | null
@@ -238,6 +241,13 @@ export const api = {
   /** Takes those of them over that `only` names, and resolves to the aliases added. */
   hostsImport: (path: string | null, only: string[]) =>
     invoke<string[]>('hosts_import_ssh_config', { path, only }),
+  /** Every host's form into a new JSON file (`~` is the home); resolves to how many. No password is in it. */
+  exportHostsJson: (path: string) => invoke<number>('export_hosts_json', { path }),
+  /** What such a file holds; rejects for one that is not a hosts file. Nothing is written. */
+  importHostsJsonPreview: (path: string) => invoke<Offered[]>('import_hosts_json_preview', { path }),
+  /** Takes those of them that `only` names; one the app has is written over if `overwrite`, else left. Resolves to the aliases written. */
+  importHostsJson: (path: string, only: string[], overwrite: boolean) =>
+    invoke<string[]>('import_hosts_json', { path, only, overwrite }),
   /**
    * A new key for the host, proven to open it, then its password login is
    * turned off. Resolves to the private key's path; `key-setup-step` carries

@@ -454,6 +454,32 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Dán vào phiên đang gõ",
     ),
     ("which_host", "which host?", "của máy nào?"),
+    // The hosts as a file, out and in again.
+    ("export_hosts_json", "Export hosts (JSON)", "Xuất máy chủ (JSON)"),
+    ("import_hosts_json", "Import hosts (JSON)", "Nhập máy chủ (JSON)"),
+    (
+        "export_hosts_note",
+        "Every host as its form has it, in a new file. No password is written.",
+        "Mọi máy chủ như trong biểu mẫu của nó, vào một tệp mới. Không ghi mật khẩu nào.",
+    ),
+    ("export", "Export", "Xuất"),
+    (
+        "exported_hosts",
+        "{n} hosts saved to {name}",
+        "Đã lưu {n} máy chủ vào {name}",
+    ),
+    (
+        "import_empty",
+        "No hosts in that file.",
+        "Tệp đó không có máy chủ nào.",
+    ),
+    ("import_taken", "already here", "đã có"),
+    (
+        "import_taken_ask",
+        "{n} of them are here already: {name}. Overwrite them with the file's, or skip them?",
+        "{n} máy trong số đó đã có: {name}. Ghi đè bằng bản trong tệp, hay bỏ qua?",
+    ),
+    ("skip", "Skip", "Bỏ qua"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

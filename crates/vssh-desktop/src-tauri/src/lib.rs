@@ -401,6 +401,9 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             hosts::hosts_import_preview,
             hosts::hosts_import_ssh_config,
             hosts::host_quick_save,
+            hosts::export_hosts_json,
+            hosts::import_hosts_json_preview,
+            hosts::import_hosts_json,
             key_setup::ssh_key_setup
         ])
 }

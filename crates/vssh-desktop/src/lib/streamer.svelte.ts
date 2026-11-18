@@ -61,7 +61,7 @@ export const fake = (name: string) => streamer.fake[name] ?? ip(slot(name))
 export const hide = (name: string) => (streamer.on && !LOOPBACK.test(name) ? fake(name) : name)
 
 /** A host's `user@hostname:port`, as the window may show it. */
-export const addr = (host: Host) =>
+export const addr = (host: Pick<Host, 'alias' | 'hostname' | 'user' | 'port'>) =>
   address(streamer.on && host.hostname ? { ...host, hostname: fake(host.alias) } : host)
 
 /** A quick connect's `[user@]host[:port]`, as the window may show it. */

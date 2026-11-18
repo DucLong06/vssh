@@ -445,3 +445,172 @@ fn an_import_is_previewed_and_takes_only_the_hosts_chosen() {
         "{err}"
     );
 }
+
+#[test]
+fn the_hosts_go_out_as_json_without_a_password_and_come_in_again() {
+    let home = home("hosts-json");
+    let (_app, window) = window(&home, Fake::silent());
+    // A host with everything a form has, and a password in the vault.
+    call(&window, "vault_unlock", json!({ "passphrase": "open" })).unwrap();
+    let mut full = form("web-01");
+    full["proxy_jump"] = json!("bare");
+    full["pinned"] = json!(true);
+    full["password"] = json!("s3cret-of-web-01");
+    let update = json!({ "alias": "web-01", "form": full });
+    call(&window, "hosts_update", update).unwrap();
+
+    let file = home.join("hosts.json");
+    let export = || call(&window, "export_hosts_json", json!({ "path": file }));
+    assert_eq!(export(), Ok(json!(2)));
+    let text = fs::read_to_string(&file).unwrap();
+    let web = json!({
+        "alias": "web-01", "hostname": "10.0.0.7", "user": "ops", "port": 2200,
+        "identity_file": "~/.ssh/db", "proxy_jump": "bare", "grp": "prod",
+        "tags": "db eu", "notes": "primary", "pinned": true,
+    });
+    let bare = json!({
+        "alias": "bare", "hostname": "", "user": "", "port": null, "identity_file": "",
+        "proxy_jump": "", "grp": "", "tags": "", "notes": "", "pinned": false,
+    });
+    let written: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(written, json!([web, bare]));
+    // For a person to read, and nothing of the vault in it.
+    assert!(
+        text.starts_with("[\n  {\n    \"alias\": \"web-01\",\n"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("password") && !text.contains("s3cret"),
+        "{text}"
+    );
+    // A file that is there is not written over.
+    let again = export().unwrap_err();
+    let words = again["chain"][0].as_str().unwrap();
+    assert!(words.starts_with("cannot write "), "{again}");
+    assert_eq!(fs::read_to_string(&file).unwrap(), text);
+
+    // Another machine: it has web-01 as it first was, and `bare`.
+    let there = super::home("hosts-json-there");
+    let (_app, window) = super::window(&there, Fake::silent());
+    let config = || fs::read_to_string(there.join("config")).unwrap();
+    let preview = call(
+        &window,
+        "import_hosts_json_preview",
+        json!({ "path": file }),
+    )
+    .unwrap();
+    let taken: Vec<_> = preview
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| &h["taken"])
+        .collect();
+    assert_eq!(taken, [true, true]);
+    assert_eq!(preview[0]["alias"], "web-01");
+    assert_eq!(preview[0]["hostname"], "10.0.0.7");
+    assert_eq!(config(), SSH_CONFIG, "a preview writes nothing");
+
+    // One more host in the file, which is new there.
+    let mut hosts = written.clone();
+    hosts
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "alias": "db", "hostname": "10.0.0.9", "tags": "db" }));
+    fs::write(&file, hosts.to_string()).unwrap();
+    let import = |only: Value, overwrite: bool| {
+        let args = json!({ "path": file, "only": only, "overwrite": overwrite });
+        call(&window, "import_hosts_json", args)
+    };
+    // Skipped: the hosts it has are left as they are, the new one comes in.
+    assert_eq!(
+        import(json!(["web-01", "bare", "db"]), false),
+        Ok(json!(["db"]))
+    );
+    let listed = call(&window, "list_hosts", json!({})).unwrap();
+    assert_eq!(listed[0]["hostname"], "10.0.0.5");
+    assert_eq!(listed[2]["alias"], "db");
+    assert_eq!(listed[2]["meta"]["tags"], "db");
+    // Written over, and only the one that was chosen.
+    assert_eq!(import(json!(["web-01"]), true), Ok(json!(["web-01"])));
+    let listed = call(&window, "list_hosts", json!({})).unwrap();
+    let meta = json!({
+        "grp": "prod", "tags": "db eu", "notes": "primary", "pinned": true,
+        "last_connected": 0, "connects": 0,
+    });
+    let host = json!({ "alias": "web-01", "hostname": "10.0.0.7", "user": "ops", "port": 2200, "meta": meta });
+    assert_eq!(listed[0], host);
+    let sshc = SshConfig::load(&there.join("config")).unwrap();
+    assert_eq!(sshc.own("web-01", "ProxyJump"), "bare");
+    assert_eq!(sshc.own("web-01", "IdentityFile"), "~/.ssh/db");
+    assert_eq!(listed.as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn a_hosts_file_is_checked_before_any_of_it_is_written() {
+    let home = home("hosts-json-bad");
+    let (_app, window) = window(&home, Fake::silent());
+    let file = home.join("hosts.json");
+    let said = |text: &str| -> String {
+        fs::write(&file, text).unwrap();
+        let all = json!(["fine", "web-01", "two words"]);
+        let args = json!({ "path": file, "only": all, "overwrite": true });
+        let err = call(&window, "import_hosts_json", args).unwrap_err();
+        let preview = call(
+            &window,
+            "import_hosts_json_preview",
+            json!({ "path": file }),
+        );
+        assert_eq!(preview, Err(err.clone()), "the preview says the same");
+        let config = fs::read_to_string(home.join("config")).unwrap();
+        assert_eq!(config, SSH_CONFIG, "{text} was written");
+        err["chain"][0].as_str().unwrap().to_string()
+    };
+    let fine = r#"{ "alias": "fine", "hostname": "10.0.0.1" }"#;
+    for not_one in [
+        "Host web-01\n  HostName 10.0.0.5\n".to_string(),
+        r#"{ "alias": "fine" }"#.to_string(),
+        format!(r#"[{fine}, {{ "alias": "x", "shell": "sh" }}]"#),
+        format!(r#"[{fine}, {{ "alias": "x", "port": 70000 }}]"#),
+    ] {
+        assert!(
+            said(&not_one).ends_with(" is not a hosts file"),
+            "{not_one}"
+        );
+    }
+    let word = "alias must be one word without wildcards";
+    assert_eq!(
+        said(&format!(r#"[{fine}, {{ "alias": "two words" }}]"#)),
+        word
+    );
+    assert_eq!(said(&format!(r#"[{fine}, {{ "alias": "web-*" }}]"#)), word);
+    assert_eq!(
+        said(&format!(r#"[{fine}, {{ "hostname": "10.0.0.2" }}]"#)),
+        word
+    );
+    let twice = said(&format!(r#"[{fine}, {{ "alias": " fine " }}]"#));
+    assert_eq!(twice, "host fine is in the file twice");
+    let secret = said(&format!(r#"[{fine}, {{ "alias": "x", "password": "p" }}]"#));
+    assert_eq!(secret, "a hosts file holds no passwords");
+    fs::remove_file(&file).unwrap();
+    let args = json!({ "path": file, "only": [], "overwrite": false });
+    let gone = call(&window, "import_hosts_json", args).unwrap_err();
+    assert!(
+        gone["chain"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("cannot read "),
+        "{gone}"
+    );
+
+    // A line break in a value stays in that value: no directive of its own.
+    fs::write(
+        &file,
+        r#"[{ "alias": "sly", "hostname": "h\n  ProxyCommand touch /tmp/x" }]"#,
+    )
+    .unwrap();
+    let args = json!({ "path": file, "only": ["sly"], "overwrite": false });
+    assert_eq!(call(&window, "import_hosts_json", args), Ok(json!(["sly"])));
+    let sshc = SshConfig::load(&home.join("config")).unwrap();
+    assert_eq!(sshc.own("sly", "ProxyCommand"), "");
+    assert_eq!(sshc.own("sly", "HostName"), "h   ProxyCommand touch /tmp/x");
+}
