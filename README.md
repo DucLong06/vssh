@@ -97,7 +97,7 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 
 ## Install
 
-Linux x86_64, from v0.2.0 on. A [release](https://github.com/DucLong06/vssh/releases) carries three packages; take one:
+Linux x86_64, from [v0.2.0](https://github.com/DucLong06/vssh/releases/tag/v0.2.0) (out now). Each release carries three packages; take one:
 
 | Package | For | Install |
 |---|---|---|
