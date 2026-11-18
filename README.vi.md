@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/img/logo.png" alt="vssh — dấu nhắc terminal với chữ V nằm ngang, ssh là dòng lệnh" width="200">
+  <img src="docs/img/icon.png" alt="vssh — dấu nhắc terminal với chữ V nằm ngang, ssh là dòng lệnh" width="160">
 </p>
-
-<h1 align="center">vssh</h1>
 
 <p align="center"><b>Việt Nam SSH</b> — chữ V trong vssh là Việt Nam 🇻🇳<br>
 Trình quản lý SSH đúng cách bạn làm việc: chọn máy chủ, kết nối, giữ nhiều phiên,
@@ -194,3 +192,7 @@ curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
 ```
 
 Mọi thứ khác về nó — bắt đầu nhanh, phím tắt, cấu hình — nằm trong [README-terminal.vi.md](README-terminal.vi.md) ([English](README-terminal.md)).
+
+---
+
+<p align="center">Cảm ơn <a href="https://github.com/nousresearch/hermes-agent">Hermes</a>, <a href="https://z.ai/">GLM</a> và <a href="https://claude.com/">Claude</a> đã cùng tôi xây dựng nên dự án này. 🇻🇳</p>

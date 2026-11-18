@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/img/logo.png" alt="vssh — a terminal prompt whose V is lying down, ssh as its command" width="200">
+  <img src="docs/img/icon.png" alt="vssh — a terminal prompt whose V is lying down, ssh as its command" width="160">
 </p>
-
-<h1 align="center">vssh</h1>
 
 <p align="center"><b>Việt Nam SSH</b> — the V is for Việt Nam 🇻🇳<br>
 An SSH manager for the way you actually work: pick a host, connect, keep
@@ -194,3 +192,7 @@ curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
 ```
 
 Everything else about it — quickstart, keys, configuration — is in [README-terminal.md](README-terminal.md) ([Tiếng Việt](README-terminal.vi.md)).
+
+---
+
+<p align="center">Cảm ơn <a href="https://github.com/nousresearch/hermes-agent">Hermes</a>, <a href="https://z.ai/">GLM</a> và <a href="https://claude.com/">Claude</a> — thank you for building this project with me. 🇻🇳</p>
