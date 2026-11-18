@@ -158,7 +158,7 @@ test('r in a popover the pointer opened is a person asking', async () => {
   expect(asked).toEqual([['get_host_stats', { alias: 'bare', passive: false }]])
 })
 
-test('a host that is down: its failure, the whole chain, and r to try again', async () => {
+test('a host that is down: its failure, the whole chain, and a button or r to try again', async () => {
   live['web-02'] = { ms: null, error: errors[2] as ConnError, shown: shown.en[2] as Shown, at: Date.now() }
   const user = open()
   card('web-02').focus()
@@ -166,11 +166,16 @@ test('a host that is down: its failure, the whole chain, and r to try again', as
   expect(popover()).toHaveTextContent('unreachable')
   expect(popover()).toHaveTextContent('✗ REFUSED Connection refused by 10.0.0.5:2222 — is sshd running?')
   expect(popover()).toHaveTextContent('connection refused by 10.0.0.5:2222: Connection refused (os error 111)')
-  expect(popover()).toHaveTextContent('r try again')
+  // No line of keys at its foot: a button, for the pointer, that names the key.
+  expect(popover()!.querySelector('kbd')).toBeNull()
+  const again = within(popover()!).getByRole('button', { name: 'try again' })
+  expect(again).toHaveAttribute('title', 'Try again (R)')
   expect(within(popover()!).queryAllByRole('term')).toHaveLength(0)
 
+  await user.click(again)
+  expect(asked).toEqual([['get_host_stats', { alias: 'web-02', passive: false }]])
   await user.keyboard('r')
-  expect(asked).toHaveLength(1)
+  expect(asked).toHaveLength(2)
   await vi.waitFor(() => expect(rows()).toHaveLength(7))
 })
 
@@ -216,6 +221,6 @@ test("in Vietnamese the rows are the TUI's", async () => {
   expect(rows().map((row) => row[0])).toEqual(['Tên máy', 'Hệ thống', 'Đã chạy', 'Tải', 'CPU', 'RAM', 'Đĩa /'])
   expect(rows()[2]).toEqual(['Đã chạy', '3 ngày, 2:15'])
   expect(popover()).toHaveTextContent('2 giây trước')
-  expect(popover()).toHaveTextContent('r làm mới')
-  expect(popover()).toHaveTextContent('esc đóng')
+  expect(within(popover()!).getByRole('button', { name: 'làm mới' })).toHaveAttribute('title', 'Làm mới (R)')
+  expect(popover()!.querySelector('kbd')).toBeNull()
 })

@@ -6,6 +6,8 @@
   import { t } from './i18n.svelte'
   import { ask, critical, down, live, sick, trail, up } from './live.svelte'
   import QuickPeek from './QuickPeek.svelte'
+  import Keys from './Keys.svelte'
+  import { KEY, tip } from './keymap'
   import Sparkline from './Sparkline.svelte'
 
   type Props = {
@@ -162,8 +164,9 @@
   }
 
   async function onkeydown(e: KeyboardEvent, alias: string) {
-    // Not from the card's own button: there Enter is a click already.
-    if (e.target !== e.currentTarget) return
+    // Not from the card's own button: there Enter is a click already. Nor with
+    // Ctrl: Ctrl+F on a card is the search, not the card's f.
+    if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey) return
     const step = e.altKey && { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key]
     if (e.key === 'Enter') {
       connect(alias)
@@ -175,7 +178,7 @@
       peek(alias)
     } else if (e.key === 'f') {
       onfiles?.(alias)
-    } else if (e.key === 'L') {
+    } else if (e.key === 'l' || e.key === 'L') {
       // Stopped here: the dialog has the focus before the key is done, and the key is not for it.
       e.preventDefault()
       onforwards?.(alias)
@@ -203,6 +206,11 @@
     // The TUI's keys. Not while typing, with Ctrl (Ctrl-R), or under a dialog.
     // Nor behind a terminal tab.
     const away = hidden || document.querySelector('dialog[open]')
+    // The desktop's key for what `/` is, from a field too.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !away) {
+      e.preventDefault()
+      search?.focus()
+    }
     if (typing || e.ctrlKey || e.metaKey || e.altKey || away) return
     if (e.key === '/') {
       e.preventDefault()
@@ -309,8 +317,9 @@
         <h2 class="text-lg font-semibold text-ink">{t('no_hosts')}</h2>
         <p class="text-white">{t('no_hosts_hint')}</p>
         <div class="mt-2 flex gap-2">
-          <button type="button" onclick={onpalette} aria-label={t('palette')} class="{control} font-mono text-[13px]">
-            Ctrl-K
+          <button type="button" onclick={onpalette} aria-label={t('palette')} aria-keyshortcuts="Control+K" class="{control} flex items-center gap-2">
+            {t('palette')}
+            <Keys keys={KEY.palette[0]} />
           </button>
           {#if onadd}
             <button type="button" onclick={onadd} class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90">
@@ -330,8 +339,9 @@
         bind:value={query}
         type="search"
         aria-label={t('search_hosts')}
-        aria-keyshortcuts="/"
-        placeholder="/  {t('search_hosts')}"
+        aria-keyshortcuts="/ Control+F"
+        title={tip(t('search_hosts'), KEY.search)}
+        placeholder={t('search_hosts')}
         onkeydown={(e) => {
           if (e.key !== 'Escape') return
           query = ''
@@ -359,6 +369,7 @@
           <button
             type="button"
             aria-keyshortcuts="x"
+            title={tip(t('run_command'), KEY.run)}
             onclick={() => onbatch?.()}
             class="{control} border-magenta/70 text-magenta"
           >
@@ -370,6 +381,7 @@
           <button
             type="button"
             aria-keyshortcuts="a"
+            title={tip(t('add_host'), KEY.add)}
             onclick={onadd}
             class="{control} border-blue bg-blue font-semibold text-page shadow-lg shadow-blue/20 hover:bg-blue/90"
           >
@@ -457,10 +469,11 @@
                 onforwards={onforwards && (() => onforwards(host.alias))}
                 onedit={onedit && (() => onedit(host.alias))}
                 onretry={() => void ask(host.alias, false)}
+                onpeek={() => peek(host.alias)}
                 trail={trail[host.alias]}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}
-                aria-keyshortcuts="Enter Space v f Shift+L e d Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Enter Space v f l e d Delete Alt+ArrowLeft Alt+ArrowRight"
                 onfocus={() => {
                   onselect?.(host.alias)
                   if (peeking && peeking.alias !== host.alias) peeking = null
@@ -484,7 +497,7 @@
                 class="cursor-grab scroll-mt-20"
               />
               {#if peeking?.alias === host.alias}
-                <QuickPeek {host} info={live[host.alias]} />
+                <QuickPeek {host} info={live[host.alias]} onrefresh={() => void ask(host.alias, false)} />
               {/if}
             </li>
           {/each}

@@ -2,14 +2,16 @@
   import type { Host } from './api'
   import { i18n, t } from './i18n.svelte'
   import type { Live } from './live.svelte'
+  import { capital, KEY, tip } from './keymap'
   import { parts, uptime } from './stats'
   import { addr, fake, streamer } from './streamer.svelte'
 
   // The TUI's quick peek, as a panel that slides out from under its card:
   // what the host said about itself the last time it was asked, and how long
   // ago that was.
-  type Props = { host: Host; info?: Live }
-  let { host, info }: Props = $props()
+  // `onrefresh`: asks the host again, as `r` does.
+  type Props = { host: Host; info?: Live; onrefresh?: () => void }
+  let { host, info, onrefresh }: Props = $props()
 
   let box: HTMLElement
   let now = $state(Date.now())
@@ -61,15 +63,27 @@
   })
 </script>
 
+<!-- before: the gap under the card is the popover's too, so a pointer on its way to the button has not left the card. -->
 <div
   bind:this={box}
   role="dialog"
   aria-label="{t('quick_peek')}: {host.alias}"
-  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-[13px] shadow-card motion-reduce:animate-none"
+  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-[13px] shadow-card before:absolute before:inset-x-0 before:-top-2 before:h-2 motion-reduce:animate-none"
 >
-  <p class="flex items-baseline justify-between gap-2">
+  <p class="flex items-center gap-2">
     <strong class="truncate text-sm font-semibold text-ink">{t('quick_peek')}: {host.alias}</strong>
-    <span class="shrink-0 text-xs text-dim">{age}</span>
+    <span class="ml-auto shrink-0 text-xs text-dim">{age}</span>
+    {#if onrefresh}
+      <button
+        type="button"
+        onclick={onrefresh}
+        aria-keyshortcuts="r"
+        title={tip(capital(info?.shown ? t('try_again') : t('refresh')), KEY.refresh)}
+        class="shrink-0 cursor-pointer rounded-lg border border-edge px-2 py-0.5 text-xs font-medium text-fg first-letter:uppercase hover:bg-selection"
+      >
+        {info?.shown ? t('try_again') : t('refresh')}
+      </button>
+    {/if}
   </p>
 
   <div class="mt-3 rounded-xl bg-bg px-3 py-2">
@@ -100,11 +114,4 @@
   {:else}
     <p class="px-3 pt-3 text-white">{t('asking')} {host.alias}…</p>
   {/if}
-
-  <p class="mt-3 border-t border-edge px-3 pt-3 text-xs text-white">
-    <kbd class="text-magenta">r</kbd>
-    {info?.shown ? t('try_again') : t('refresh')} ·
-    <kbd class="text-magenta">esc</kbd>
-    {t('close')}
-  </p>
 </div>

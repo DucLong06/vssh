@@ -1,8 +1,10 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import type { Entry, Shown } from './api'
+  import Icon from './Icon.svelte'
   import { crumbs, human, join, parent, when } from './paths'
   import { t } from './i18n.svelte'
+  import { KEY, tip } from './keymap'
 
   type Props = {
     side: 'local' | 'remote'
@@ -137,9 +139,12 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
-    if (e.ctrlKey || e.metaKey || e.altKey || !(e.key in keys)) return
+    const chord = e.ctrlKey || e.metaKey
+    // Ctrl-F is the desktop's key for what `/` is.
+    const key = chord && e.key === 'f' ? '/' : e.key
+    if ((chord && key !== '/') || e.altKey || !(key in keys)) return
     e.preventDefault()
-    keys[e.key]()
+    keys[key]()
   }
 
   function menu(e: MouseEvent) {
@@ -193,12 +198,24 @@
         </div>
       </div>
     </nav>
+    <!-- The filter's button, for the pointer: its field is under the header only while it is used. -->
+    <button
+      type="button"
+      aria-label={t('filter')}
+      aria-pressed={filtering || filter !== ''}
+      aria-keyshortcuts="/ Control+F"
+      title={tip(t('filter'), KEY.search)}
+      onclick={keys['/']}
+      class="shrink-0 cursor-pointer rounded-lg border border-edge px-1 py-px text-white hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
+    >
+      <Icon name="search" class="size-3.5!" />
+    </button>
     <button
       type="button"
       aria-label={t('hidden_files')}
       aria-pressed={showHidden}
       aria-keyshortcuts="."
-      title={t('hidden_files')}
+      title={tip(t('hidden_files'), KEY.hidden)}
       onclick={() => (showHidden = !showHidden)}
       class="shrink-0 cursor-pointer rounded-lg border border-edge px-1.5 text-white hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
     >
@@ -212,7 +229,7 @@
       bind:value={filter}
       type="search"
       aria-label={t('filter')}
-      placeholder="/  {t('filter')}"
+      placeholder={t('filter')}
       onkeydown={(e) => {
         if (e.key !== 'Escape' && e.key !== 'Enter') return
         if (e.key === 'Escape') filter = ''
@@ -231,7 +248,7 @@
       tabindex="0"
       aria-label={label}
       aria-busy={loading}
-      aria-keyshortcuts="j k g Shift+G Enter Backspace Space c / ."
+      aria-keyshortcuts="ArrowUp ArrowDown j k Home End g Shift+G Enter ArrowRight l Backspace ArrowLeft h u Space c / Control+F ."
       {onkeydown}
       class="w-full table-fixed border-collapse outline-none aria-busy:opacity-60"
     >

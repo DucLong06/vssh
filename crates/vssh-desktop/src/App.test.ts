@@ -1,6 +1,6 @@
 import { emit } from '@tauri-apps/api/event'
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
-import { cleanup, render, screen, within } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
@@ -15,6 +15,7 @@ import shown from './lib/fixtures/shown.json'
 import { terminals } from './lib/fixtures/xterm'
 import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
+import { capital, sheet } from './lib/keymap'
 import { fake, setStreamer } from './lib/streamer.svelte'
 import strings from './lib/strings.json'
 
@@ -177,8 +178,12 @@ test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second C
   await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
   await tab(/web-01/)
   const picked = () => screen.getByRole('tab', { selected: true })
-  // The menu is on screen with a terminal, and lit while the next key is a command.
-  expect(status()).toHaveTextContent('Ctrl-A 0-9 tab · Tab next · y copy output · b broadcast · x close')
+  // The status bar lists no keys. A tab says its own in its tooltip: its number, after the leader.
+  expect(status().querySelector('kbd')).toBeNull()
+  expect(await tab(/web-01/)).toHaveAttribute('title', 'web-01 (Ctrl+A 1)')
+  expect(screen.getByRole('tab', { name: /Hosts/ })).toHaveAttribute('title', 'Hosts (Ctrl+A 0)')
+  // Ctrl-W closes the tab in front: its × says so, and no other does.
+  expect(screen.getByRole('button', { name: 'close web-01' })).toHaveAttribute('title', 'Close (Ctrl+W)')
   await user.keyboard(`${leader}0`)
   expect(picked()).toHaveTextContent('0 Hosts')
   await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
@@ -482,7 +487,8 @@ test('Ctrl-K opens the palette; Ctrl-A is the leader and waits for its key', asy
   screen.getByRole<HTMLDialogElement>('dialog').close()
   await user.keyboard(leader)
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  expect(within(status()).getByRole('status')).toHaveTextContent('Ctrl-A 0-9 tab')
+  // Half a chord: the status bar says so until the second key comes.
+  expect(within(status()).getByRole('status')).toHaveTextContent('Ctrl+A waiting for the second key — ? lists them')
   await user.keyboard('{Escape}')
   expect(within(status()).queryByRole('status')).not.toBeInTheDocument()
   // In a field Ctrl-A is the field's: it selects the text.
@@ -493,18 +499,18 @@ test('Ctrl-K opens the palette; Ctrl-A is the leader and waits for its key', asy
 test('a host chosen in the palette is the selected one', async () => {
   const user = shell()
   await screen.findByRole('button', { name: /db-primary/ })
-  // With no host selected there is nothing for the keys to act on.
-  expect(status()).not.toHaveTextContent('Enter')
   await user.keyboard('{Control>}k{/Control}')
   await user.type(palette(), 'db{Enter}')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: /db-primary/ })).toHaveAttribute('aria-current', 'true')
   expect(status()).toHaveTextContent('db-primary postgres@db.internal.example.com')
   await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
-  // What the selected card's keys do, in the window's language.
-  expect(status()).toHaveTextContent('Enter Connect · Space select · v Quick peek')
+  // No row of keys under the window: each of the card's buttons says its own, in the window's language.
+  expect(status().querySelector('kbd')).toBeNull()
+  const titles = async () => within(await card('db-primary')).getAllByRole('button').map((button) => button.title)
+  expect(await titles()).toEqual(['Edit (E)', 'Forwards (L)', 'Files (F)', 'Connect (Enter)'])
   await user.click(screen.getByRole('button', { name: 'Language: EN' }))
-  expect(status()).toHaveTextContent('Enter Kết nối · Space chọn · v Xem nhanh')
+  expect(await titles()).toEqual(['Sửa (E)', 'Chuyển tiếp (L)', 'Tệp (F)', 'Kết nối (Enter)'])
   // Chosen again from where the focus went (the button): the card has it back, for its keys.
   await user.keyboard('{Control>}k{/Control}')
   await user.type(palette(), 'db{Enter}')
@@ -614,7 +620,7 @@ const DATA = [
  * are the core's (`vssh_core::stats::uptime`), as `stats.ts` has them.
  */
 const KEPT = [
-  ...['Ctrl-K', 'Ctrl-A', 'Enter', 'Space', 'enter', 'esc', 'CPU', 'ms', 'EN', 'VI'],
+  ...['Ctrl', 'Shift', 'Alt', 'Tab', 'Enter', 'Space', 'Esc', 'Home', 'End', 'Backspace', 'Del', 'CPU', 'ms', 'EN', 'VI'],
   // The brand mark in the rail: a > whose command is ssh, drawn, not said in any language.
   'ssh',
   ...['ngày', 'giờ', 'phút', 'giây'],
@@ -628,8 +634,8 @@ const KEPT = [
  */
 function foreign(text: string, typed: string[] = []): string[] {
   // `{n}` and `{name}` are what the window puts into a text of the table: its pieces are what is looked for.
-  // Also in small letters: a key's hint is the table's word without its capital.
-  const table = Object.values(strings.vi).flatMap((vi) => vi.split(/\{\w+\}/)).flatMap((piece) => [piece, piece.toLowerCase()])
+  // Also in small letters, and with a capital: a tooltip starts with one, whatever the table's word has.
+  const table = Object.values(strings.vi).flatMap((vi) => vi.split(/\{\w+\}/)).flatMap((piece) => [piece, piece.toLowerCase(), capital(piece)])
   const known = [...table, ...DATA, ...typed, ...KEPT].map((piece) => piece.trim()).filter((piece) => piece.length > 1)
   let left = text
   // The longest first: `Máy chủ` before `Máy`.
@@ -649,7 +655,7 @@ test('the check itself: it finds English where there is some', () => {
 })
 
 test('the check itself: it finds words that are in no table, and lets the table\'s, the data and the keys be', () => {
-  expect(foreign('Máy chủ 4 · Thẻ 2 · web-01 deploy@10.0.0.5:2222 · CPU 23% · 12 ms · Ctrl-K · 4 giây trước')).toEqual([])
+  expect(foreign('Máy chủ 4 · Thẻ 2 · web-01 deploy@10.0.0.5:2222 · CPU 23% · 12 ms · Ctrl+K · 4 giây trước')).toEqual([])
   expect(foreign('Đã lưu vào /home/me/vssh-vault.backup', ['vssh-vault.backup'])).toEqual([])
   expect(foreign('Máy chủ 4 · ERROR could not be read · Đang nạp')).toEqual(['ERROR', 'could', 'not', 'be', 'read', 'Đang', 'nạp'])
 })
@@ -743,12 +749,14 @@ test('f on a card, or its Files button, opens the host\'s files in a tab of thei
   expect(screen.getByRole('tabpanel', { name: 'Files web-01' })).toBeVisible()
   expect(await screen.findByRole('row', { name: /nginx/ })).toBeInTheDocument()
   expect(asked('sftp_list')).toEqual([{ host: 'web-01', path: '/home/deploy' }])
-  // The keys are the file view's, and the status bar says which.
+  // The keys are the file view's. The status bar lists none: the view's own buttons name theirs.
   expect(screen.getByRole('grid', { name: 'local' })).toHaveFocus()
-  expect(status()).toHaveTextContent('Space select · c Copy · / Filter · . Hidden files · right-click more')
-  // The keys stand out, as on the dashboard: two of them are punctuation.
-  expect([...status().querySelectorAll('kbd')].map((key) => key.textContent)).toEqual(['Space', 'c', '/', '.'])
-  expect(status()).not.toHaveTextContent('Ctrl-A')
+  expect(status().querySelector('kbd')).toBeNull()
+  expect(status()).toHaveTextContent('Hosts 4 Snippets 1 Sessions 0')
+  const pane = within(screen.getByRole('region', { name: 'local' }))
+  expect(pane.getByRole('button', { name: 'Filter' })).toHaveAttribute('title', 'Filter (/, Ctrl+F)')
+  expect(pane.getByRole('button', { name: 'Hidden files' })).toHaveAttribute('title', 'Hidden files (.)')
+  expect(screen.getByRole('button', { name: 'Upload' })).toHaveAttribute('title', 'Upload (C)')
   // It is no session: nothing was logged in to for a shell.
   expect(asked('session_open')).toHaveLength(0)
   expect(status()).toHaveTextContent('Sessions 0')
@@ -781,17 +789,17 @@ test('a file view next to a terminal: its tab comes after the sessions, in Vietn
   await user.keyboard('{Enter}')
   expect(await tab(/1 web-01/)).toHaveAttribute('aria-selected', 'true')
   expect(await tab(/2 Files web-01/)).toHaveAttribute('aria-selected', 'false')
-  // The terminal's keys, not the file view's.
-  expect(status()).toHaveTextContent('Ctrl-A')
   await user.keyboard(`${leader}2`)
   expect(await tab(/2 Files web-01/)).toHaveAttribute('aria-selected', 'true')
   setLang('vi')
   expect(await tab(/2 Tệp web-01/)).toBeInTheDocument()
-  expect(status()).toHaveTextContent('Space chọn · c Sao chép · / Lọc · . Tệp ẩn · chuột phải thao tác khác')
+  expect(screen.getByRole('button', { name: 'Tải xuống' })).toHaveAttribute('title', 'Tải xuống (C)')
+  expect(screen.getAllByRole('button', { name: 'Tệp ẩn' })[0]).toHaveAttribute('title', 'Tệp ẩn (.)')
   await user.keyboard(`${leader}0`)
   expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toBeInTheDocument()
   ;(await card('web-01')).focus()
-  await vi.waitFor(() => expect(status()).toHaveTextContent('f Tệp'))
+  await vi.waitFor(() => expect(status()).toHaveTextContent('web-01 deploy@'))
+  expect(within(await card('web-01')).getByRole('button', { name: 'Tệp' })).toHaveAttribute('title', 'Tệp (F)')
 })
 
 // --- D5: snippets, batches, forwards -----------------------------------------
@@ -874,7 +882,7 @@ test('x on the dashboard: a command for the marked hosts, or the selected one; t
   expect(screen.queryByRole('dialog')).toBeNull()
 
   ;(await card('web-02')).focus()
-  await vi.waitFor(() => expect(status()).toHaveTextContent('x Run'))
+  await vi.waitFor(() => expect(status()).toHaveTextContent('web-02'))
   await user.keyboard('x')
   const one = await screen.findByRole('dialog', { name: 'Run on 1 host(s)' })
   // An x typed into the line is a letter.
@@ -906,10 +914,16 @@ test('x on the dashboard: a command for the marked hosts, or the selected one; t
 test('L on a card, or its Forwards button, opens the host\'s port forwards', async () => {
   const user = shell({ forwards_list: () => forwards, forward_toggle: () => true })
   ;(await card('web-02')).focus()
-  await vi.waitFor(() => expect(status()).toHaveTextContent('L Forwards'))
+  await vi.waitFor(() => expect(status()).toHaveTextContent('web-02'))
+  // With Shift, as the status bar used to say it, or without.
+  await user.keyboard('l')
+  expect(await screen.findByRole('dialog', { name: 'Forwards web-02' })).toBeInTheDocument()
+  screen.getByRole<HTMLDialogElement>('dialog').close()
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  ;(await card('web-02')).focus()
   await user.keyboard('L')
   const dialog = await screen.findByRole('dialog', { name: 'Forwards web-02' })
-  expect(asked('forwards_list')).toEqual([{ host: 'web-02' }])
+  expect(asked('forwards_list')).toEqual([{ host: 'web-02' }, { host: 'web-02' }])
   const web = await within(dialog).findByRole('switch', { name: 'L 8080 localhost:80' })
   await user.click(web)
   expect(asked('forward_toggle')).toEqual([{ host: 'web-02', kind: 'L', value: '8080 localhost:80' }])
@@ -922,7 +936,7 @@ test('L on a card, or its Forwards button, opens the host\'s port forwards', asy
   expect(await screen.findByRole('dialog', { name: 'Forwards web-01' })).toBeInTheDocument()
   setLang('vi')
   expect(await screen.findByRole('dialog', { name: 'Chuyển tiếp web-01' })).toBeInTheDocument()
-  await vi.waitFor(() => expect(status()).toHaveTextContent('L Chuyển tiếp'))
+  expect(within(await card('web-01')).getByRole('button', { name: 'Chuyển tiếp' })).toHaveAttribute('title', 'Chuyển tiếp (L)')
 })
 
 // --- D6: the vault, the host form, the key setup ----------------------------
@@ -1049,7 +1063,7 @@ test('with no hosts yet the empty dashboard has the way to the first one', async
 test('e on a card, or its Edit button, opens the form on that host; renamed, it is still the selected one', async () => {
   const user = editable()
   ;(await card('web-02')).focus()
-  await vi.waitFor(() => expect(status()).toHaveTextContent('e Edit'))
+  await vi.waitFor(() => expect(status()).toHaveTextContent('web-02'))
   await user.keyboard('e')
   const dialog = await screen.findByRole('dialog', { name: 'Edit host' })
   await vi.waitFor(() => expect(within(dialog).getByLabelText('Host')).toHaveValue('10.0.0.6'))
@@ -1549,4 +1563,531 @@ test('the rail and the top bar in Vietnamese: no word of theirs is left in Engli
   for (const name of ['Trạng thái', 'Máy chủ 4', 'Phiên', 'Tệp', /Đoạn lệnh/, 'Chuyển tiếp', 'Kho']) expect(rail(name)).toBeInTheDocument()
   await vi.waitFor(() => expect(head()).toHaveTextContent('4 Máy chủ · 4 kết nối được · 0 mất kết nối'))
   expect(stray()).toEqual([])
+})
+
+// --- D10: the keys of a desktop app, and where a person finds them ------------
+
+const sheetOpen = () => screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })
+
+test('the cheatsheet opens five ways: ?, F1, Ctrl+/, the top bar\'s keyboard, the palette; the keys of the view in front first', async () => {
+  const user = shell()
+  await card('web-01')
+  expect(sheetOpen()).toBeNull()
+  for (const keys of ['?', '{F1}', '{Control>}/{/Control}']) {
+    await user.keyboard(keys)
+    expect(sheetOpen(), keys).toBeInTheDocument()
+    await shut()
+  }
+  const keyboard = screen.getByRole('button', { name: 'Keyboard shortcuts' })
+  expect(keyboard).toHaveAttribute('title', 'Keyboard shortcuts (?, F1, Ctrl+/)')
+  await user.click(keyboard)
+  // On the dashboard its keys come first; the rest follow.
+  expect(within(sheetOpen()!).getAllByRole('region').map((group) => group.getAttribute('aria-label'))).toEqual([
+    'Hosts',
+    'Anywhere',
+    'In a session, after Ctrl+A',
+    'Files',
+    'With the mouse',
+    'Command results',
+  ])
+  // Under a dialog the keys are the dialog's: a ? typed in its field is a character.
+  await user.type(within(sheetOpen()!).getByRole('textbox'), 'ctrl?')
+  expect(within(sheetOpen()!).getByRole('textbox')).toHaveValue('ctrl?')
+  await shut()
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'shortcuts{Enter}')
+  expect(sheetOpen()).toBeInTheDocument()
+  await shut()
+  // In a field ? is a character too; F1 is not.
+  await user.type(screen.getByRole('searchbox'), '?')
+  expect(sheetOpen()).toBeNull()
+  expect(screen.getByRole('searchbox')).toHaveValue('?')
+  await user.keyboard('{F1}')
+  expect(sheetOpen()).toBeInTheDocument()
+})
+
+test('with a terminal in front the window takes no key a shell uses: ?, F1, Ctrl+/, Ctrl+T, Ctrl+F stay the shell\'s; Ctrl-A ? is the cheatsheet', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/web-01/)
+  for (const keys of ['?', '{F1}', '{Control>}/{/Control}', '{Control>}t{/Control}', '{Control>}f{/Control}']) {
+    await user.keyboard(keys)
+    expect(screen.queryByRole('dialog'), keys).toBeNull()
+  }
+  expect(screen.getByRole('searchbox', { hidden: true })).not.toHaveFocus()
+  await user.keyboard(`${leader}?`)
+  expect(sheetOpen()).toBeInTheDocument()
+  // The session's keys first.
+  expect(within(sheetOpen()!).getAllByRole('region')[0]).toHaveAccessibleName('In a session, after Ctrl+A')
+  await shut()
+  // The keyboard in the top bar is there in every view.
+  await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }))
+  expect(sheetOpen()).toBeInTheDocument()
+})
+
+test('Ctrl+Tab and Ctrl+Shift+Tab go through the tabs, from a terminal too; Ctrl-A q and d are the leader\'s for the hosts and for closing', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/web-01/)
+  await user.keyboard(`${leader}0`)
+  await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
+  const picked = () => screen.getByRole('tab', { selected: true })
+  expect(picked()).toHaveTextContent('2 web-02')
+  const next = '{Control>}{Tab}{/Control}'
+  const back = '{Control>}{Shift>}{Tab}{/Shift}{/Control}'
+  await user.keyboard(back)
+  expect(picked()).toHaveTextContent('1 web-01')
+  expect(terminals[0].focused).toBe(true)
+  await user.keyboard(next)
+  expect(picked()).toHaveTextContent('2 web-02')
+  await user.keyboard(next)
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await user.keyboard(back)
+  expect(picked()).toHaveTextContent('2 web-02')
+  // As WebKitGTK says Shift+Tab: a key with no name (ISO_Left_Tab), in Tab's place. After the leader too.
+  await fireEvent.keyDown(document.body, { key: 'Unidentified', code: 'Tab', ctrlKey: true, shiftKey: true })
+  expect(picked()).toHaveTextContent('1 web-01')
+  await user.keyboard(leader)
+  await fireEvent.keyDown(document.body, { key: 'Unidentified', code: 'Tab', shiftKey: true })
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await user.keyboard(back)
+  expect(picked()).toHaveTextContent('2 web-02')
+  // Nothing of it reached a shell.
+  expect(asked('session_write')).toEqual([])
+  await user.keyboard(`${leader}q`)
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await user.keyboard(`${back}${leader}d`)
+  expect(asked('session_close')).toEqual([{ id: 2 }])
+})
+
+test('Ctrl+T is a new tab: the quick connect; Ctrl+F is the search, on the dashboard and in a file pane', async () => {
+  const user = shell()
+  await card('web-01')
+  await user.keyboard('{Control>}t{/Control}')
+  expect(screen.getByRole('dialog', { name: 'Quick connect' })).toBeInTheDocument()
+  await user.type(screen.getByLabelText('Host'), '10.0.0.9')
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }))
+  expect(await tab(/10.0.0.9/)).toHaveAttribute('aria-selected', 'true')
+  await user.keyboard(`${leader}0`)
+  const search = screen.getByRole('searchbox', { name: 'Search hosts, #tag' })
+  // No slash in the field: its tooltip names the keys.
+  expect(search).toHaveAttribute('placeholder', 'Search hosts, #tag')
+  expect(search).toHaveAttribute('title', 'Search hosts, #tag (/, Ctrl+F)')
+  expect(search).not.toHaveFocus()
+  await user.keyboard('{Control>}f{/Control}')
+  expect(search).toHaveFocus()
+  // From the field too: it stays there, and no f is typed.
+  await user.keyboard('{Control>}f{/Control}')
+  expect(search).toHaveFocus()
+  expect(search).toHaveValue('')
+  await user.keyboard('{Escape}')
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  await screen.findByRole('row', { name: /nginx/ })
+  expect(screen.getByRole('grid', { name: 'local' })).toHaveFocus()
+  await user.keyboard('{Control>}f{/Control}')
+  expect(within(screen.getByRole('region', { name: 'local' })).getByRole('searchbox', { name: 'Filter' })).toHaveFocus()
+  // The dashboard's search is behind the tab: it was not asked.
+  expect(search).not.toHaveFocus()
+})
+
+test('the cheatsheet in Vietnamese: every group and row, with nothing in English and no raw row of keys left in the window', async () => {
+  setLang('vi')
+  const user = shell()
+  await card('web-01')
+  await user.keyboard('?')
+  const dialog = screen.getByRole('dialog', { name: 'Phím tắt' })
+  expect(within(dialog).getAllByRole('region').map((group) => group.getAttribute('aria-label'))).toEqual([
+    'Máy chủ',
+    'Mọi nơi',
+    'Trong phiên, sau Ctrl+A',
+    'Tệp',
+    'Bằng chuột',
+    'Kết quả lệnh',
+  ])
+  // Every row of the sheet is on screen, in the table's Vietnamese.
+  const rows = sheet().flatMap((group) => group.rows)
+  expect(within(dialog).getAllByRole('term').map((term) => term.textContent).sort()).toEqual(rows.map(([, label]) => label).sort())
+  expect(stray()).toEqual([])
+  await user.type(within(dialog).getByRole('textbox', { name: 'Tìm phím tắt' }), 'zzz')
+  expect(within(dialog).getByRole('status')).toHaveTextContent('Không có phím tắt nào khớp.')
+  expect(stray()).toEqual([])
+  await shut()
+  // Half a chord, in Vietnamese.
+  await user.keyboard(leader)
+  expect(within(status()).getByRole('status')).toHaveTextContent('Ctrl+A đang chờ phím thứ hai — bấm ? để xem danh sách')
+  expect(stray()).toEqual([])
+  await user.keyboard('{Escape}')
+  // Nowhere in the window is there a row of keys strung on dots, as a terminal's status line has.
+  expect(document.body.textContent).not.toMatch(/\p{L}\s·\s<?\p{L}+\s\p{L}+\s·/u)
+  expect(status().querySelector('kbd')).toBeNull()
+})
+
+// --- D10, M5: panes, focus mode, and the tabs under the pointer ---------------
+
+/** The views on screen, by name. */
+const panels = () => screen.getAllByRole('tabpanel').map((panel) => panel.getAttribute('aria-label'))
+/** The box the panes are laid out in, and the panes on screen in their order. */
+const frame = () => document.querySelector<HTMLElement>('[data-panes]')!
+const laid = () =>
+  [...frame().children]
+    .filter((pane): pane is HTMLElement => pane instanceof HTMLElement && !pane.hidden && pane.querySelector('[role=tabpanel]') !== null)
+    .sort((a, b) => Number(a.style.order) - Number(b.style.order))
+const order = () => laid().map((pane) => pane.querySelector('[role=tabpanel]')!.getAttribute('aria-label'))
+const picked = () => screen.getByRole('tab', { selected: true })
+const chord = (key: string) => `{Control>}{Shift>}${key}{/Shift}{/Control}`
+/** The pointer with a tab in hand, over the panes; the box is a thousand by six hundred. */
+const over = (type: 'dragenter' | 'dragover' | 'dragleave' | 'drop', clientX: number, clientY: number) => {
+  vi.spyOn(frame(), 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 600 } as DOMRect)
+  return fireEvent(frame(), new MouseEvent(type, { clientX, clientY, bubbles: true, cancelable: true }))
+}
+const connectTo = async (user: ReturnType<typeof shell>, alias: string) => {
+  await user.keyboard(`${leader}0`)
+  await user.click(within(await card(alias)).getByRole('button', { name: 'Connect' }))
+}
+
+test('Ctrl+Shift+D is another shell on the same host beside the one in front, Ctrl+Shift+E one under it; a pane is a tab like any other', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  expect(panels()).toEqual(['web-01'])
+  await user.keyboard(chord('D'))
+  await tab(/2 web-01/)
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }, { alias: 'web-01' }])
+  // Both are on screen, side by side; the new one has the keys, and the line that says so.
+  expect(panels()).toEqual(['web-01', 'web-01'])
+  expect(frame()).not.toHaveClass('flex-col')
+  expect(picked()).toHaveTextContent('2 web-01')
+  expect(terminals[1].focused).toBe(true)
+  expect(laid().map((pane) => pane.hasAttribute('data-front'))).toEqual([false, true])
+  expect((await tab(/1 web-01/)).parentElement).toHaveAttribute('data-pane')
+  // A click in the other pane brings it to the front; so do the keys that go through the tabs.
+  await fireEvent.pointerDown(laid()[0])
+  expect(picked()).toHaveTextContent('1 web-01')
+  expect(terminals[0].focused).toBe(true)
+  await user.keyboard('{Control>}{Tab}{/Control}')
+  expect(picked()).toHaveTextContent('2 web-01')
+  expect(panels()).toHaveLength(2)
+  // The dashboard is no pane: it is alone, and the split is there again behind its tabs.
+  await user.keyboard(`${leader}0`)
+  expect(screen.queryAllByRole('tabpanel')).toHaveLength(0)
+  await user.keyboard(`${leader}1`)
+  expect(panels()).toHaveLength(2)
+
+  // One under them all: the split is stacked now.
+  await user.keyboard(chord('E'))
+  await tab(/3 web-01/)
+  expect(panels()).toHaveLength(3)
+  expect(frame()).toHaveClass('flex-col')
+  expect(terminals[2].focused).toBe(true)
+  // Not one of these keys was a shell's.
+  expect(asked('session_write')).toEqual([])
+
+  // Closed, a pane leaves the front to one it was with; the last one left is a tab on its own.
+  await user.keyboard('{Control>}w{/Control}')
+  expect(panels()).toHaveLength(2)
+  expect(picked()).toHaveTextContent('1 web-01')
+  await user.click(screen.getByRole('button', { name: 'Unsplit: this pane back to a tab of its own' }))
+  expect(panels()).toHaveLength(1)
+  expect(document.querySelector('[data-pane]')).toBeNull()
+  expect(screen.queryByRole('button', { name: /Unsplit/ })).toBeNull()
+})
+
+test('after the leader the split has tmux\'s keys: | and % beside, - and " under, ! out of it, { and } to change places', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  await user.dblClick(await tab(/1 web-01/))
+  await user.keyboard('first{Enter}')
+  for (const [key, stacked] of [['|', false], ['-', true], ['%', false], ['"', true]] as const) {
+    await user.keyboard(`${leader}1${leader}${key === '"' ? '"' : key}`)
+    await vi.waitFor(() => expect(panels()).toHaveLength(2))
+    expect(frame().classList.contains('flex-col'), key).toBe(stacked)
+    // Under it or beside it, the new one comes after.
+    expect(order()).toEqual(['first', 'web-01'])
+    await user.keyboard('{Control>}w{/Control}')
+    expect(panels()).toEqual(['first'])
+  }
+  await user.keyboard(`${leader}|`)
+  await vi.waitFor(() => expect(order()).toEqual(['first', 'web-01']))
+  // The pane in front, one place along; at the end there is no further.
+  await user.keyboard(`${leader}{{`)
+  expect(order()).toEqual(['web-01', 'first'])
+  await user.keyboard(`${leader}{{`)
+  expect(order()).toEqual(['web-01', 'first'])
+  await user.keyboard(`${leader}}`)
+  expect(order()).toEqual(['first', 'web-01'])
+  expect(picked()).toHaveTextContent('2 web-01')
+  await user.keyboard(`${leader}!`)
+  expect(panels()).toEqual(['web-01'])
+  // Over the dashboard there is nothing to split, by key or by button.
+  await user.keyboard(`${leader}0${chord('D')}${leader}|`)
+  expect(asked('session_open')).toHaveLength(6)
+})
+
+test('beside a host\'s files a split is its shell; each pane takes the keys when it is the one in front', async () => {
+  const user = shell()
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  await screen.findByRole('row', { name: /nginx/ })
+  await user.click(screen.getByRole('button', { name: 'Split right' }))
+  await tab(/1 web-01/)
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }])
+  expect(order()).toEqual(['Files web-01', 'web-01'])
+  expect(terminals[0].focused).toBe(true)
+  expect(screen.getByRole('grid', { name: 'local' })).not.toHaveFocus()
+  await fireEvent.pointerDown(laid()[0])
+  expect(picked()).toHaveTextContent('2 Files web-01')
+  await vi.waitFor(() => expect(screen.getByRole('grid', { name: 'local' })).toHaveFocus())
+  // The keys in a pane are its own: the files' Ctrl+F is their filter, with a terminal beside them.
+  await user.keyboard('{Control>}f{/Control}')
+  expect(within(screen.getByRole('region', { name: 'local' })).getByRole('searchbox', { name: 'Filter' })).toHaveFocus()
+})
+
+test('a split that cannot open its shell says why and splits nothing', async () => {
+  let opened = 0
+  const user = shell({
+    session_open: () => {
+      if (opened++) throw refused
+      return opened
+    },
+  })
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  await user.click(screen.getByRole('button', { name: 'Split down' }))
+  await vi.waitFor(() => expect(opened).toBe(2))
+  expect(panels()).toEqual(['web-01'])
+  expect(screen.getAllByRole('tab')).toHaveLength(2)
+  await user.keyboard(`${leader}0`)
+  expect(await screen.findByText(/Connection refused/)).toBeInTheDocument()
+})
+
+test('a tab dragged to an edge of what is open becomes a pane there; dragged again, the panes change places', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await connectTo(user, 'web-02')
+  await tab(/2 web-02/)
+  expect(panels()).toEqual(['web-02'])
+  // Nothing in hand: the panes are no place to drop.
+  expect(await over('dragover', 50, 300)).toBe(true)
+  expect(document.querySelector('[data-edge]')).toBeNull()
+
+  // web-01's tab, to the left edge of web-02: the half it will take is shown, then it is there.
+  await fireEvent.dragStart(await tab(/1 web-01/))
+  expect(await over('dragover', 50, 300)).toBe(false)
+  expect(document.querySelector('[data-edge]')).toHaveAttribute('data-edge', 'left')
+  await over('drop', 50, 300)
+  expect(document.querySelector('[data-edge]')).toBeNull()
+  expect(order()).toEqual(['web-01', 'web-02'])
+  expect(frame()).not.toHaveClass('flex-col')
+  expect(picked()).toHaveTextContent('1 web-01')
+  expect(terminals[0].focused).toBe(true)
+
+  // The same tab to the right edge: the two change places. On the way the pointer leaves one
+  // pane for the next, which a web view says as a leave with nothing named (WebKit): the half
+  // stays shown while the pointer is over the panes, and goes when it is outside them.
+  await fireEvent.dragStart(await tab(/1 web-01/))
+  await over('dragover', 960, 300)
+  expect(document.querySelector('[data-edge]')).toHaveAttribute('data-edge', 'right')
+  await over('dragleave', 960, 300)
+  expect(document.querySelector('[data-edge]')).toHaveAttribute('data-edge', 'right')
+  await over('dragleave', 1200, 300)
+  expect(document.querySelector('[data-edge]')).toBeNull()
+  // Let go with a leave as the last thing heard: it lands where it is let go.
+  await over('drop', 960, 300)
+  expect(order()).toEqual(['web-02', 'web-01'])
+  // To the bottom: one over the other. To the top: the other way round. A web view that last asked
+  // on entering an element (over a terminal every row is one) is told yes there too, or it drops nothing.
+  await fireEvent.dragStart(await tab(/2 web-02/))
+  expect(await over('dragenter', 500, 590)).toBe(false)
+  expect(document.querySelector('[data-edge]')).toHaveAttribute('data-edge', 'bottom')
+  await over('drop', 500, 590)
+  expect(frame()).toHaveClass('flex-col')
+  expect(order()).toEqual(['web-01', 'web-02'])
+  await fireEvent.dragStart(await tab(/2 web-02/))
+  await over('dragover', 500, 10)
+  await over('drop', 500, 10)
+  expect(order()).toEqual(['web-02', 'web-01'])
+
+  // Let go anywhere else, the tab is where it was.
+  await fireEvent.dragStart(await tab(/1 web-01/))
+  await over('dragover', 50, 300)
+  await fireEvent.dragEnd(await tab(/1 web-01/))
+  expect(document.querySelector('[data-edge]')).toBeNull()
+  expect(order()).toEqual(['web-02', 'web-01'])
+  // A third tab joins the two; a host's files are a tab too.
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-01')).focus()
+  await user.keyboard(`f${leader}1`)
+  await fireEvent.dragStart(await tab(/Files web-01/))
+  await over('dragover', 990, 300)
+  await over('drop', 990, 300)
+  expect(order()).toEqual(['web-02', 'web-01', 'Files web-01'])
+  expect(frame()).not.toHaveClass('flex-col')
+  // A tab alone, dropped on itself, is still alone.
+  await user.keyboard(`${leader}!`)
+  expect(panels()).toEqual(['Files web-01'])
+  await fireEvent.dragStart(await tab(/Files web-01/))
+  await over('dragover', 50, 300)
+  await over('drop', 50, 300)
+  expect(panels()).toEqual(['Files web-01'])
+  expect(order()).toEqual(['Files web-01'])
+})
+
+test('focus mode: the rail and the status bar go, a tab\'s view is all there is; Ctrl+B, the rail\'s button, Ctrl+A z, and Esc back', async () => {
+  const user = shell()
+  await card('web-01')
+  const rail = () => screen.queryByRole('navigation')
+  const hide = () => screen.getByRole('button', { name: 'Hide the sidebar' })
+  expect(hide()).toHaveAttribute('title', 'Hide the sidebar (Ctrl+Shift+B, Ctrl+B)')
+  await user.click(hide())
+  expect(rail()).toBeNull()
+  expect(screen.queryByRole('contentinfo')).toBeNull()
+  // The dashboard keeps its head and its cards; the strip of tabs is there for the way back.
+  expect(screen.getByRole('heading', { name: 'Status' })).toBeInTheDocument()
+  expect(await card('web-01')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Show the sidebar' }))
+  expect(rail()).toBeInTheDocument()
+  expect(status()).toBeInTheDocument()
+  expect(screen.queryByRole('tablist')).toBeNull()
+  // By key, and Esc is the way out where no shell wants it.
+  await user.keyboard('{Control>}b{/Control}')
+  expect(rail()).toBeNull()
+  await user.keyboard('{Escape}')
+  expect(rail()).toBeInTheDocument()
+  await user.keyboard('{Control>}b{/Control}{Control>}b{/Control}')
+  expect(rail()).toBeInTheDocument()
+
+  // In a terminal Ctrl+B is the shell's (a tmux over there has it for its prefix): with Shift it is the window's.
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  await user.keyboard('{Control>}b{/Control}')
+  expect(rail()).toBeInTheDocument()
+  await user.keyboard(chord('B'))
+  expect(rail()).toBeNull()
+  // With Caps Lock on, Shift gives the small letter: the same key.
+  await fireEvent.keyDown(document.body, { key: 'b', code: 'KeyB', ctrlKey: true, shiftKey: true })
+  expect(rail()).toBeInTheDocument()
+  await user.keyboard(chord('B'))
+  expect(rail()).toBeNull()
+  expect(screen.queryByRole('contentinfo')).toBeNull()
+  expect(screen.queryByRole('heading', { name: 'web-01' })).toBeNull()
+  expect(screen.getByRole('tablist')).toBeInTheDocument()
+  expect(panels()).toEqual(['web-01'])
+  expect(frame().parentElement).not.toHaveAttribute('data-framed')
+  // Esc is vim's there.
+  await user.keyboard('{Escape}')
+  expect(rail()).toBeNull()
+  // A button of the window had the focus, and went or stayed: the keys are the terminal's again.
+  const keys = vi.spyOn(terminals[0], 'focus')
+  await user.click(screen.getByRole('button', { name: 'Show the sidebar' }))
+  expect(keys).toHaveBeenCalledTimes(1)
+  await user.click(hide())
+  expect(keys).toHaveBeenCalledTimes(2)
+  expect(rail()).toBeNull()
+  // Half a chord is said in the strip, where the status bar is not.
+  await user.keyboard(leader)
+  expect(within(screen.getByRole('tablist').parentElement!).getByRole('status')).toHaveTextContent('Ctrl+A')
+  await user.keyboard('z')
+  expect(rail()).toBeInTheDocument()
+  expect(frame().parentElement).toHaveAttribute('data-framed')
+  expect(screen.getByRole('heading', { name: 'web-01' })).toBeInTheDocument()
+  await user.keyboard(`${leader}z`)
+  expect(rail()).toBeNull()
+  // From the palette too.
+  await user.keyboard('{Control>}k{/Control}')
+  await user.type(palette(), 'focus{Enter}')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(rail()).toBeInTheDocument()
+  expect(asked('session_write')).toEqual([])
+})
+
+test('a tab renamed by a double click is called that in its tab, the head and the rail; with no name it is its host\'s again', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await user.dblClick(await tab(/1 web-01/))
+  await user.keyboard('migration{Enter}')
+  expect(await tab(/1 migration/)).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('heading', { name: 'migration' })).toBeInTheDocument()
+  expect(within(screen.getByRole('list', { name: 'Sessions' })).getByRole('button')).toHaveTextContent('migration')
+  expect(panels()).toEqual(['migration'])
+  // The keys are the terminal's again.
+  expect(terminals[0].focused).toBe(true)
+  // Its host is still web-01: a split of it opens that.
+  await user.keyboard(chord('D'))
+  await tab(/2 web-01/)
+  expect(asked('session_open')).toEqual([{ alias: 'web-01' }, { alias: 'web-01' }])
+  await user.dblClick(await tab(/1 migration/))
+  await user.clear(screen.getByRole('textbox', { name: 'Rename tab' }))
+  await user.keyboard('{Enter}')
+  expect(await tab(/1 web-01/)).toBeInTheDocument()
+  // The wheel's button closes a tab without bringing it to the front first.
+  await fireEvent(await tab(/2 web-01/), new MouseEvent('auxclick', { button: 1, bubbles: true }))
+  expect(asked('session_close')).toEqual([{ id: 2 }])
+  expect(panels()).toEqual(['web-01'])
+  // The + of the strip is a new tab: it asks where to.
+  await user.click(screen.getByRole('button', { name: 'New tab: quick connect' }))
+  expect(screen.getByRole('dialog', { name: 'Quick connect' })).toBeInTheDocument()
+})
+
+test('panes and focus mode in Vietnamese: the strip\'s buttons, the palette\'s rows and the rail\'s corner, with nothing in English', async () => {
+  setLang('vi')
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
+  await tab(/1 web-01/)
+  expect(screen.getByRole('button', { name: 'Ẩn thanh bên' })).toHaveAttribute('title', 'Ẩn thanh bên (Ctrl+Shift+B, Ctrl+B)')
+  await user.click(screen.getByRole('button', { name: 'Chia đôi sang phải' }))
+  await tab(/2 web-01/)
+  expect(screen.getByRole('button', { name: 'Bỏ chia: đưa ô này về tab riêng' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Chia đôi xuống dưới' })).toHaveAttribute('title', 'Chia đôi xuống dưới (Ctrl+Shift+E)')
+  expect(screen.getByRole('button', { name: 'Tab mới: kết nối nhanh' })).toBeInTheDocument()
+  expect(stray()).toEqual([])
+  await user.dblClick(await tab(/1 web-01/))
+  expect(screen.getByRole('textbox', { name: 'Đổi tên tab' })).toBeInTheDocument()
+  expect(stray()).toEqual([])
+  await user.keyboard('{Escape}')
+  await user.keyboard(chord('B'))
+  expect(screen.getByRole('button', { name: 'Hiện thanh bên' })).toBeInTheDocument()
+  expect(stray()).toEqual([])
+  // The palette has them by name, and by their English one.
+  await user.keyboard('{Control>}k{/Control}')
+  const rows = () => within(screen.getByRole('dialog')).getAllByRole('option').map((row) => row.textContent?.replace(/\s+/g, ' ').trim())
+  expect(rows()).toContain('Chia đôi sang phải Ctrl+Shift+D')
+  expect(rows()).toContain('Chia đôi xuống dưới Ctrl+Shift+E')
+  expect(rows()).toContain('Chế độ tập trung Ctrl+Shift+B Ctrl+B')
+  expect(stray()).toEqual([])
+  await user.type(palette(), 'split down{Enter}')
+  await tab(/3 web-01/)
+  expect(frame()).toHaveClass('flex-col')
+  expect(stray()).toEqual([])
+  // The cheatsheet's rows for them, found by a word of theirs.
+  await user.keyboard(`${leader}?`)
+  await user.type(within(screen.getByRole('dialog', { name: 'Phím tắt' })).getByRole('textbox'), 'chia')
+  expect(within(screen.getByRole('dialog')).getAllByRole('term').map((term) => term.textContent)).toEqual([
+    'Chia đôi sang phải',
+    'Chia đôi xuống dưới',
+    'Bỏ chia: đưa ô này về tab riêng',
+    'Chia đôi sang phải',
+    'Chia đôi xuống dưới',
+    'Tab vào một mép của ô đang mở: chia ở phía đó, hoặc đổi chỗ',
+  ])
+  expect(stray()).toEqual([])
+})
+
+test('a split of a quick connect connects to the same address again, and that is a quick connect too', async () => {
+  const user = shell()
+  await card('web-01')
+  await user.keyboard('{Control>}t{/Control}')
+  await user.type(screen.getByLabelText('Host'), '10.0.0.9')
+  await user.type(screen.getByLabelText('User'), 'deploy')
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 deploy@10.0.0.9/)
+  await user.keyboard(chord('D'))
+  await tab(/2 deploy@10.0.0.9/)
+  expect(asked('quick_connect')).toEqual([{ host: 'deploy@10.0.0.9' }, { host: 'deploy@10.0.0.9' }])
+  expect(asked('session_open')).toEqual([])
+  expect(panels()).toHaveLength(2)
+  // The new one is on no host of the config either: it can be kept as one.
+  expect(picked()).toHaveTextContent('2 deploy@10.0.0.9')
+  expect(within(status()).getByRole('button', { name: 'Save this host' })).toBeInTheDocument()
 })

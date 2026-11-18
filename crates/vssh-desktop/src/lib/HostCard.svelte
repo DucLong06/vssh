@@ -4,6 +4,7 @@
   import { chip, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { critical, down, type Live, type Trail } from './live.svelte'
+  import { KEY, tip } from './keymap'
   import Sparkline from './Sparkline.svelte'
   import { compact, parts } from './stats'
   import { addr } from './streamer.svelte'
@@ -23,6 +24,8 @@
     onedit?: () => void
     /** Asks a host that is down once more. */
     onretry?: () => void
+    /** Opens its quick peek, which asks a host nobody asked yet. */
+    onpeek?: () => void
     /** Its last rounds, for the sparklines; without them the figure of now is the one point there is. */
     trail?: Trail
   } & HTMLAttributes<HTMLElement>
@@ -35,6 +38,7 @@
     onforwards,
     onedit,
     onretry,
+    onpeek,
     trail,
     class: extra = '',
     ...rest
@@ -126,13 +130,13 @@
         class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 shadow-card group-focus-within:opacity-100 group-hover:opacity-100"
       >
         {#if onedit}
-          <button type="button" onclick={onedit} aria-keyshortcuts="e" class={mini}>{t('edit')}</button>
+          <button type="button" onclick={onedit} aria-keyshortcuts="e" title={tip(t('edit'), KEY.edit)} class={mini}>{t('edit')}</button>
         {/if}
         {#if onforwards}
-          <button type="button" onclick={onforwards} aria-keyshortcuts="Shift+L" class={mini}>{t('forwards')}</button>
+          <button type="button" onclick={onforwards} aria-keyshortcuts="l" title={tip(t('forwards'), KEY.forwards)} class={mini}>{t('forwards')}</button>
         {/if}
         {#if onfiles}
-          <button type="button" onclick={onfiles} aria-keyshortcuts="f" class={mini}>{t('files')}</button>
+          <button type="button" onclick={onfiles} aria-keyshortcuts="f" title={tip(t('files'), KEY.files)} class={mini}>{t('files')}</button>
         {/if}
       </div>
     {/if}
@@ -180,7 +184,12 @@
     </div>
   {:else if info?.peek === null}
     <p class="flex-1 rounded-xl bg-bg px-3 py-2.5 text-[13px] text-white">
-      {t('not_checked')} <span class="text-dim">· <kbd>v</kbd> {t('quick_peek')}</span>
+      {t('not_checked')}
+      {#if onpeek}
+        <button type="button" onclick={onpeek} aria-keyshortcuts="v" title={tip(t('quick_peek'), KEY.peek)} class="{mini} ml-1">
+          {t('quick_peek')}
+        </button>
+      {/if}
     </p>
   {:else}
     <p class="flex-1 rounded-xl bg-bg px-3 py-2.5 text-[13px] text-white">{t('asking')} {host.alias}…</p>
@@ -196,7 +205,7 @@
         <button type="button" onclick={onretry} class={ghost}>{t('try_again')}</button>
       {/if}
       {#if onconnect}
-        <button type="button" onclick={onconnect} class="{ghost} text-fg">{t('connect')}</button>
+        <button type="button" onclick={onconnect} title={tip(t('connect'), KEY.connect)} class="{ghost} text-fg">{t('connect')}</button>
       {/if}
     </span>
   </div>

@@ -180,6 +180,29 @@ test('/ narrows the rows to the names that have what is typed; Escape gives them
   expect(grid).toHaveFocus()
 })
 
+test('the filter has a button for the pointer, and Ctrl+F is its desktop key; both name their keys in a tooltip', async () => {
+  const { user, grid } = pane()
+  const button = screen.getByRole('button', { name: 'Filter' })
+  expect(button).toHaveAttribute('title', 'Filter (/, Ctrl+F)')
+  expect(button).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('button', { name: 'Hidden files' })).toHaveAttribute('title', 'Hidden files (.)')
+  await user.click(button)
+  const filter = screen.getByRole('searchbox', { name: 'Filter' })
+  await vi.waitFor(() => expect(filter).toHaveFocus())
+  expect(filter).toHaveAttribute('placeholder', 'Filter')
+  expect(button).toHaveAttribute('aria-pressed', 'true')
+  await user.keyboard('{Escape}')
+  expect(grid).toHaveFocus()
+  await user.keyboard('{Control>}f{/Control}')
+  await vi.waitFor(() => expect(screen.getByRole('searchbox', { name: 'Filter' })).toHaveFocus())
+  // Any other chord is not the pane's: Ctrl+C copies nothing here.
+  await user.keyboard('{Escape}')
+  const { oncopy } = pane({ label: 'other' })
+  screen.getByRole('grid', { name: 'other' }).focus()
+  await user.keyboard('{Control>}c{/Control}')
+  expect(oncopy).not.toHaveBeenCalled()
+})
+
 test('Space marks the selected entry and moves on; c asks for a copy of the selected one', async () => {
   const { user, grid, oncopy, view } = pane({ entries: many, marked: [] })
   grid.focus()

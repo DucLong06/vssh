@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick as rendered } from 'svelte'
+  import { onMount, tick as rendered, untrack } from 'svelte'
   import {
     api,
     explain,
@@ -23,6 +23,7 @@
   import { down, live, poll, relabel, up } from './lib/live.svelte'
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
+  import Shortcuts from './lib/Shortcuts.svelte'
   import Sidebar, { type Nav } from './lib/Sidebar.svelte'
   import Batch from './lib/Batch.svelte'
   import Snippets from './lib/Snippets.svelte'
@@ -40,7 +41,7 @@
   let hosts = $state<Host[]>([])
   let snippets = $state<Snippet[]>([])
   /** A tab's session. `met`: its shell came up since it was last started. `quick`: on no host of the config. */
-  type Session = Tab & { met: boolean; error: ConnError | null; why: Shown | null; quick: boolean }
+  type Session = Tab & { met: boolean; error: ConnError | null; why: Shown | null; quick: boolean; name?: string }
   const fresh = { state: 'connecting', busy: null, met: false, error: null, why: null } as const
   let sessions = $state<Session[]>([])
   /** The session whose failure to connect is in a dialog. */
@@ -50,6 +51,16 @@
   let files = $state<{ id: number; host: string }[]>([])
   /** The session or the file view whose tab is in front; `null` = the dashboard. */
   let active = $state<number | null>(null)
+  /** The tabs that are open together as panes, in their order; none: one tab at a time. */
+  let split = $state<number[]>([])
+  /** The panes are one over the other, not side by side. */
+  let stacked = $state(false)
+  /** A tab is being dragged, and the edge of the panes it is over. */
+  type Edge = 'left' | 'right' | 'top' | 'bottom'
+  let dragging = $state<number | null>(null)
+  let edge = $state<Edge | null>(null)
+  /** Focus mode: no rail and no status bar, and a tab's view from edge to edge. */
+  let zen = $state(false)
   /** Ctrl-A was pressed: the next key is a command, as in the TUI. */
   let leader = $state(false)
   /** The terminals, by session. */
@@ -62,7 +73,7 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys'
+  type Dialog = 'palette' | 'quick' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
   let modal = $state<Dialog | null>(null)
   /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
@@ -135,19 +146,33 @@
     }
   })
 
+  // The window's shape changed, by a button that went with it (the rail's) or that
+  // kept the focus (the strip's, a tab let go of): the keys are the terminal's in front again.
+  $effect(() => {
+    void [zen, split, stacked, sessions.length]
+    const id = untrack(() => front?.id)
+    if (id !== undefined) terms[id]?.focus()
+  })
+
   /** The tabs in order: the dashboard, the sessions, the file views. */
   const tabs = $derived<(number | null)[]>([null, ...[...sessions, ...files].map((tab) => tab.id)])
   const front = $derived(sessions.find((session) => session.id === active))
+  /** The view in front, as the rail names it. */
+  const current = $derived(active === null ? 'dashboard' : front ? 'sessions' : 'files')
   /** What a session is called on screen: a host's alias, or what a quick connect was typed as, which is an address. */
   const named = (title: string) => (hosts.some((host) => host.alias === title) ? title : target(title))
-  const listed = $derived(streamer.on ? sessions.map((session) => ({ ...session, title: named(session.title) })) : sessions)
+  /** Or the name someone gave its tab. */
+  const called = (session: Session) => session.name ?? named(session.title)
+  const listed = $derived(sessions.map((session) => ({ ...session, title: called(session) })))
+  /** On screen: the tab in front, and the panes it is open together with. */
+  const seen = (id: number) => id === active || (active !== null && split.includes(active) && split.includes(id))
 
   /** The head of the view in front: what it is called, and a line about it. */
   const head = $derived.by(() => {
     if (front) {
       // What a quick connect was typed as is an address: letter by letter.
       const said = { connecting: t('connecting'), up: t('connected'), closed: t('disconnected') }[front.state]
-      return { title: named(front.title), sub: front.busy ? `${said} · ${t('running')} ${front.busy}` : said, mono: front.quick }
+      return { title: called(front), sub: front.busy ? `${said} · ${t('running')} ${front.busy}` : said, mono: front.quick && !front.name }
     }
     const view = files.find((view) => view.id === active)
     if (view) return { title: t('files'), sub: view.host }
@@ -182,7 +207,8 @@
       if (front) input(front, String.fromCharCode(e.key.toUpperCase().charCodeAt(0) - 64))
     } else if (/^[0-9]$/.test(e.key)) {
       if (Number(e.key) < tabs.length) active = tabs[Number(e.key)]
-    } else if (e.key === 'Tab' || e.key === 'n') {
+    } else if (e.code === 'Tab' || e.key === 'n') {
+      // By its place on the board: with Shift, WebKitGTK has no name for the key (ISO_Left_Tab).
       step(e.shiftKey ? -1 : 1)
     } else if (e.key === 'p') {
       step(-1)
@@ -198,6 +224,18 @@
       // Every tab at once, as the TUI's broadcast; off again if all are on.
       const on = sessions.some((session) => !session.broadcast)
       for (const session of sessions) session.broadcast = on
+    } else if (e.key === '|' || e.key === '%') {
+      void divide(false)
+    } else if (e.key === '-' || e.key === '"') {
+      void divide(true)
+    } else if (e.key === '!') {
+      unsplit()
+    } else if (e.key === '{' || e.key === '}') {
+      swap(e.key === '{' ? -1 : 1)
+    } else if (e.key === 'z') {
+      zen = !zen
+    } else if (e.key === '?') {
+      modal = 'shortcuts'
     }
   }
 
@@ -206,6 +244,7 @@
     // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
     if (modal !== null || failure !== null) return
     const ctrl = e.ctrlKey || e.metaKey
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     const mine = () => {
       e.preventDefault()
       e.stopPropagation()
@@ -225,6 +264,31 @@
     } else if (ctrl && e.key === 'w' && active !== null) {
       mine()
       close(active)
+    } else if (e.ctrlKey && e.code === 'Tab') {
+      // No shell is sent this one: it is the window's in a terminal too.
+      mine()
+      step(e.shiftKey ? -1 : 1)
+    } else if (e.ctrlKey && e.shiftKey && ['B', 'D', 'E'].includes(e.key.toUpperCase())) {
+      // With Shift a shell has no use for them: the window's, in a terminal too. (Caps Lock turns the letter over.)
+      mine()
+      if (e.key.toUpperCase() === 'B') zen = !zen
+      else void divide(e.key.toUpperCase() === 'E')
+    } else if (ctrl && e.key.toLowerCase() === 'b' && !front) {
+      // Plain Ctrl-B is a shell's (and the prefix of a tmux over there): not from a terminal.
+      mine()
+      zen = !zen
+    } else if (zen && e.key === 'Escape' && !front && !typing) {
+      // Esc is vim's in a terminal; anywhere else it is also the way out. Not `mine`: what else it closes, it closes.
+      zen = false
+    } else if (front) {
+      // The rest are a shell's own keys (Ctrl-F pages in less, F1 is htop's
+      // help): from a terminal the cheatsheet is Ctrl-A ?, a new tab the palette.
+    } else if (ctrl && e.key === 't') {
+      mine()
+      modal = 'quick'
+    } else if (e.key === 'F1' || (ctrl && e.key === '/') || (e.key === '?' && !typing)) {
+      mine()
+      modal = 'shortcuts'
     }
   }
 
@@ -232,6 +296,79 @@
     sessions.push({ id, title, broadcast: false, quick, ...fresh })
     active = id
   }
+
+  /** Puts a tab at an edge of what is in front: the two are panes of one split, or change places in it. */
+  function join(id: number, at: Edge, beside = active) {
+    if (beside === null) return
+    const rest = (split.includes(beside) ? split : [beside]).filter((pane) => pane !== id)
+    // On itself, alone: nothing to be beside.
+    if (!rest.length) return
+    stacked = at === 'top' || at === 'bottom'
+    split = at === 'left' || at === 'top' ? [id, ...rest] : [...rest, id]
+    active = id
+  }
+
+  /** Another shell on the host of the tab in front, beside it or under it; beside a host's files, its shell. */
+  async function divide(down: boolean) {
+    // As they are now: by the time the shell answers, another tab may be in front.
+    const beside = active
+    const quick = front?.quick
+    const title = front?.title ?? files.find((view) => view.id === beside)?.host
+    if (beside === null || title === undefined) return
+    try {
+      const id = await (quick ? api.quickConnect(title) : api.sessionOpen(title))
+      add(id, title, quick)
+      join(id, down ? 'bottom' : 'right', beside)
+    } catch (error) {
+      await fail(error)
+    }
+  }
+
+  /** The pane in front leaves the split for a tab of its own; two are needed for a split. */
+  function unsplit(id = active) {
+    split = split.filter((pane) => pane !== id)
+    if (split.length < 2) split = []
+  }
+
+  /** The pane in front changes places with the one before it, or after. */
+  function swap(by: number) {
+    const at = active === null ? -1 : split.indexOf(active)
+    const to = at + by
+    if (at < 0 || to < 0 || to >= split.length) return
+    ;[split[at], split[to]] = [split[to], split[at]]
+  }
+
+  /** The edge of the panes the pointer is nearest to; `null` once it is outside them. */
+  function nearest(e: DragEvent): Edge | null {
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const x = (e.clientX - box.left) / (box.width || 1)
+    const y = (e.clientY - box.top) / (box.height || 1)
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null
+    const far: [number, Edge][] = [[x, 'left'], [1 - x, 'right'], [y, 'top'], [1 - y, 'bottom']]
+    return far.sort((a, b) => a[0] - b[0])[0][1]
+  }
+
+  /**
+   * A tab in hand is over the panes: they are a place to drop it, and the half it would take is shown.
+   * For entering as for moving: a web view asks at both, and over a terminal, where every row is an
+   * element of its own, the last thing it asked before the button is let go is mostly the first.
+   */
+  function hover(e: DragEvent) {
+    if (dragging === null) return
+    e.preventDefault()
+    edge = nearest(e)
+  }
+
+  /** A pane's own box: where it is among the others, and a click or the keys in it bring it to the front. */
+  const pane = (id: number) => ({
+    hidden: !seen(id),
+    'data-front': (split.length > 1 && id === active) || undefined,
+    style: `order: ${split.indexOf(id)}`,
+    onfocusin: () => (active = id),
+    onpointerdown: () => (active = id),
+    class:
+      "relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-page after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-10 after:h-0.5 data-[front]:after:bg-blue",
+  })
 
   /** Opens a tab on a host of the config. Its terminal connects it. */
   async function open(alias: string) {
@@ -264,6 +401,9 @@
   function close(id: number) {
     const at = tabs.indexOf(id)
     if (at < 0) return
+    // A pane that goes leaves the front to one of those it was with.
+    const kin = split.includes(id) ? split.find((pane) => pane !== id) : undefined
+    unsplit(id)
     if (id < 0) {
       files = files.filter((view) => view.id !== id)
     } else {
@@ -272,7 +412,14 @@
       void api.sessionClose(id)
     }
     // `tabs` is the tabs that are left now.
-    if (active === id) active = tabs[at] ?? tabs[at - 1] ?? null
+    if (active === id) active = kin ?? tabs[at] ?? tabs[at - 1] ?? null
+  }
+
+  /** A tab's own name; none: its host's again. The keys go back to its terminal. */
+  function rename(id: number, name: string) {
+    const session = sessions.find((session) => session.id === id)
+    if (session) session.name = name || undefined
+    if (id === active) terms[id]?.focus()
   }
 
   /** Opens the host form: on a host, or empty, or with what a quick connect was typed as. */
@@ -338,7 +485,8 @@
 
 <svelte:window onkeydowncapture={onkeydown} />
 
-<div class="grid h-full grid-cols-[244px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
+<div class="grid h-full grid-rows-[minmax(0,1fr)_auto] {zen ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[244px_minmax(0,1fr)]'}">
+  {#if !zen}
   <Sidebar
     {hosts}
     {selected}
@@ -349,23 +497,47 @@
     onsession={(id) => (active = id)}
     {vault}
     onvault={() => (modal = 'vault')}
-    current={active === null ? 'dashboard' : front ? 'sessions' : 'files'}
+    {current}
     snippets={snippets.length}
     onnav={go}
+    onzen={() => (zen = true)}
   />
+  {/if}
 
   <!-- min-w-0: what is in it (a long path, a wide terminal) scrolls in its place and does not widen the window's page. -->
   <main class="flex min-h-0 min-w-0 flex-col bg-page">
-    <Topbar {...head} onpalette={() => (modal = 'palette')} />
+    <!-- In focus mode a tab's view is all there is: the tabs are its head. -->
+    {#if !zen || active === null}
+      <Topbar {...head} onpalette={() => (modal = 'palette')} onshortcuts={() => (modal = 'shortcuts')} />
+    {/if}
     <!-- A terminal or a file view is one frame with the tabs for its head; the dashboard is the page itself. -->
     <div
-      data-framed={active !== null || undefined}
+      data-framed={(active !== null && !zen) || undefined}
       class="group/frame flex min-h-0 flex-1 flex-col data-[framed]:mx-8 data-[framed]:mt-5 data-[framed]:mb-6 data-[framed]:overflow-hidden data-[framed]:rounded-xl data-[framed]:border data-[framed]:border-edge data-[framed]:shadow-card"
     >
-    {#if sessions.length || files.length}
+    <!-- In focus mode the strip is also the way back to the rail. -->
+    {#if sessions.length || files.length || zen}
       <!-- Over the dashboard the tabs are a strip of their own in the header's band. -->
       <div class={active === null ? 'bg-bg px-8 pb-4 *:rounded-xl *:border' : ''}>
-        <Tabs sessions={listed} {files} {active} onpick={(id) => (active = id)} onclose={close} />
+        <Tabs
+          sessions={listed}
+          {files}
+          {active}
+          {split}
+          {zen}
+          leader={zen && leader}
+          onpick={(id) => (active = id)}
+          onclose={close}
+          onnew={() => (modal = 'quick')}
+          onsplit={divide}
+          onunsplit={() => unsplit()}
+          onzen={() => (zen = false)}
+          onrename={rename}
+          ondrag={(id) => {
+            dragging = id
+            edge = null
+          }}
+        />
       </div>
     {/if}
     <!-- Behind a terminal the dashboard keeps its search, its order and its place. -->
@@ -398,43 +570,76 @@
       }}
       bind:marked
     />
-    {#each sessions as session (session.id)}
-      <Terminal
-        bind:this={terms[session.id]}
-        id={session.id}
-        label={named(session.title)}
-        active={session.id === active}
-        closed={session.state === 'closed'}
-        why={session.why}
-        oninput={(data) => input(session, data)}
-        onstate={(said) => heard(session, said)}
-        onreconnect={() => reconnect(session)}
-      />
-    {/each}
-    {#each files as view (view.id)}
-      <Files host={view.host} active={view.id === active} />
-    {/each}
+    <!-- The panes: the tab in front, and those it is open together with. A tab dragged to an edge of them joins them there. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      hidden={active === null}
+      data-panes
+      ondragenter={hover}
+      ondragover={hover}
+      ondragleave={(e) => {
+        // By where the pointer is: WebKit names no `relatedTarget`, and every pane and every row in it is left on the way across.
+        if (!nearest(e)) edge = null
+      }}
+      ondrop={(e) => {
+        e.preventDefault()
+        // Where it is let go, not where it was last seen: a leave may have come in between.
+        const at = nearest(e)
+        if (dragging !== null && at) join(dragging, at)
+        dragging = edge = null
+      }}
+      class="relative flex min-h-0 flex-1 gap-px bg-edge {stacked ? 'flex-col' : ''}"
+    >
+      {#each sessions as session (session.id)}
+        <div {...pane(session.id)}>
+          <Terminal
+            bind:this={terms[session.id]}
+            id={session.id}
+            label={called(session)}
+            active={seen(session.id)}
+            front={session.id === active}
+            closed={session.state === 'closed'}
+            why={session.why}
+            oninput={(data) => input(session, data)}
+            onstate={(said) => heard(session, said)}
+            onreconnect={() => reconnect(session)}
+          />
+        </div>
+      {/each}
+      {#each files as view (view.id)}
+        <div {...pane(view.id)}>
+          <Files host={view.host} active={seen(view.id)} front={view.id === active} />
+        </div>
+      {/each}
+      {#if edge}
+        <!-- Where the tab will land: that half of the panes. -->
+        <div
+          data-edge={edge}
+          class="pointer-events-none absolute z-20 rounded-lg border-2 border-blue bg-blue/15 data-[edge=bottom]:inset-[50%_0_0_0] data-[edge=left]:inset-[0_50%_0_0] data-[edge=right]:inset-[0_0_0_50%] data-[edge=top]:inset-[0_0_50%_0]"
+        ></div>
+      {/if}
+    </div>
     </div>
   </main>
 
+  {#if !zen}
   <Statusbar
     hosts={hosts.length}
     snippets={snippets.length}
     sessions={sessions.length}
-    selected={hosts.find((host) => host.alias === selected)}
-    terminal={front !== undefined}
-    files={active !== null && !front}
+    selected={active === null ? hosts.find((host) => host.alias === selected) : undefined}
     broadcasting={sessions.filter((session) => session.broadcast).length}
     {leader}
     onsnippets={() => (modal = 'snippets')}
     onsave={front?.quick ? () => edit(undefined, front) : undefined}
   />
+  {/if}
 </div>
 
 {#if failed_session?.error && failed_session.why}
   {@const session = failed_session}
   <Failure
-    title={named(session.title)}
+    title={called(session)}
     error={failed_session.error}
     why={failed_session.why}
     ontrust={(key, forever) => trust(session, key.host, key.fingerprint, forever)}
@@ -458,8 +663,21 @@
     onsnippets={() => (modal = 'snippets')}
     onadd={() => edit()}
     onvault={() => (modal = 'vault')}
+    onshortcuts={() => (modal = 'shortcuts')}
+    onzen={() => {
+      zen = !zen
+      modal = null
+    }}
+    onsplit={active === null
+      ? undefined
+      : (down) => {
+          modal = null
+          void divide(down)
+        }}
     onclose={() => (modal = null)}
   />
+{:else if modal === 'shortcuts'}
+  <Shortcuts view={current} onclose={() => (modal = null)} />
 {:else if modal === 'host'}
   <!-- Keyed: the form of another host is another form. -->
   {#key editing}

@@ -377,3 +377,37 @@ test('Try again on a card that is down asks its host, as a person asking', async
   await vi.waitFor(() => expect(screen.getByRole('article', { name: 'web-02' })).toHaveAttribute('data-state', 'ok'))
   clearMocks()
 })
+
+test('a host nobody asked: its card\'s Quick peek button asks it, as v does; the toolbar\'s buttons name their keys', async () => {
+  const asked: unknown[] = []
+  mockIPC((cmd, args) => {
+    asked.push([cmd, args])
+    return null
+  })
+  live.bare = { peek: null }
+  const user = userEvent.setup()
+  render(Dashboard, props({ onadd: vi.fn(), onbatch: vi.fn() }))
+  await user.click(within(screen.getByRole('article', { name: 'bare' })).getByRole('button', { name: 'Quick peek' }))
+  expect(screen.getByRole('dialog', { name: 'Quick peek: bare' })).toBeInTheDocument()
+  expect(asked).toEqual([['get_host_stats', { alias: 'bare', passive: false }]])
+  expect(screen.getByRole('button', { name: 'Add host' })).toHaveAttribute('title', 'Add host (A)')
+  expect(screen.getByRole('searchbox')).toHaveAttribute('title', 'Search hosts, #tag (/, Ctrl+F)')
+  clearMocks()
+})
+
+test('with Ctrl a card\'s letters are not its keys: Ctrl+F on a card is the search and opens no files', async () => {
+  const user = userEvent.setup()
+  const on = { onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), ondelete: vi.fn(), onconnect: vi.fn() }
+  render(Dashboard, props(on))
+  screen.getByRole('article', { name: 'web-01' }).focus()
+  await user.keyboard('{Control>}f{/Control}')
+  expect(screen.getByRole('searchbox')).toHaveFocus()
+  expect(on.onfiles).not.toHaveBeenCalled()
+  // Nor the others: Ctrl+L, Ctrl+E, Ctrl+D and Ctrl+Enter are nobody's here.
+  screen.getByRole('article', { name: 'web-01' }).focus()
+  await user.keyboard('{Control>}led{Enter}{/Control}')
+  for (const asked of Object.values(on)) expect(asked).not.toHaveBeenCalled()
+  // Without it they are the card's, as before.
+  await user.keyboard('f')
+  expect(on.onfiles).toHaveBeenCalledWith('web-01')
+})
