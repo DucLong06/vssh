@@ -97,7 +97,7 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 
 ## Cài đặt
 
-Linux x86_64, từ bản v0.2.0. Mỗi [bản phát hành](https://github.com/DucLong06/vssh/releases) có ba gói; chọn một:
+Linux x86_64, từ bản [v0.2.0](https://github.com/DucLong06/vssh/releases/tag/v0.2.0) (đã phát hành). Mỗi bản phát hành có ba gói; chọn một:
 
 | Gói | Dành cho | Cài đặt |
 |---|---|---|
