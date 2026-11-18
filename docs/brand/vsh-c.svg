@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- vsh-c: V nghiêng thành >-chevron đúng nghĩa (đỉnh nhọn sang phải), ssh = _ dài mảnh dưới; tổng thể chính là >_ -->
+  <defs>
+    <linearGradient id="gc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7aa2f7"/>
+      <stop offset="1" stop-color="#7dcfff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="14" y="14" width="484" height="484" rx="100" fill="#16161e"/>
+  <path d="M 168 164 L 300 256 L 168 348"
+        fill="none" stroke="url(#gc)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 322 348 h 60" stroke="url(#gc)" stroke-width="46" stroke-linecap="round"/>
+</svg>

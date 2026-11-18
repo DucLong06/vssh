@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- min-b: prompt >_ with a small gold star as the cursor block: the only VN whisper -->
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="14" y="14" width="484" height="484" rx="100" fill="#16161e"/>
+  <g fill="none" stroke="#7aa2f7" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 132 178 L 218 256 L 132 334"/>
+  </g>
+  <!-- gold star as the underscore/cursor -->
+  <path d="M 292 326 L 306.9 331.9 L 314.6 346.2 L 322.3 331.9 L 337.2 326 L 326.4 315.2 L 328.6 299.2 L 314.6 306.4 L 300.6 299.2 L 302.8 315.2 Z"
+        transform="translate(-32,0) scale(1.35)" fill="#e0af68"/>
+</svg>

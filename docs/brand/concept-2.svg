@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 2, the red seal with the marks of "Việt"</title>
+  <!-- a red seal; the V wears the two marks of the "ệ" in "Việt": the hat above, the dot below -->
+  <rect width="512" height="512" rx="112" fill="#f7768e"/>
+  <g fill="none" stroke="#16161e" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M200 102 L256 68 L312 102" stroke-width="36"/>
+    <path d="M124 160 L256 340 L388 160" stroke-width="68"/>
+  </g>
+  <circle cx="256" cy="438" r="30" fill="#16161e"/>
+</svg>

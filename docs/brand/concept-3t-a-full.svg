@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 512" role="img" aria-label="vssh">
+  <title>vssh — concept 3t-a, the flag V in a terminal window, with the wordmark</title>
+  <!-- the tile is the window: body, title bar, frame, three buttons -->
+  <rect width="512" height="512" rx="112" fill="#16161e"/>
+  <path d="M1.2 96 A112 112 0 0 1 112 0 H400 A112 112 0 0 1 510.8 96 Z" fill="#292e42"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#292e42" stroke-width="8"/>
+  <!-- centred on the 16px grid (32 units a pixel), so each button is one pixel at 16px -->
+  <circle cx="80" cy="48" r="18" fill="#f7768e"/>
+  <circle cx="144" cy="48" r="18" fill="#e0af68"/>
+  <circle cx="208" cy="48" r="18" fill="#9ece6a"/>
+  <!-- what the window shows: the left arm a square-cut backslash, the right arm the cloth -->
+  <g transform="translate(37 86) scale(0.86)">
+    <path d="M208 398 C272 320 218 190 298 92 L412 140 C324 232 350 348 234 418 Z" fill="#f7768e" stroke="#f7768e" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M92 88 H140 L248 424 H200 Z" fill="#7aa2f7"/>
+    <path d="M322 120 L332.3 151.8 L365.7 151.8 L338.7 171.4 L349 203.2 L322 183.6 L295 203.2 L305.3 171.4 L278.3 151.8 L311.7 151.8 Z" fill="#ffcd00" stroke="#ffcd00" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+  <!-- live text, no font embedded: the first monospace face the system has -->
+  <text x="592" y="352" font-family="'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="280" font-weight="700" fill="#6183e4">vssh</text>
+</svg>

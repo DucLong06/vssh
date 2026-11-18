@@ -615,6 +615,8 @@ const DATA = [
  */
 const KEPT = [
   ...['Ctrl-K', 'Ctrl-A', 'Enter', 'Space', 'enter', 'esc', 'CPU', 'ms', 'EN', 'VI'],
+  // The brand mark in the rail: a > whose command is ssh, drawn, not said in any language.
+  'ssh',
   ...['ngày', 'giờ', 'phút', 'giây'],
   ...['user@host[:port]', '~/.ssh/config', '~/.ssh/id_ed25519', 'localhost:80', 'SOCKS', 'systemctl restart {{unit}}'],
 ]

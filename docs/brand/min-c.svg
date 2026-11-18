@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- min-c: gradient tile like the in-app logo, prompt >_ , gold star tucked small in the corner -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7aa2f7"/>
+      <stop offset="1" stop-color="#bb9af7"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="14" y="14" width="484" height="484" rx="100" fill="#16161e"/>
+  <g fill="none" stroke="url(#g)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 144 172 L 238 256 L 144 340"/>
+    <path d="M 266 348 h 96"/>
+  </g>
+  <!-- small star, low-key, bottom-right -->
+  <g transform="translate(392,392) scale(0.9)">
+    <path d="M 0 -26 L 7.6 -8.4 L 26.7 -6.1 L 12.9 6.9 L 16.4 25.8 L 0 16.9 L -16.4 25.8 L -12.9 6.9 L -26.7 -6.1 L -7.6 -8.4 Z" fill="#e0af68" opacity="0.95"/>
+  </g>
+</svg>

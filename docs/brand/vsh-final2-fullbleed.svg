@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- vssh icon, tile lấp đầy khung (không viền trắng khi thu nhỏ) -->
+  <defs>
+    <linearGradient id="gfb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7aa2f7"/>
+      <stop offset="1" stop-color="#7dcfff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="#1f2335"/>
+  <rect x="10" y="10" width="492" height="492" rx="108" fill="#16161e"/>
+  <path d="M 150 140 L 290 248 L 150 356"
+        fill="none" stroke="url(#gfb)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="248" y="418" font-family="ui-monospace, 'DejaVu Sans Mono', Menlo, monospace"
+        font-size="112" font-weight="700" fill="#7dcfff" letter-spacing="2">ssh</text>
+</svg>

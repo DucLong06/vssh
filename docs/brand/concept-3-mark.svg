@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 3, the mark alone, the pole and the flag</title>
+  <!-- the V's left arm is the pole, its right arm the cloth in the wind -->
+  <g transform="translate(-28 0)">
+    <path d="M236 398 C300 320 246 190 326 92 L440 140 C352 232 378 348 262 418 Z" fill="#f7768e" stroke="#f7768e" stroke-width="12" stroke-linejoin="round"/>
+    <path d="M150 108 L246 404" fill="none" stroke="#7aa2f7" stroke-width="40" stroke-linecap="round"/>
+    <path d="M350 122 L359.9 152.4 L391.8 152.4 L366 171.2 L375.9 201.6 L350 182.8 L324.1 201.6 L334 171.2 L308.2 152.4 L340.1 152.4 Z" fill="#e0af68" stroke="#e0af68" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="vssh">
+  <title>vssh — concept 3t-b, the flag V as a bitmap glyph</title>
+  <defs>
+    <pattern id="scan" width="32" height="32" patternUnits="userSpaceOnUse">
+      <rect y="26" width="32" height="6" fill="#1f2335"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#16161e"/>
+  <!-- scanlines: one every 32 units, so at 16px they average out to nothing -->
+  <rect width="512" height="512" rx="112" fill="url(#scan)"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#292e42" stroke-width="8"/>
+  <!-- a V in bitmap-font steps, every edge on the 16px grid (32 units a pixel):
+       the left arm is the pole, the right arm the cloth -->
+  <path d="M96 96 H160 V160 H192 V224 H224 V288 H256 V416 H224 V352 H192 V288 H160 V224 H128 V160 H96 Z" fill="#7aa2f7"/>
+  <path d="M416 96 H352 V160 H320 V224 H288 V288 H256 V416 H288 V352 H320 V288 H352 V224 H384 V160 H416 Z" fill="#f7768e"/>
+  <!-- the star in the notch, 7 by 7 cells of 16 units -->
+  <path d="M248 64 h16 v32 h48 v16 h-16 v16 h-16 v16 h16 v16 h16 v16 h-32 v-16 h-16 v-16 h-16 v16 h-16 v16 h-32 v-16 h16 v-16 h16 v-16 h-16 v-16 h-16 v-16 h48 Z" fill="#ffcd00"/>
+</svg>

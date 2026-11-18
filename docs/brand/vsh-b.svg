@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- vsh-b: V chuẩn đứng đậm, nét trái xanh nét phải tím; ssh = _ ngay dưới, lệch phải kiểu cursor -->
+  <rect width="512" height="512" rx="112" fill="#1f2335"/>
+  <rect x="14" y="14" width="484" height="484" rx="100" fill="#16161e"/>
+  <path d="M 156 156 L 256 316 L 356 156"
+        fill="none" stroke="#7aa2f7" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- ssh = _ : thanh cursor ngắn dưới chân phải -->
+  <path d="M 276 372 h 108" stroke="#bb9af7" stroke-width="44" stroke-linecap="round"/>
+</svg>
