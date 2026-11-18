@@ -2,7 +2,7 @@
   import { tick } from 'svelte'
   import { api, type Host, type Shown } from './api'
   import HostCard from './HostCard.svelte'
-  import { address, groupOf, hasTag, tagsOf } from './hosts'
+  import { address, chip, groupOf, hasTag, tagCounts, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
   import { ask, critical, down, live, sick, trail, up } from './live.svelte'
   import QuickPeek from './QuickPeek.svelte'
@@ -10,18 +10,21 @@
   import { KEY, tip } from './keymap'
   import Menu, { pointed, type MenuItem } from './Menu.svelte'
   import Sparkline from './Sparkline.svelte'
+  import { streamer, target } from './streamer.svelte'
 
   type Props = {
     hosts: Host[]
     /** Why there are no hosts to show, if they could not be read. */
     error?: Shown | null
-    /** Only hosts with this tag or group, as chosen in the sidebar. */
+    /** Only hosts with this tag or group: chosen here, in the row under the search, or in the rail. */
     tag?: string | null
     selected?: string | null
     /** A terminal tab is in front of it. */
     hidden?: boolean
     onselect?: (alias: string) => void
     onconnect: (alias: string) => void
+    /** Connects to what the search holds, `[user@]host[:port]`, and saves nothing; rejects with the refusal, already in words. */
+    onquick?: (target: string) => Promise<void>
     /** Opens a host's files. */
     onfiles?: (alias: string) => void
     /** Opens a host's port forwards. */
@@ -41,11 +44,12 @@
   let {
     hosts,
     error = null,
-    tag = null,
+    tag = $bindable(null),
     selected = null,
     hidden = false,
     onselect,
     onconnect,
+    onquick,
     onfiles,
     onforwards,
     onsnippets,
@@ -76,6 +80,9 @@
   /** The right button's menu, and the card it is about. */
   let menu = $state<{ x: number; y: number; alias: string } | null>(null)
   let search = $state<HTMLInputElement>()
+  /** Why what the search held could not be connected to. */
+  let refusal = $state<Shown | null>(null)
+  let busy = false
   let grid = $state<HTMLElement>()
 
   function saved(): string[] {
@@ -104,14 +111,15 @@
     return keyed.sort(byKey).map((row) => row.host)
   })
 
+  const words = $derived(query.trim().toLowerCase())
+  const found = (host: Host) =>
+    // As `/#tag` in the TUI: the start of a tag or a group.
+    words.startsWith('#')
+      ? tagsOf(host).some((name) => name.toLowerCase().startsWith(words.slice(1)))
+      : [host.alias, address(host)].some((field) => field.toLowerCase().includes(words))
+
   /** The cards on screen: filtered, and whoever needs looking at first. */
   const shown = $derived.by(() => {
-    const words = query.trim().toLowerCase()
-    const found = (host: Host) =>
-      // As `/#tag` in the TUI: the start of a tag or a group.
-      words.startsWith('#')
-        ? tagsOf(host).some((name) => name.toLowerCase().startsWith(words.slice(1)))
-        : [host.alias, address(host)].some((field) => field.toLowerCase().includes(words))
     const kept = sorted.filter((host) => (tag === null || hasTag(host, tag)) && found(host))
     // A stable sort: within the sick and within the well, the order asked for.
     return kept.sort((a, b) => Number(sick(live[b.alias])) - Number(sick(live[a.alias])))
@@ -124,6 +132,25 @@
     for (const host of shown) groups.set(groupOf(host), [...(groups.get(groupOf(host)) ?? []), host])
     return [...groups].map(([name, list]) => ({ name, list }))
   })
+
+  const tags = $derived(tagCounts(hosts))
+  /** What the search holds is an address to connect to as it stands: it has an @, or it is the name of no host. As in the palette. */
+  const quick = $derived(!!onquick && words !== '' && !/[\s#]/.test(words) && (words.includes('@') || !hosts.some(found)))
+
+  /** Connects to it; the search is empty again for the hosts to come back to. */
+  async function direct() {
+    if (busy || !onquick) return
+    busy = true
+    refusal = null
+    try {
+      await onquick(query.trim())
+      query = ''
+    } catch (error) {
+      refusal = error as Shown
+    } finally {
+      busy = false
+    }
+  }
 
   const card = (alias: string) =>
     [...(grid?.querySelectorAll('article') ?? [])].find((el) => el.getAttribute('aria-label') === alias)
@@ -289,6 +316,9 @@
 
   const control =
     'h-10 cursor-pointer rounded-xl border border-edge px-3.5 font-medium whitespace-nowrap text-fg hover:border-dim/50 hover:bg-selection'
+  // A tag of the row under the search: grey until the cards are narrowed to it.
+  const pick =
+    'cursor-pointer rounded-lg bg-bar px-2 text-xs leading-6 whitespace-nowrap text-dim hover:text-fg aria-pressed:text-ink aria-pressed:inset-ring aria-pressed:inset-ring-current'
   const tile = 'min-w-0 rounded-2xl border border-edge bg-panel px-4 pt-3'
   const figure = 'text-2xl leading-tight font-semibold tracking-tight text-ink'
   const segment = { ok: 'bg-green', crit: 'bg-red', down: 'inset-ring-[1.5px] inset-ring-red', unknown: 'bg-bar' }
@@ -352,26 +382,84 @@
       </div>
     {/if}
   {:else}
-    <!-- The search, and the controls as one group: where they have no room
-         beside it (Vietnamese, with cards marked) they all go to a second
-         row, from the same margin, and the cards start below it. -->
-    <div class="sticky top-0 z-20 -mx-8 flex flex-wrap items-center gap-2.5 border-b border-edge bg-bg px-8 pb-4">
-      <input
-        bind:this={search}
-        bind:value={query}
-        type="search"
-        aria-label={t('search_hosts')}
-        aria-keyshortcuts="/ Control+F"
-        title={tip(t('search_hosts'), KEY.search)}
-        placeholder={t('search_hosts')}
-        onkeydown={(e) => {
-          if (e.key !== 'Escape') return
-          query = ''
-          search?.blur()
-        }}
-        class="h-10 min-w-40 flex-1 rounded-full border border-edge bg-panel px-4 text-fg placeholder:text-dim focus:border-blue"
-      />
+    <!-- Two rows, from one margin: the search as wide as the view, with what it connects to and the new host;
+         under it the tags, one row of them however many there are, and how the cards are laid out. -->
+    <div class="sticky top-0 z-20 -mx-8 grid gap-2.5 border-b border-edge bg-bg px-8 pt-4 pb-4">
+      <div class="flex items-center gap-2.5">
+        <input
+          bind:this={search}
+          bind:value={query}
+          type="search"
+          aria-label={t('search_hosts')}
+          aria-keyshortcuts="/ Control+F"
+          title={tip(t('search_hosts'), KEY.search)}
+          placeholder={t('search_hosts')}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          data-masked={(streamer.on && /[.:@]/.test(query)) || undefined}
+          oninput={() => (refusal = null)}
+          onkeydown={(e) => {
+            if (e.key === 'Escape') {
+              query = ''
+              refusal = null
+              search?.blur()
+            } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+              // To the first card found, whose Enter connects; with none, Enter is for the address typed.
+              if (shown.length) card(shown[0].alias)?.focus()
+              else if (e.key === 'Enter' && quick) void direct()
+              else return
+              e.preventDefault()
+            }
+          }}
+          class="h-10 min-w-40 flex-1 rounded-full border border-edge bg-panel px-4 text-fg placeholder:text-dim focus:border-blue data-[masked]:[-webkit-text-security:disc]"
+        />
+        {#if quick}
+          <button type="button" onclick={direct} title="{t('quick_connect')} · {t('quick_connect_note')}" class="{control} max-w-[40%] truncate border-cyan/60 text-cyan">
+            {t('connect_to').replace('{target}', target(query.trim()))}
+          </button>
+        {/if}
+        {#if onadd}
+          <!-- The concept's one filled button. -->
+          <button
+            type="button"
+            aria-keyshortcuts="a"
+            title={tip(t('add_host'), KEY.add)}
+            onclick={onadd}
+            class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90"
+          >
+            {t('add_host')}
+          </button>
+        {/if}
+      </div>
+      {#if refusal}
+        <p role="alert" class="px-4 break-words text-red"><strong>{refusal.label}</strong> {refusal.message}</p>
+      {/if}
       <div class="flex flex-wrap items-center gap-2.5">
+        <!-- One row: past its end the tags are scrolled to, and the cards do not start lower for them. -->
+        <ul
+          aria-label={t('tags')}
+          class="flex min-w-40 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)] [scrollbar-width:none]"
+        >
+          {#if tags.length}
+            <li class="flex shrink-0">
+              <button type="button" aria-pressed={tag === null} onclick={() => (tag = null)} class={pick}>{t('all_tags')}</button>
+            </li>
+          {/if}
+          {#each tags as [name] (name)}
+            <li class="flex shrink-0">
+              <button
+                type="button"
+                aria-pressed={tag === name}
+                onclick={() => (tag = tag === name ? null : name)}
+                style:color={tag === name ? chip(name) : undefined}
+                class={pick}
+              >
+                #{name}
+              </button>
+            </li>
+          {/each}
+        </ul>
         <button
           type="button"
           aria-pressed={grouped}
@@ -396,18 +484,6 @@
             class="{control} border-magenta/70 text-magenta"
           >
             {t('run')} {marked.length}
-          </button>
-        {/if}
-        {#if onadd}
-          <!-- The concept's one filled button. -->
-          <button
-            type="button"
-            aria-keyshortcuts="a"
-            title={tip(t('add_host'), KEY.add)}
-            onclick={onadd}
-            class="{control} border-blue bg-blue font-semibold text-page hover:bg-blue/90"
-          >
-            {t('add_host')}
           </button>
         {/if}
         <!-- Radio buttons, drawn as one control: a native select opens the
@@ -456,12 +532,8 @@
       {#each sections as { name, list } (name)}
         {#if grouped}
           <h2 class="flex items-baseline gap-2 pt-1 pb-3 text-lg font-semibold">
-            {#if name}
-              <span class="text-white">#{name}</span>
-            {:else}
-              <span class="text-white">{t('no_tags')}</span>
-            {/if}
-            <span class="text-sm font-normal text-dim">{list.length}</span>
+            <span class="text-white">{name || t('no_tags')}</span>
+            <span class="text-sm font-normal text-dim">({list.length})</span>
           </h2>
         {/if}
         <!-- One column, two past 800 px of window, three past 1200. -->

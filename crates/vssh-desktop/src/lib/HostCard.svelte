@@ -53,7 +53,7 @@
     info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
   )
   const reached = $derived(typeof info?.ms === 'number')
-  /** A host that needs no looking at is two lines: its name, and its three figures. One that is down or past a mark keeps the room to say why. */
+  /** A host that needs no looking at is three short lines: its name, where it is and its tags, and its three figures. One that is down or past a mark keeps the room to say why. */
   const low = $derived(kind !== 'down' && kind !== 'crit')
   const [green, yellow, red] = ['green', 'yellow', 'red'].map((name) => `var(--color-${name})`)
   const fill = {
@@ -128,8 +128,7 @@
   class="group relative flex h-full flex-col rounded-2xl border border-edge bg-panel transition-colors {low ? 'gap-1.5 px-4 py-2.5' : 'gap-3 p-4'} select-none hover:border-dim/60 focus-visible:outline-[1.5px] focus-visible:-outline-offset-1 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 aria-[current]:outline-[1.5px] aria-[current]:-outline-offset-1 aria-[current]:outline-blue data-[marked]:border-magenta {extra}"
 >
   <header class="flex items-center gap-2">
-    <!-- Low, the address is said to the pointer that rests on the name; the quick peek has it too. -->
-    <h3 title={(low && addr(host)) || undefined} class="shrink-0 truncate text-base font-semibold tracking-tight text-ink {low ? 'max-w-[45%]' : ''}">{host.alias}</h3>
+    <h3 class="truncate text-base font-semibold tracking-tight text-ink {low ? 'min-w-0' : 'shrink-0'}">{host.alias}</h3>
     {#if marked}
       <span role="img" aria-label={t('selected')} class="text-magenta">✓</span>
     {/if}
@@ -137,10 +136,6 @@
       <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
     {/if}
     <!-- The concept's badge, in the TUI's words: how long the host takes to answer, or that it does not. -->
-    {#if low}
-      <!-- No buttons over a low card: they would lie on its name, and where it is held to be moved. The right button's menu and the keys have them. -->
-      <div class="flex h-7 min-w-0 flex-1 items-center overflow-hidden">{@render tags()}</div>
-    {/if}
     <span
       class="ml-auto inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap {info?.ms === null ? 'text-red inset-ring inset-ring-red/50' : info?.ms === undefined ? 'bg-bar text-dim' : kind === 'down' ? 'bg-bar text-white' : 'bg-green/12 text-green'}"
     >
@@ -158,6 +153,15 @@
     <div class="-mt-1 flex min-h-[22px] items-start">
       {@render tags()}
       {@render tools()}
+    </div>
+  {:else if addr(host) || tagsOf(host).length}
+    <!-- Who it is, under its name: user@host, and its tags as far as there is room. No buttons over a low card:
+         they would lie on its name, and where it is held to be moved. The right button's menu and the keys have them. -->
+    <div class="-mt-1 flex h-5 min-w-0 items-center gap-2">
+      {#if addr(host)}
+        <p title={addr(host)} class="max-w-[62%] shrink-0 truncate font-mono text-xs text-white">{addr(host)}</p>
+      {/if}
+      <div class="flex min-w-0 flex-1 overflow-hidden">{@render tags()}</div>
     </div>
   {/if}
 

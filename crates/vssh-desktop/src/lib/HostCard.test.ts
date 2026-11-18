@@ -23,11 +23,15 @@ const stats = (cpu: number | null, mem: [number, number] | null, disk: number | 
 const meter = (name: string) => screen.getByRole('meter', { name })
 const dot = (el: HTMLElement) => el.querySelector('header [aria-hidden]')
 
-test('a healthy host is a low card of two lines: name, tags, latency, and three bars with their figures; its address is said to the pointer on its name', () => {
+test('a healthy host is a low card of three short lines: its name and latency, user@host and its tags, and three bars with their figures', () => {
   const el = card({ ms: 12, peek })
   expect(el).toHaveAttribute('data-low')
-  expect(within(el).getByRole('heading', { name: 'web-01' })).toHaveAttribute('title', 'deploy@10.0.0.5:2222')
-  expect(el).not.toHaveTextContent('10.0.0.5')
+  expect(within(el).getByRole('heading', { name: 'web-01' })).toBeInTheDocument()
+  // Where it is, under its name, in the letters of what is typed; whole to the pointer where the card is too narrow for it.
+  const address = within(el).getByText('deploy@10.0.0.5:2222')
+  expect(address).toHaveClass('font-mono', 'truncate')
+  expect(address).toHaveAttribute('title', 'deploy@10.0.0.5:2222')
+  expect(address.parentElement).toContainElement(within(el).getByRole('list', { name: 'Tags' }))
   // The minute behind the figures is the quick peek's to draw.
   expect(el.querySelector('svg')).toBeNull()
   const tags = within(within(el).getByRole('list', { name: 'Tags' })).getAllByRole('listitem')

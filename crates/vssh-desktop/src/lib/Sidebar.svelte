@@ -7,7 +7,7 @@
   import SessionDot from './SessionDot.svelte'
   import { KEY, tip } from './keymap'
   import Menu, { tall, type MenuItem } from './Menu.svelte'
-  import { addr, setStreamer, streamer } from './streamer.svelte'
+  import { setStreamer, streamer } from './streamer.svelte'
   import type { Tab } from './Tabs.svelte'
   import { setTheme, theme } from './theme.svelte'
 
@@ -15,10 +15,9 @@
   export type Nav = 'dashboard' | 'hosts' | 'sessions' | 'files' | 'snippets' | 'forwards'
 
   type Props = {
+    /** Counted here and no more: the hosts themselves are the view's in the middle. */
     hosts: Host[]
-    selected: string | null
-    onselect: (alias: string) => void
-    /** The tag the list is narrowed to; the dashboard follows it. */
+    /** The tag the hosts are narrowed to; the dashboard follows it. */
     tag?: string | null
     /** The open sessions, the one in front, and what a click on one does. */
     sessions?: Tab[]
@@ -44,8 +43,6 @@
   }
   let {
     hosts,
-    selected,
-    onselect,
     tag = $bindable(null),
     sessions = [],
     active = null,
@@ -63,7 +60,6 @@
     onzen,
   }: Props = $props()
 
-  let list = $state<HTMLElement>()
   /** The settings' menu, and where: over the button that opens it. */
   let menu = $state<{ x: number; y: number } | null>(null)
 
@@ -79,13 +75,6 @@
 
   const tags = $derived(tagCounts(hosts))
   const shown = $derived(hosts.filter((host) => tag === null || hasTag(host, tag)))
-
-  // A host chosen elsewhere (the palette) may be below the fold; so may the
-  // selected one once the sessions take their share of the list's height.
-  $effect(() => {
-    void sessions.length
-    if (selected) list?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest' })
-  })
 
   // A row of the rail; narrow, a square with its icon, the number at its corner.
   const nav = $derived(
@@ -186,35 +175,13 @@
   {/if}
 
   {@render item('dashboard', 'grid', t('status'))}
-  <h2 class={compact ? 'contents' : ''}>{@render item('hosts', 'server', t('hosts'), shown.length)}</h2>
-  {#if hosts.length && !compact}
-    <!-- As tall as its hosts, and no taller than there is room: what follows it follows it. -->
-    <ul bind:this={list} aria-label={t('hosts')} class="min-h-12 overflow-y-auto">
-      {#each shown as host (host.alias)}
-        <li>
-          <!-- One short line a host: its name. Its address is said to the pointer that rests on it. -->
-          <button
-            type="button"
-            aria-current={host.alias === selected ? 'true' : undefined}
-            title={addr(host) || undefined}
-            onclick={() => onselect(host.alias)}
-            class="{row} flex gap-1.5 text-[13px]"
-          >
-            {#if host.meta.pinned}
-              <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
-            {/if}
-            <span class="truncate">{host.alias}</span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
+  <!-- The hosts themselves are in the middle of the window, by group: here, the way to them and how many. -->
+  {@render item('hosts', 'server', t('hosts'), shown.length)}
   <!-- With none open there is nothing to go to, and no heading for a list that is not there. -->
   {#if sessions.length}
     <h2 class={compact ? 'contents' : ''}>{@render item('sessions', 'term', t('sessions'), sessions.length)}</h2>
     {#if !compact}
-      <ul aria-label={t('sessions')} class="max-h-28 shrink-0 overflow-y-auto">
+      <ul aria-label={t('sessions')} class="min-h-7 overflow-y-auto">
         {#each sessions as session (session.id)}
           <li>
             <button
@@ -233,11 +200,11 @@
   {:else}
     {@render item('sessions', 'term', t('sessions'), undefined, true)}
   {/if}
-  <!-- A host's files and its forwards: the selected host's. -->
-  {@render item('files', 'folder', t('files'), undefined, !selected)}
+  <!-- A host's files and its forwards: whose, the window asks. With no host there is none to ask for. -->
+  {@render item('files', 'folder', t('files'), undefined, !hosts.length)}
   {@render item('snippets', 'code', t('snippets'), snippets)}
   <!-- What listens goes on listening behind a dialog that is shut: said here, in the colour of what is up. -->
-  {@render item('forwards', 'fwd', t('forwards'), tunnels || undefined, !selected, 'text-green')}
+  {@render item('forwards', 'fwd', t('forwards'), tunnels || undefined, !hosts.length, 'text-green')}
   {#if onvault}
     {@const state = vault === 'none' ? '' : vault === 'unlocked' ? t('vault_unlocked') : t('vault_locked')}
     <button type="button" onclick={onvault} title={compact ? `${t('vault')} ${state}`.trim() : undefined} class={nav}>

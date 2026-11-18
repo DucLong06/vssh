@@ -148,3 +148,21 @@ body {
     margin: 0;
   }
 }
+
+/* A terminal that has not the keys draws its cursor as an outline (xterm's own).
+   Here it also breathes: a pane beside the one in front is seen to be alive,
+   and is not taken for the one that is typed in. */
+.xterm-cursor.xterm-cursor-outline {
+  animation: idle 1.6s ease-in-out infinite;
+}
+@keyframes idle {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xterm-cursor.xterm-cursor-outline {
+    animation: none;
+    opacity: 0.6;
+  }
+}

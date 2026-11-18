@@ -46,6 +46,8 @@
     onmove?: (id: number, onto: number, after: boolean) => void
     /** Every tab but this one is to go. */
     oncloseothers?: (id: number) => void
+    /** Broadcast for every session at once, on or off: what is typed in one is typed in all. */
+    onbroadcast?: (on: boolean) => void
   }
   let {
     sessions,
@@ -65,7 +67,11 @@
     ondrag,
     onmove,
     oncloseothers,
+    onbroadcast,
   }: Props = $props()
+
+  /** How many sessions hear what is typed in one of them. */
+  const casting = $derived(sessions.filter((session) => session.broadcast).length)
 
   /** The tabs in the strip's order: each a session or a host's files. */
   type Shown = { id: number; session?: Tab; view?: { id: number; host: string } }
@@ -288,6 +294,20 @@
     {#if leader}
       <!-- Half a chord, as the status bar says it where there is one. -->
       <span role="status" class="pr-1"><Keys keys={KEY.leader[0]} class="text-yellow" /></span>
+    {/if}
+    {#if onbroadcast && sessions.length > 1}
+      <!-- With two shells open there is something to broadcast to. Lit, with a line around it and the number that hear, while it is on. -->
+      <button
+        type="button"
+        aria-pressed={casting > 0}
+        onclick={() => onbroadcast(!casting)}
+        title={tip(t('broadcast_hint'), [`${KEY.leader[0]} Shift+B`])}
+        class="mr-1 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-transparent px-2 text-[13px] font-medium text-dim hover:bg-selection hover:text-fg aria-pressed:border-yellow aria-pressed:bg-yellow/15 aria-pressed:text-yellow"
+      >
+        <Icon name="cast" />
+        <span class="first-letter:uppercase">{t('broadcast')}</span>
+        {#if casting}<span class="font-mono text-[11px]">{casting}</span>{/if}
+      </button>
     {/if}
     {#if active !== null}
       {#if onunsplit && split.includes(active)}
