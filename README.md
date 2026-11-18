@@ -42,6 +42,8 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 
 - **Dashboard.** Every host of `~/.ssh/config` is a card in the middle of the window: its name, `user@host`, its tags, a latency badge, sparklines of CPU and memory over the last minute, a bar for the root disk. The rail on the left lists no hosts: it leads to the views and counts. Above the cards a row of figures: hosts reachable, CPU, memory, and which hosts are down. A host that is down or past a critical mark comes first, and its card says why (`DNS`, `REFUSED`, `AUTH`, …) with a "Try again" button.
 - **Group, sort, search.** Cards are in sections by group, each headed `name (how many)`, or shown flat; sorted by your own order, name, latency or CPU. Drag a card onto another to reorder, or `Alt` + arrow. `/` searches by name, address or `#tag`, and `Enter` or the arrow down goes to the first card found. Under the search the tags are one row: a click filters, and so does a tag in the rail.
+- **The mouse, all of it.** Drag a tab onto a pane's edge to split, drag the divider to resize, drag tabs to reorder them, a middle click closes one. The rail folds to icons only (its header's button), and every view, card, tab, file row and terminal has its right-click menu.
+- **The window remembers.** Split panes, tab names, the folded rail, focus mode and the last view come back as they were when the app is opened again.
 - **Live stats without surprises.** Stats are read every 5 seconds over one connection per host that is kept open, not a login per round. Only a host you have connected to before (its key is in `known_hosts`) and that needs no jump host is asked; the others say "not checked" until you ask them with `v`. Reachability is checked once a minute.
 - **Quick peek.** `v` on a card: what the host says about itself — name, system, uptime, load, CPU, memory, disk — with its address and whether it answers. The answer is kept for 30 seconds; `r` asks again, `Esc` closes.
 - **Terminal tabs.** `Enter` or "Connect" opens a real shell in a tab (a PTY over russh, drawn by xterm.js). Mark several cards with `Space` and `Enter` connects to all of them. A tab shows its state and, on Linux hosts, the command running in it. Selecting text copies it; `Ctrl-Shift-V` or the right button pastes. Side by side in panes, a click gives a pane the keys, and the others keep a dim cursor that breathes. When a shell ends the tab offers "Reconnect".
@@ -64,6 +66,9 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 | Where | Key | Action |
 |-------|-----|--------|
 | Anywhere | `Ctrl-K`; in a terminal `Ctrl-Shift-K` | command palette |
+| | `Ctrl-Shift-B` (plain `Ctrl-B` when no terminal is in front) | focus mode: the rail hides, the terminal takes the window; `Esc` brings it back |
+| | `Ctrl-T` | new tab, from the palette |
+| | `?`; in a terminal `Ctrl-A` `?` | the cheatsheet: every key, searched |
 | Dashboard | `/` | search hosts, `#tag` for a tag; `Enter` or `↓` to the first card; `user@host` and `Enter` connects |
 | | `a` | add a host |
 | | `s` | snippets |
@@ -77,6 +82,9 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 | Tabs | `Ctrl-A`, then `0`-`9` | go to a tab |
 | | `Ctrl-A`, then `Tab` or `n` / `p` | next / previous tab |
 | | `Ctrl-A`, then `b` / `B` | broadcast: this tab / all tabs |
+| | `Ctrl-Shift-D` / `Ctrl-Shift-E` | split the tab right / down; drag a tab onto a pane edge with the mouse does the same |
+| | `Ctrl-A`, then `!` | unsplit: the pane becomes its own tab again |
+| | a middle click | close a tab |
 | | `Ctrl-Shift-V` | paste into the terminal in front |
 | | `Ctrl-A`, then `y` | copy the last command's output |
 | | `Ctrl-A`, then `q` | back to the dashboard |
