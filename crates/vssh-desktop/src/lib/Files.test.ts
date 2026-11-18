@@ -336,26 +336,57 @@ test('several transfers: a line each, three at a time, the rest waiting their tu
   await vi.waitFor(() => expect(transfers()).toHaveLength(3))
 })
 
-test('the right button opens a menu: a new folder, and for an entry a copy, another name, or its removal', async () => {
+test('the right button opens a menu: for a file its way across, another name or its removal; for the pane what comes here, a new folder, a fresh look', async () => {
   const user = await ready(shell())
   await rightClick(user, await row('web-01', 'nginx'))
-  // A directory is not copied.
-  expect(items()).toEqual(['New folder', 'Rename', 'Delete'])
+  // A directory does not go across: on it the menu brings here what the other pane has chosen.
+  expect(items()).toEqual(['Upload', 'New folder', 'Rename', 'Delete', 'Refresh'])
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('menu')).toBeNull()
   await rightClick(user, await row('web-01', 'auth.log'))
-  // Copy has a key, and the menu says which.
-  expect(items()).toEqual(['Copy C', 'New folder', 'Rename', 'Delete'])
+  // Named for where it goes, with the key that does the same.
+  expect(items()).toEqual(['Download C', 'New folder', 'Rename', 'Delete', 'Refresh'])
   // Under the pointer's empty space: only what needs no entry.
   await rightClick(user, screen.getByRole('region', { name: 'local' }))
-  expect(items()).toEqual(['New folder'])
+  expect(items()).toEqual(['Download', 'New folder', 'Refresh'])
   // A click anywhere else closes it.
   await user.click(grid('local'))
   expect(screen.queryByRole('menu')).toBeNull()
 
   await rightClick(user, await row('web-01', 'empty'))
-  await user.click(within(menu()).getByRole('menuitem', { name: 'Copy' }))
+  await user.click(within(menu()).getByRole('menuitem', { name: 'Download' }))
   expect(asked('sftp_download').map((args) => args.local)).toEqual(['/home/me/empty'])
+})
+
+test('the host\'s pane, by the right button: Upload sends up what this machine\'s pane has chosen; Refresh lists it again', async () => {
+  const user = await ready(shell())
+  // This machine's pane is on a folder: nothing to send.
+  await rightClick(user, screen.getByRole('region', { name: 'web-01' }))
+  expect(within(menu()).getByRole('menuitem', { name: 'Upload' })).toBeDisabled()
+  // Esc gives the keys back to the pane the menu was on.
+  await user.keyboard('{Escape}')
+  expect(grid('web-01')).toHaveFocus()
+  // Two files marked on this machine; from the host's pane, Upload takes both.
+  grid('local').focus()
+  await user.keyboard('j j ')
+  await rightClick(user, screen.getByRole('region', { name: 'web-01' }))
+  await user.click(within(menu()).getByRole('menuitem', { name: 'Upload' }))
+  // auth.log is on the host already: asked first.
+  await user.click(within(dialog()).getByRole('button', { name: 'Overwrite' }))
+  await vi.waitFor(() => expect(asked('sftp_upload')).toHaveLength(2))
+  expect(asked('sftp_upload').map((args) => args.remote)).toEqual(['/home/deploy/auth.log', '/home/deploy/notes.txt'])
+  const lists = asked('sftp_list').length
+  await rightClick(user, screen.getByRole('region', { name: 'web-01' }))
+  await user.click(within(menu()).getByRole('menuitem', { name: 'Refresh' }))
+  await vi.waitFor(() => expect(asked('sftp_list')).toHaveLength(lists + 1))
+  // A marked file's own row sends the marked ones with it.
+  await fireEvent.click(await row('local', 'auth.log'), { ctrlKey: true })
+  await fireEvent.click(await row('local', 'notes.txt'), { ctrlKey: true })
+  await rightClick(user, await row('local', 'notes.txt'))
+  await user.click(within(menu()).getByRole('menuitem', { name: /Upload/ }))
+  await user.click(within(dialog()).getByRole('button', { name: 'Overwrite' }))
+  // Both are in the queue, behind the two that never end here.
+  expect(within(screen.getByRole('list', { name: 'Transfers' })).getAllByRole('listitem')).toHaveLength(4)
 })
 
 test('New folder asks for a name and makes it, on the side the menu was opened on', async () => {
@@ -466,6 +497,59 @@ test('files dropped on the window from the desktop go up to the directory the ho
   expect(asked('sftp_upload')).toHaveLength(2)
 })
 
+test('while files from the desktop are over the window the host\'s pane says it is where they go; over another view on screen, it is not', async () => {
+  await ready(shell())
+  const remote = () => screen.getByRole('region', { name: 'web-01' })
+  const local = () => screen.getByRole('region', { name: 'local' })
+  expect(remote()).not.toHaveAttribute('data-drop')
+  await emit('tauri://drag-enter', { paths: ['/tmp/b.bin'], position: { x: 700, y: 300 } })
+  expect(remote()).toHaveAttribute('data-drop')
+  expect(local()).not.toHaveAttribute('data-drop')
+  await emit('tauri://drag-leave', {})
+  expect(remote()).not.toHaveAttribute('data-drop')
+  // A drag of the window's own (a row, a tab) carries no files: not this.
+  await emit('tauri://drag-enter', { paths: [], position: { x: 700, y: 300 } })
+  await emit('tauri://drag-over', { position: { x: 700, y: 300 } })
+  expect(remote()).not.toHaveAttribute('data-drop')
+  // Two views on screen as panes: the one under the pointer takes them, the other does not.
+  const other = document.createElement('div')
+  other.dataset.files = ''
+  document.body.append(other)
+  const under = vi.spyOn(document, 'elementFromPoint').mockReturnValue(other)
+  await emit('tauri://drag-enter', { paths: ['/tmp/b.bin'], position: { x: 100, y: 300 } })
+  expect(remote()).not.toHaveAttribute('data-drop')
+  await emit('tauri://drag-drop', { paths: ['/tmp/b.bin'], position: { x: 100, y: 300 } })
+  expect(asked('sftp_upload')).toHaveLength(0)
+  under.mockReturnValue(local())
+  await emit('tauri://drag-enter', { paths: ['/tmp/b.bin'], position: { x: 100, y: 300 } })
+  await emit('tauri://drag-over', { position: { x: 100, y: 300 } })
+  expect(remote()).toHaveAttribute('data-drop')
+  await emit('tauri://drag-drop', { paths: ['/tmp/b.bin'], position: { x: 100, y: 300 } })
+  expect(remote()).not.toHaveAttribute('data-drop')
+  await vi.waitFor(() => expect(asked('sftp_upload')).toHaveLength(1))
+  other.remove()
+})
+
+test('rows in hand over the other pane: it says it is where they land, and their own pane does not', async () => {
+  await ready(shell())
+  const remote = () => screen.getByRole('region', { name: 'web-01' })
+  const local = () => screen.getByRole('region', { name: 'local' })
+  await fireEvent.dragStart(await row('local', 'notes.txt'))
+  await fireEvent.dragOver(local())
+  expect(local()).not.toHaveAttribute('data-drop')
+  await fireEvent.dragEnter(remote())
+  expect(remote()).toHaveAttribute('data-drop')
+  // Let go elsewhere: nothing is marked any more.
+  await fireEvent.dragEnd(await row('local', 'notes.txt'))
+  await fireEvent.dragOver(remote())
+  expect(remote()).not.toHaveAttribute('data-drop')
+  await fireEvent.dragStart(await row('local', 'notes.txt'))
+  await fireEvent.dragOver(remote())
+  await fireEvent.drop(remote())
+  expect(remote()).not.toHaveAttribute('data-drop')
+  await vi.waitFor(() => expect(asked('sftp_upload')).toHaveLength(1))
+})
+
 test('behind another tab the view takes no drop; closed, it stops what it was moving', async () => {
   const { start } = held()
   const user = shell({ sftp_upload: start })
@@ -488,7 +572,7 @@ test('the view in Vietnamese: Tải lên, Tải xuống, Sao chép, Huỷ', asyn
   await user.keyboard('jjc')
   expect(within(screen.getByRole('list', { name: 'Truyền tệp' })).getByRole('button', { name: 'Huỷ notes.txt' })).toHaveTextContent('Huỷ')
   await rightClick(user, await row('máy mình', 'notes.txt'))
-  expect(items()).toEqual(['Sao chép C', 'Tạo thư mục', 'Đổi tên', 'Xoá'])
+  expect(items()).toEqual(['Tải lên C', 'Tạo thư mục', 'Đổi tên', 'Xoá', 'Làm mới'])
   await user.click(within(menu()).getByRole('menuitem', { name: 'Xoá' }))
   expect(dialog()).toHaveTextContent('Xoá notes.txt?')
 })

@@ -411,3 +411,55 @@ test('with Ctrl a card\'s letters are not its keys: Ctrl+F on a card is the sear
   await user.keyboard('f')
   expect(on.onfiles).toHaveBeenCalledWith('web-01')
 })
+
+test('the right button on a card: what its keys do, as a menu, and its address for the clipboard; a double click connects', async () => {
+  const user = userEvent.setup()
+  const copied: unknown[] = []
+  mockIPC((cmd, args) => {
+    if (cmd === 'plugin:clipboard-manager|write_text') copied.push((args as { text: string }).text)
+    return null
+  })
+  const on = { onconnect: vi.fn(), onfiles: vi.fn(), onforwards: vi.fn(), onedit: vi.fn(), ondelete: vi.fn(), onpalette: vi.fn(), onselect: vi.fn() }
+  render(Dashboard, props(on))
+  const card = screen.getByRole('article', { name: 'web-01' })
+  const choose = async (name: string | RegExp) => {
+    await fireEvent.contextMenu(card, { clientX: 300, clientY: 200 })
+    await user.click(within(screen.getByRole('menu', { name: 'web-01' })).getByRole('menuitem', { name }))
+    expect(screen.queryByRole('menu')).toBeNull()
+  }
+  await fireEvent.contextMenu(card, { clientX: 300, clientY: 200 })
+  // The card the menu is about is the selected one.
+  expect(on.onselect).toHaveBeenLastCalledWith('web-01')
+  expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+    'Connect Enter',
+    'Files F',
+    'Forwards L',
+    'Edit E',
+    'Copy address',
+    'Command palette Ctrl+K',
+    'Delete D',
+  ])
+  // The arrows go through it, round the end; Esc gives the keys back to the card.
+  await user.keyboard('{ArrowUp}')
+  expect(screen.getByRole('menuitem', { name: /Delete/ })).toHaveFocus()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(card).toHaveFocus()
+  await choose(/Connect/)
+  expect(on.onconnect).toHaveBeenLastCalledWith('web-01')
+  await choose('Copy address')
+  expect(copied).toEqual(['deploy@10.0.0.5:2222'])
+  await choose(/Command palette/)
+  expect(on.onpalette).toHaveBeenCalledOnce()
+  await choose(/Delete/)
+  expect(on.ondelete).toHaveBeenLastCalledWith('web-01')
+  await choose(/Files/)
+  expect(on.onfiles).toHaveBeenLastCalledWith('web-01')
+  // A double click on the card connects; on its own button that is the button's two clicks.
+  on.onconnect.mockClear()
+  await user.dblClick(within(card).getByRole('heading', { name: 'web-01' }))
+  expect(on.onconnect).toHaveBeenCalledTimes(1)
+  await user.dblClick(within(card).getByRole('button', { name: 'Connect' }))
+  expect(on.onconnect).toHaveBeenCalledTimes(3)
+  clearMocks()
+})

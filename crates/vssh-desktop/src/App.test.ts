@@ -1745,8 +1745,11 @@ const frame = () => document.querySelector<HTMLElement>('[data-panes]')!
 const laid = () =>
   [...frame().children]
     .filter((pane): pane is HTMLElement => pane instanceof HTMLElement && !pane.hidden && pane.querySelector('[role=tabpanel]') !== null)
-    .sort((a, b) => Number(a.style.order) - Number(b.style.order))
+    // In reading order: by where each is.
+    .sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top) || parseFloat(a.style.left) - parseFloat(b.style.left))
 const order = () => laid().map((pane) => pane.querySelector('[role=tabpanel]')!.getAttribute('aria-label'))
+/** Where each pane on screen is, in hundredths of the whole: left, top, width, height. */
+const spots = () => laid().map((pane) => [pane.style.left, pane.style.top, pane.style.width, pane.style.height].map((part) => Math.round(parseFloat(part))))
 const picked = () => screen.getByRole('tab', { selected: true })
 const chord = (key: string) => `{Control>}{Shift>}${key}{/Shift}{/Control}`
 /** The pointer with a tab in hand, over the panes; the box is a thousand by six hundred. */
@@ -1769,7 +1772,7 @@ test('Ctrl+Shift+D is another shell on the same host beside the one in front, Ct
   expect(asked('session_open')).toEqual([{ alias: 'web-01' }, { alias: 'web-01' }])
   // Both are on screen, side by side; the new one has the keys, and the line that says so.
   expect(panels()).toEqual(['web-01', 'web-01'])
-  expect(frame()).not.toHaveClass('flex-col')
+  expect(frame()).not.toHaveAttribute('data-stacked')
   expect(picked()).toHaveTextContent('2 web-01')
   expect(terminals[1].focused).toBe(true)
   expect(laid().map((pane) => pane.hasAttribute('data-front'))).toEqual([false, true])
@@ -1787,11 +1790,12 @@ test('Ctrl+Shift+D is another shell on the same host beside the one in front, Ct
   await user.keyboard(`${leader}1`)
   expect(panels()).toHaveLength(2)
 
-  // One under them all: the split is stacked now.
+  // One under the pane in front (the left one), which shares its side with it: two on the left, one on the right.
   await user.keyboard(chord('E'))
   await tab(/3 web-01/)
   expect(panels()).toHaveLength(3)
-  expect(frame()).toHaveClass('flex-col')
+  expect(frame()).not.toHaveAttribute('data-stacked')
+  expect(spots()).toEqual([[0, 0, 50, 50], [50, 0, 50, 100], [0, 50, 50, 50]])
   expect(terminals[2].focused).toBe(true)
   // Not one of these keys was a shell's.
   expect(asked('session_write')).toEqual([])
@@ -1815,7 +1819,7 @@ test('after the leader the split has tmux\'s keys: | and % beside, - and " under
   for (const [key, stacked] of [['|', false], ['-', true], ['%', false], ['"', true]] as const) {
     await user.keyboard(`${leader}1${leader}${key === '"' ? '"' : key}`)
     await vi.waitFor(() => expect(panels()).toHaveLength(2))
-    expect(frame().classList.contains('flex-col'), key).toBe(stacked)
+    expect(frame().hasAttribute('data-stacked'), key).toBe(stacked)
     // Under it or beside it, the new one comes after.
     expect(order()).toEqual(['first', 'web-01'])
     await user.keyboard(ctrlW)
@@ -1892,7 +1896,7 @@ test('a tab dragged to an edge of what is open becomes a pane there; dragged aga
   await over('drop', 50, 300)
   expect(document.querySelector('[data-edge]')).toBeNull()
   expect(order()).toEqual(['web-01', 'web-02'])
-  expect(frame()).not.toHaveClass('flex-col')
+  expect(frame()).not.toHaveAttribute('data-stacked')
   expect(picked()).toHaveTextContent('1 web-01')
   expect(terminals[0].focused).toBe(true)
 
@@ -1909,13 +1913,18 @@ test('a tab dragged to an edge of what is open becomes a pane there; dragged aga
   // Let go with a leave as the last thing heard: it lands where it is let go.
   await over('drop', 960, 300)
   expect(order()).toEqual(['web-02', 'web-01'])
-  // To the bottom: one over the other. To the top: the other way round. A web view that last asked
+  // Over its own pane a tab would land where it is: no place is shown.
+  await fireEvent.dragStart(await tab(/2 web-02/))
+  expect(await over('dragover', 100, 300)).toBe(false)
+  expect(document.querySelector('[data-edge]')).toBeNull()
+  await fireEvent.dragEnd(await tab(/2 web-02/))
+  // To the bottom of the other: one over the other. To its top: the other way round. A web view that last asked
   // on entering an element (over a terminal every row is one) is told yes there too, or it drops nothing.
   await fireEvent.dragStart(await tab(/2 web-02/))
-  expect(await over('dragenter', 500, 590)).toBe(false)
+  expect(await over('dragenter', 750, 590)).toBe(false)
   expect(document.querySelector('[data-edge]')).toHaveAttribute('data-edge', 'bottom')
-  await over('drop', 500, 590)
-  expect(frame()).toHaveClass('flex-col')
+  await over('drop', 750, 590)
+  expect(frame()).toHaveAttribute('data-stacked')
   expect(order()).toEqual(['web-01', 'web-02'])
   await fireEvent.dragStart(await tab(/2 web-02/))
   await over('dragover', 500, 10)
@@ -1932,11 +1941,20 @@ test('a tab dragged to an edge of what is open becomes a pane there; dragged aga
   await user.keyboard(`${leader}0`)
   ;(await card('web-01')).focus()
   await user.keyboard(`f${leader}1`)
+  // At the right edge of the lower pane: that one's half, and the upper pane keeps the width.
   await fireEvent.dragStart(await tab(/Files web-01/))
-  await over('dragover', 990, 300)
-  await over('drop', 990, 300)
+  await over('dragover', 990, 450)
+  expect(document.querySelector<HTMLElement>('[data-edge]')!.style.cssText).toBe('left: 50%; top: 50%; width: 50%; height: 50%;')
+  await over('drop', 990, 450)
   expect(order()).toEqual(['web-02', 'web-01', 'Files web-01'])
-  expect(frame()).not.toHaveClass('flex-col')
+  expect(spots()).toEqual([[0, 0, 100, 50], [0, 50, 50, 50], [50, 50, 50, 50]])
+  // In the middle of a pane: the two change places.
+  await fireEvent.dragStart(await tab(/Files web-01/))
+  await over('dragover', 500, 100)
+  expect(document.querySelector('[data-edge]')).toHaveAttribute('data-edge', 'centre')
+  await over('drop', 500, 100)
+  expect(order()).toEqual(['Files web-01', 'web-01', 'web-02'])
+  expect(picked()).toHaveTextContent('Files web-01')
   // A tab alone, dropped on itself, is still alone.
   await user.keyboard(`${leader}!`)
   expect(panels()).toEqual(['Files web-01'])
@@ -2071,7 +2089,8 @@ test('panes and focus mode in Vietnamese: the strip\'s buttons, the palette\'s r
   expect(stray()).toEqual([])
   await user.type(palette(), 'split down{Enter}')
   await tab(/3 web-01/)
-  expect(frame()).toHaveClass('flex-col')
+  expect(spots()).toHaveLength(3)
+  expect(screen.getAllByRole('separator', { name: 'Đổi cỡ các ô' })).toHaveLength(2)
   expect(stray()).toEqual([])
   // The cheatsheet's rows for them, found by a word of theirs.
   await user.keyboard(`${leader}?`)
@@ -2146,5 +2165,182 @@ test('the question before a busy tab goes, in Vietnamese', async () => {
   await says(1, { state: 'busy', command: 'pg_dump' })
   await user.keyboard(`${leader}x`)
   expect(await screen.findByRole('dialog', { name: 'Đóng tab' })).toHaveTextContent('pg_dump đang chạy trên web-01. Đóng tab?')
+  expect(stray()).toEqual([])
+})
+
+// --- D11: the pointer's own ways ------------------------------------------------
+
+const rightClick = (target: Element) => fireEvent.contextMenu(target, { clientX: 300, clientY: 200 })
+const offered = () => within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent?.replace(/\s+/g, ' ').trim())
+
+test('the line between two panes can be held and moved, by the pointer or the arrows; never to nothing', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  // One tab alone: no line.
+  expect(screen.queryByRole('separator')).toBeNull()
+  await user.keyboard(chord('D'))
+  await tab(/2 web-01/)
+  const line = () => screen.getByRole('separator', { name: 'Resize the panes' })
+  expect(line()).toHaveAttribute('aria-orientation', 'vertical')
+  expect(spots()).toEqual([[0, 0, 50, 100], [50, 0, 50, 100]])
+  vi.spyOn(frame(), 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 1000, height: 600 } as DOMRect)
+  // Held at 500 of 1000 and taken to 700: the left pane has seven tenths.
+  await fireEvent.pointerDown(line(), { clientX: 500, clientY: 300 })
+  await fireEvent.pointerMove(line(), { clientX: 600, clientY: 300 })
+  await fireEvent.pointerMove(line(), { clientX: 700, clientY: 310 })
+  expect(spots()).toEqual([[0, 0, 70, 100], [70, 0, 30, 100]])
+  // Past the edge: the other pane keeps a strip. Let go, the keys are the terminal's again.
+  await fireEvent.pointerMove(line(), { clientX: 1500, clientY: 300 })
+  expect(spots()).toEqual([[0, 0, 88, 100], [88, 0, 12, 100]])
+  await fireEvent.pointerUp(line(), { clientX: 1500, clientY: 300 })
+  expect(terminals[1].focused).toBe(true)
+  // Not held: the pointer passing over it moves nothing.
+  await fireEvent.pointerMove(line(), { clientX: 200, clientY: 300 })
+  expect(spots()[0][2]).toBe(88)
+  // By the keys, a twentieth a press; the other two arrows are not this line's.
+  line().focus()
+  await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowUp}')
+  expect(spots()).toEqual([[0, 0, 78, 100], [78, 0, 22, 100]])
+  // A pane under the one in front: a second line, lying down, for those two.
+  await user.keyboard(chord('E'))
+  await tab(/3 web-01/)
+  expect(screen.getAllByRole('separator').map((bar) => bar.getAttribute('aria-orientation'))).toEqual(['vertical', 'horizontal'])
+  expect(spots()).toEqual([[0, 0, 78, 100], [78, 0, 22, 50], [78, 50, 22, 50]])
+})
+
+test('a tab let go on another in the strip stands there; the digits and the keys follow the strip', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await connectTo(user, 'web-02')
+  await connectTo(user, 'db-primary')
+  await tab(/3 db-primary/)
+  const strip = () => screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/\s+/g, ' ').trim().replace(/^[●○] /, ''))
+  expect(strip()).toEqual(['0 Hosts', '1 web-01', '2 web-02', '3 db-primary'])
+  // db-primary's tab, let go on the left half of web-01's: before it.
+  const pill = async (name: RegExp) => (await tab(name)).parentElement!
+  /** Over a tab, left or right of its middle (a box of no size, at nought). */
+  const onto = async (type: 'dragover' | 'drop', name: RegExp, clientX: number) =>
+    fireEvent(await pill(name), new MouseEvent(type, { clientX, bubbles: true, cancelable: true }))
+  await fireEvent.dragStart(await pill(/3 db-primary/))
+  await onto('dragover', /1 web-01/, -5)
+  expect(await pill(/1 web-01/)).toHaveAttribute('data-drop', 'before')
+  expect(await pill(/3 db-primary/)).toHaveAttribute('data-dragging')
+  await onto('drop', /1 web-01/, -5)
+  expect(strip()).toEqual(['0 Hosts', '1 db-primary', '2 web-01', '3 web-02'])
+  expect(document.querySelector('[data-drop], [data-dragging]')).toBeNull()
+  // On the right half of the last: after it.
+  await fireEvent.dragStart(await pill(/1 db-primary/))
+  await onto('dragover', /3 web-02/, 5)
+  expect(await pill(/3 web-02/)).toHaveAttribute('data-drop', 'after')
+  await onto('drop', /3 web-02/, 5)
+  expect(strip()).toEqual(['0 Hosts', '1 web-01', '2 web-02', '3 db-primary'])
+  await fireEvent.dragStart(await pill(/2 web-02/))
+  await onto('drop', /3 db-primary/, 5)
+  expect(strip()).toEqual(['0 Hosts', '1 web-01', '2 db-primary', '3 web-02'])
+  // The leader's digits and Ctrl+Tab go by the strip, not by which was opened first.
+  await user.keyboard(`${leader}2`)
+  expect(picked()).toHaveTextContent('2 db-primary')
+  await user.keyboard('{Control>}{Tab}{/Control}')
+  expect(picked()).toHaveTextContent('3 web-02')
+  // A tab opened later comes last.
+  await connectTo(user, 'web-01')
+  await tab(/4 web-01/)
+  expect(strip()).toEqual(['0 Hosts', '1 web-01', '2 db-primary', '3 web-02', '4 web-01'])
+})
+
+test('the right button on a tab: close it, close the others (a busy one is asked about), rename it, split it', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await connectTo(user, 'web-02')
+  await connectTo(user, 'db-primary')
+  await tab(/3 db-primary/)
+  await rightClick(await tab(/1 web-01/))
+  expect(offered()).toEqual(['Close', 'Close other tabs', 'Rename tab', 'Split right Ctrl+Shift+D', 'Split down Ctrl+Shift+E'])
+  // Esc closes the menu and nothing else.
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(picked()).toHaveTextContent('3 db-primary')
+  // Split from the menu: the tab comes to the front first, and it is that one's host.
+  await rightClick(await tab(/1 web-01/))
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Split right/ }))
+  await tab(/4 web-01/)
+  expect(order()).toEqual(['web-01', 'web-01'])
+  expect(asked('session_open').at(-1)).toEqual({ alias: 'web-01' })
+  // On a pane the menu has the way out of the split.
+  await rightClick(await tab(/4 web-01/))
+  expect(offered()).toContain('Unsplit: this pane back to a tab of its own')
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Unsplit/ }))
+  expect(panels()).toEqual(['web-01'])
+  await rightClick(await tab(/2 web-02/))
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Rename tab' }))
+  await user.keyboard('staging{Enter}')
+  await tab(/2 staging/)
+  // Every tab but this one goes; one whose shell runs something stays until somebody says yes.
+  await says(3, { state: 'up' })
+  await says(3, { state: 'busy', command: 'make' })
+  await rightClick(await tab(/2 staging/))
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Close other tabs' }))
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/\s+/g, ' ').trim().replace(/^[●○] /, ''))).toEqual(['0 Hosts', '1 staging', '2 db-primary running make'])
+  expect(screen.getByRole('dialog', { name: 'Close tab' })).toHaveTextContent('make is running on db-primary. Close the tab?')
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close tab' }))
+  expect(screen.getAllByRole('tab')).toHaveLength(2)
+  expect(picked()).toHaveTextContent('1 staging')
+  expect(asked('session_close').map((args) => args.id).sort()).toEqual([1, 3, 4])
+  // A file view's tab: no name of its own to give.
+  await user.keyboard(`${leader}0`)
+  ;(await card('web-01')).focus()
+  await user.keyboard('f')
+  await rightClick(await tab(/Files web-01/))
+  expect(offered()).not.toContain('Rename tab')
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Close' }))
+  expect(screen.queryByRole('tab', { name: /Files/ })).toBeNull()
+})
+
+test('the right button in a terminal: the selection to the clipboard, the clipboard to the shell, all of it selected', async () => {
+  const user = shell({ 'plugin:clipboard-manager|read_text': () => 'uptime' })
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/1 web-01/)
+  await says(1, { state: 'up' })
+  await prints(1, 'load average: 0.1')
+  const panel = screen.getByRole('tabpanel', { name: 'web-01' })
+  await rightClick(panel)
+  expect(offered()).toEqual(['Copy', 'Paste', 'Select all'])
+  // Nothing is selected yet: nothing to copy.
+  expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Copy' })).toBeDisabled()
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Select all' }))
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(terminals[0].focused).toBe(true)
+  const before = copied().length
+  await rightClick(panel)
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Copy' }))
+  expect(copied().slice(before)).toEqual(['load average: 0.1'])
+  // Paste types what the clipboard holds, into this shell.
+  await rightClick(panel)
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Paste' }))
+  await vi.waitFor(() => expect(typed()).toContain('1:uptime'))
+})
+
+test('the right button anywhere else is no menu of the web view\'s (its Reload would end every session); a field keeps its own', async () => {
+  shell()
+  await card('web-01')
+  expect(await fireEvent.contextMenu(screen.getByRole('contentinfo'))).toBe(false)
+  expect(await fireEvent.contextMenu(screen.getByRole('searchbox', { name: /Search hosts/ }))).toBe(true)
+})
+
+test('the menus in Vietnamese: a tab\'s, a card\'s and a terminal\'s, with nothing in English', async () => {
+  setLang('vi')
+  const user = shell()
+  await rightClick(await card('web-01'))
+  expect(offered()).toEqual(['Kết nối Enter', 'Tệp F', 'Chuyển tiếp L', 'Sửa E', 'Chép địa chỉ', 'Bảng lệnh Ctrl+K', 'Xoá D'])
+  expect(stray()).toEqual([])
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Kết nối/ }))
+  await tab(/1 web-01/)
+  await rightClick(await tab(/1 web-01/))
+  expect(offered()).toEqual(['Đóng Ctrl+Shift+W', 'Đóng các tab khác', 'Đổi tên tab', 'Chia đôi sang phải Ctrl+Shift+D', 'Chia đôi xuống dưới Ctrl+Shift+E'])
+  expect(stray()).toEqual([])
+  await user.keyboard('{Escape}')
+  await rightClick(screen.getByRole('tabpanel', { name: 'web-01' }))
+  expect(offered()).toEqual(['Sao chép', 'Dán', 'Chọn tất cả'])
   expect(stray()).toEqual([])
 })

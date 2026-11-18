@@ -2,6 +2,7 @@
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
   import Keys from './Keys.svelte'
+  import Menu, { pointed, type MenuItem } from './Menu.svelte'
   import SessionDot from './SessionDot.svelte'
   import { capital, KEY, tip } from './keymap'
 
@@ -16,8 +17,10 @@
   }
   type Props = {
     sessions: Tab[]
-    /** The file views, which come after the sessions. */
+    /** The file views. */
     files?: { id: number; host: string }[]
+    /** The tabs as they stand in the strip, by id; none given: the sessions, then the file views. */
+    order?: number[]
     /** The session in front; `null` = the dashboard. */
     active: number | null
     /** The tabs that are open together, as panes. */
@@ -39,9 +42,45 @@
     onrename?: (id: number, name: string) => void
     /** A tab is picked up, or (`null`) let go. */
     ondrag?: (id: number | null) => void
+    /** A tab let go on another: it stands before that one now, or after it. */
+    onmove?: (id: number, onto: number, after: boolean) => void
+    /** Every tab but this one is to go. */
+    oncloseothers?: (id: number) => void
   }
-  let { sessions, files = [], active, split = [], zen = false, leader = false, onpick, onclose, onnew, onsplit, onunsplit, onzen, onrename, ondrag }: Props =
-    $props()
+  let {
+    sessions,
+    files = [],
+    order,
+    active,
+    split = [],
+    zen = false,
+    leader = false,
+    onpick,
+    onclose,
+    onnew,
+    onsplit,
+    onunsplit,
+    onzen,
+    onrename,
+    ondrag,
+    onmove,
+    oncloseothers,
+  }: Props = $props()
+
+  /** The tabs in the strip's order: each a session or a host's files. */
+  type Shown = { id: number; session?: Tab; view?: { id: number; host: string } }
+  const strip = $derived(
+    (order ?? [...sessions, ...files].map((tab) => tab.id)).flatMap((id): Shown[] => {
+      const session = sessions.find((session) => session.id === id)
+      const view = files.find((view) => view.id === id)
+      return session || view ? [{ id, session, view }] : []
+    }),
+  )
+  /** The tab in hand, and the tab it is over: it would stand before that one, or after it. */
+  let lifted = $state<number | null>(null)
+  let over = $state<{ id: number; after: boolean } | null>(null)
+  /** The right button's menu, and the tab it is about. */
+  let menu = $state<{ x: number; y: number; id: number } | null>(null)
 
   let list = $state<HTMLElement>()
   /** The session whose name is being typed. */
@@ -55,8 +94,9 @@
 
   // A pill, filled with the terminal's ground when it is in front. The panes of a split wear one line;
   // broadcast takes the colours, so the tab in front is also bold, and only it has the full border.
+  // In hand it fades; where it would land is a blue line before or after the tab under it.
   const pill =
-    'group flex h-8 shrink-0 items-center rounded-[9px] border border-transparent text-[13px] text-dim hover:bg-bg/60 hover:text-fg has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-semibold has-[[aria-selected=true]]:text-ink data-[pane]:border-blue/35 data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!'
+    "group relative flex h-8 shrink-0 items-center rounded-[9px] border border-transparent text-[13px] text-dim before:pointer-events-none before:absolute before:inset-y-1 before:w-0.5 before:rounded-full hover:bg-bg/60 hover:text-fg has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-semibold has-[[aria-selected=true]]:text-ink data-[dragging]:opacity-40 data-[drop=after]:before:-right-1 data-[drop=after]:before:bg-blue data-[drop=before]:before:-left-1 data-[drop=before]:before:bg-blue data-[pane]:border-blue/35 data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!"
   const tab = 'flex h-full cursor-pointer items-center gap-2 rounded-[9px] pl-3'
   // There for the pointer that is on the tab, for the keyboard, and on the tab in front.
   const cross =
@@ -76,15 +116,74 @@
   const held = (id: number) => ({
     // Not while its name is typed: there the pointer selects letters.
     draggable: renaming !== id,
+    'data-dragging': lifted === id || undefined,
+    'data-drop': over?.id === id ? (over.after ? 'after' : 'before') : undefined,
     ondragstart: (e: DragEvent) => {
       // Some webviews do not start a drag that carries nothing.
       e.dataTransfer?.setData('text/plain', String(id))
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+      lifted = id
       ondrag?.(id)
     },
-    ondragend: () => ondrag?.(null),
+    ondragend: () => {
+      lifted = over = null
+      ondrag?.(null)
+    },
+    // Over another tab: a place in the strip. At both, as a web view asks at both before it lets anything be dropped.
+    ondragenter: (e: DragEvent) => aim(e, id),
+    ondragover: (e: DragEvent) => aim(e, id),
+    ondragleave: (e: DragEvent) => {
+      // By where the pointer is: the tab's own button and dot are left on the way across it.
+      const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      if (over?.id === id && (e.clientX <= box.left || e.clientX >= box.right || e.clientY <= box.top || e.clientY >= box.bottom)) over = null
+    },
+    ondrop: (e: DragEvent) => {
+      if (lifted === null || lifted === id) return
+      e.preventDefault()
+      onmove?.(lifted, id, aim(e, id))
+      lifted = over = null
+    },
     onauxclick: (e: MouseEvent) => {
       if (e.button === 1) onclose(id)
     },
+    oncontextmenu: (e: MouseEvent) => {
+      e.preventDefault()
+      menu = { ...pointed(e), id }
+    },
+  })
+
+  /** The half of a tab the pointer is over says where the one in hand would stand: before it, or after. */
+  function aim(e: DragEvent, id: number) {
+    if (lifted === null || lifted === id || !onmove) return false
+    e.preventDefault()
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const after = e.clientX > box.left + box.width / 2
+    over = { id, after }
+    return after
+  }
+
+  /** What the right button offers on a tab: what its own buttons and the strip's do, where the pointer already is. */
+  const items = $derived.by((): MenuItem[] => {
+    if (!menu) return []
+    const id = menu.id
+    /** The strip's buttons are for the tab in front: this one goes there first. */
+    const front = (run: () => void) => () => {
+      onpick(id)
+      run()
+    }
+    return [
+      { label: capital(t('close')), keys: id === active ? KEY.closeTab[0] : undefined, run: () => onclose(id) },
+      ...(oncloseothers ? [{ label: t('close_others'), off: strip.length < 2, run: () => oncloseothers(id) }] : []),
+      ...(onrename && id >= 0 ? [null, { label: t('rename_tab'), run: () => (renaming = id) }] : []),
+      ...(onsplit
+        ? [
+            null,
+            { label: t('split_right'), keys: KEY.splitRight[0], run: front(() => onsplit(false)) },
+            { label: t('split_down'), keys: KEY.splitDown[0], run: front(() => onsplit(true)) },
+          ]
+        : []),
+      ...(onunsplit && split.includes(id) ? [{ label: t('unsplit'), run: front(onunsplit) }] : []),
+    ]
   })
 
   /** The field over a tab takes the keys, with the name there to type over. */
@@ -114,69 +213,70 @@
         {t('hosts')}
       </button>
     </span>
-    {#each sessions as session, at (session.id)}
-      <span class={pill} data-broadcast={session.broadcast || undefined} data-pane={split.includes(session.id) || undefined} {...held(session.id)}>
-        {#if renaming === session.id}
-          <input
-            use:taken
-            aria-label={t('rename_tab')}
-            value={session.title}
-            autocomplete="off"
-            spellcheck="false"
-            onkeydown={(e) => {
-              if (e.key === 'Escape') renaming = null
-              else if (e.key === 'Enter') e.currentTarget.blur()
-            }}
-            onblur={(e) => {
-              // Esc let go of it already: what was typed is not the name.
-              if (renaming === session.id) onrename?.(session.id, e.currentTarget.value.trim())
-              renaming = null
-            }}
-            class="mx-1 h-6 w-32 rounded-md border border-blue/70 bg-page px-2 font-normal text-fg outline-none"
-          />
-        {:else}
+    {#each strip as { id, session, view }, at (id)}
+      {#if session}
+        <span class={pill} data-broadcast={session.broadcast || undefined} data-pane={split.includes(id) || undefined} {...held(id)}>
+          {#if renaming === id}
+            <input
+              use:taken
+              aria-label={t('rename_tab')}
+              value={session.title}
+              autocomplete="off"
+              spellcheck="false"
+              onkeydown={(e) => {
+                if (e.key === 'Escape') renaming = null
+                else if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+              onblur={(e) => {
+                // Esc let go of it already: what was typed is not the name.
+                if (renaming === id) onrename?.(id, e.currentTarget.value.trim())
+                renaming = null
+              }}
+              class="mx-1 h-6 w-32 rounded-md border border-blue/70 bg-page px-2 font-normal text-fg outline-none"
+            />
+          {:else}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={id === active}
+              title={chord(session.title, at + 1)}
+              onclick={() => onpick(id)}
+              ondblclick={() => onrename && (renaming = id)}
+              class="{tab} pr-0.5"
+            >
+              <SessionDot {session} />
+              <span class={digit}>{at + 1}</span>
+              {session.title}
+              {#if session.busy}
+                <span class="rounded-full bg-bar px-2 text-xs font-normal text-white">{t('running')} <span class="font-mono">{session.busy}</span></span>
+              {/if}
+            </button>
+          {/if}
+          <button type="button" aria-label="{t('close')} {session.title}" title={shut(id)} onclick={() => onclose(id)} class={cross}>
+            ×
+          </button>
+        </span>
+      {:else if view}
+        <span class={pill} data-pane={split.includes(id) || undefined} {...held(id)}>
           <button
             type="button"
             role="tab"
-            aria-selected={session.id === active}
-            title={chord(session.title, at + 1)}
-            onclick={() => onpick(session.id)}
-            ondblclick={() => onrename && (renaming = session.id)}
+            aria-selected={id === active}
+            title={chord(`${t('files')} ${view.host}`, at + 1)}
+            onclick={() => onpick(id)}
             class="{tab} pr-0.5"
           >
-            <SessionDot {session} />
+            <Icon name="folder" class="size-3.5! text-cyan" />
             <span class={digit}>{at + 1}</span>
-            {session.title}
-            {#if session.busy}
-              <span class="rounded-full bg-bar px-2 text-xs font-normal text-white">{t('running')} <span class="font-mono">{session.busy}</span></span>
-            {/if}
+            <!-- Said, and drawn as the folder before it. -->
+            <span class="sr-only">{t('files')}</span>
+            {view.host}
           </button>
-        {/if}
-        <button type="button" aria-label="{t('close')} {session.title}" title={shut(session.id)} onclick={() => onclose(session.id)} class={cross}>
-          ×
-        </button>
-      </span>
-    {/each}
-    {#each files as view, at (view.id)}
-      <span class={pill} data-pane={split.includes(view.id) || undefined} {...held(view.id)}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view.id === active}
-          title={chord(`${t('files')} ${view.host}`, sessions.length + at + 1)}
-          onclick={() => onpick(view.id)}
-          class="{tab} pr-0.5"
-        >
-          <Icon name="folder" class="size-3.5! text-cyan" />
-          <span class={digit}>{sessions.length + at + 1}</span>
-          <!-- Said, and drawn as the folder before it. -->
-          <span class="sr-only">{t('files')}</span>
-          {view.host}
-        </button>
-        <button type="button" aria-label="{t('close')} {t('files')} {view.host}" title={shut(view.id)} onclick={() => onclose(view.id)} class={cross}>
-          ×
-        </button>
-      </span>
+          <button type="button" aria-label="{t('close')} {t('files')} {view.host}" title={shut(id)} onclick={() => onclose(id)} class={cross}>
+            ×
+          </button>
+        </span>
+      {/if}
     {/each}
   </div>
   {#if onnew}
@@ -220,3 +320,7 @@
     {/if}
   </div>
 </div>
+
+{#if menu}
+  <Menu label={t('sessions')} x={menu.x} y={menu.y} {items} onclose={() => (menu = null)} />
+{/if}

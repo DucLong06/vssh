@@ -7,6 +7,7 @@
   import { onMount } from 'svelte'
   import { api, type PtyState, type Shown } from './api'
   import { t } from './i18n.svelte'
+  import Menu, { pointed, type MenuItem } from './Menu.svelte'
   import { FONT, lastOutput, osc52, THEME } from './term'
 
   type Props = {
@@ -29,6 +30,8 @@
 
   let box: HTMLElement
   let term: Terminal
+  /** The right button's menu, and where. */
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const fit = new FitAddon()
 
   onMount(() => {
@@ -80,6 +83,22 @@
     if (front) term.focus()
   })
 
+  /** What a pointer with no keys can do here: the selection to the clipboard, the clipboard to the shell, all of the screen selected. */
+  function asked(e: MouseEvent) {
+    e.preventDefault()
+    const text = term.getSelection()
+    menu = {
+      ...pointed(e),
+      items: [
+        { label: t('copy'), off: !text, run: () => void api.copy(text) },
+        // As typed: xterm wraps it for a shell that asked for pastes to be marked.
+        { label: t('paste'), off: closed, run: () => void api.paste().then((text) => text && term.paste(text)) },
+        null,
+        { label: t('select_all'), run: () => term.selectAll() },
+      ],
+    }
+  }
+
   /** The keys back to it, from wherever they were. */
   export const focus = () => term.focus()
 
@@ -100,7 +119,8 @@
 </script>
 
 <!-- Dark in both themes, as the terminal in it is; in Day the theme's border is around it. -->
-<div role="tabpanel" aria-label={label} hidden={!active} class="relative min-h-0 flex-1 bg-term px-4 py-3 day:border day:border-edge">
+<!-- svelte-ignore a11y_interactive_supports_focus -->
+<div role="tabpanel" aria-label={label} hidden={!active} oncontextmenu={asked} class="relative min-h-0 flex-1 bg-term px-4 py-3 day:border day:border-edge">
   <div bind:this={box} class="h-full"></div>
   {#if closed}
     <p
@@ -121,3 +141,16 @@
     </p>
   {/if}
 </div>
+
+{#if menu}
+  <Menu
+    {label}
+    x={menu.x}
+    y={menu.y}
+    items={menu.items}
+    onclose={() => {
+      menu = null
+      term.focus()
+    }}
+  />
+{/if}

@@ -90,7 +90,7 @@ test('flat: a shadow is for what floats over the page (a dialog, a menu, a popov
     .filter(([, code]) => /\bshadow-|box-shadow|drop-shadow/.test(String(code)))
     .map(([file, code]) => [file.split('/').pop(), [...new Set(String(code).match(/\bshadow-[\w/[\]-]+/g))]])
   expect(shadowed).toEqual([
-    ['Files.svelte', ['shadow-float']],
+    ['Menu.svelte', ['shadow-float']],
     ['Modal.svelte', ['shadow-float']],
     ['QuickPeek.svelte', ['shadow-float']],
   ])

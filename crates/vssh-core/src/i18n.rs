@@ -421,6 +421,12 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "{command} is running on {name}. Close the tab?",
         "{command} đang chạy trên {name}. Đóng tab?",
     ),
+    // The right button's menus.
+    ("paste", "Paste", "Dán"),
+    ("select_all", "Select all", "Chọn tất cả"),
+    ("close_others", "Close other tabs", "Đóng các tab khác"),
+    ("copy_address", "Copy address", "Chép địa chỉ"),
+    ("resize_panes", "Resize the panes", "Đổi cỡ các ô"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

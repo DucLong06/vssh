@@ -175,6 +175,8 @@ export const api = {
     invoke<void>('session_trust', { id, host, fingerprint, forever }),
   /** The clipboard plugin's command: `navigator.clipboard` wants a user gesture, which an OSC 52 from a host is not. */
   copy: (text: string) => invoke<void>('plugin:clipboard-manager|write_text', { text }),
+  /** What is on the clipboard, for Paste in a terminal's menu: the web view's own paste asks first, every time. */
+  paste: () => invoke<string>('plugin:clipboard-manager|read_text'),
   /** A directory of this machine, directories first; no path is the user's home. `path` comes back in full. */
   localList: (path: string) => invoke<{ path: string; entries: Entry[] }>('local_list', { path }),
   localMkdir: (path: string) => invoke<void>('local_mkdir', { path }),

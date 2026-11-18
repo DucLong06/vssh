@@ -11,8 +11,8 @@
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
   import { eta, human, join } from './paths'
-  import Keys from './Keys.svelte'
-  import { KEY, tip } from './keymap'
+  import { capital, KEY, tip } from './keymap'
+  import Menu, { type MenuItem } from './Menu.svelte'
 
   type Props = {
     /** The host of the ssh config whose files are on the right. */
@@ -56,7 +56,9 @@
   /** A change that was refused. */
   let refused = $state<Failed | null>(null)
   let menu = $state<{ x: number; y: number; side: Side; entry: Entry | null } | null>(null)
-  let menuEl = $state<HTMLElement>()
+  /** The pane something in hand would land in: rows of the other pane, or files of the desktop. */
+  let over = $state<Side | null>(null)
+  let root = $state<HTMLElement>()
   type Ask =
     | { kind: 'mkdir'; side: Side }
     | { kind: 'rename' | 'rm'; side: Side; entry: Entry }
@@ -242,19 +244,46 @@
     void load('local')
     void load('remote')
     // Files from the desktop's file manager: the shell knows their paths, the page does not.
-    const dropped = listen<{ paths?: string[] }>('tauri://drag-drop', ({ payload }) => {
-      if (!active || !payload.paths?.length) return
-      note = ''
-      send(
-        payload.paths.map((local) => {
-          const name = local.split('/').pop()!
-          return { up: true, name, local, remote: join(panes.remote.path, name) }
-        }),
-      )
-    })
+    // While they are over the window the host's pane says that it is where they go.
+    type Dragged = { paths?: string[]; position?: { x: number; y: number } }
+    /** Over this view: of several on screen, the one under the pointer; where nobody can say, the one in front. */
+    const here = ({ position }: Dragged) => {
+      if (!active) return false
+      // The shell counts in the screen's pixels.
+      const under = position && document.elementFromPoint(position.x / devicePixelRatio, position.y / devicePixelRatio)
+      const view = under?.closest('[data-files]')
+      return view ? view === root : front
+    }
+    /** A drag inside the window says the same, without files. */
+    let carried = false
+    const heard = [
+      listen<Dragged>('tauri://drag-enter', ({ payload }) => {
+        carried = !!payload.paths?.length
+        if (carried && here(payload)) over = 'remote'
+      }),
+      listen<Dragged>('tauri://drag-over', ({ payload }) => {
+        if (carried) over = here(payload) ? 'remote' : null
+      }),
+      listen('tauri://drag-leave', () => {
+        if (carried) over = null
+        carried = false
+      }),
+      listen<Dragged>('tauri://drag-drop', ({ payload }) => {
+        if (carried) over = null
+        carried = false
+        if (!payload.paths?.length || !here(payload)) return
+        note = ''
+        send(
+          payload.paths.map((local) => {
+            const name = local.split('/').pop()!
+            return { up: true, name, local, remote: join(panes.remote.path, name) }
+          }),
+        )
+      }),
+    ]
     return () => {
       gone = true
-      void dropped.then((unlisten) => unlisten())
+      for (const one of heard) void one.then((unlisten) => unlisten())
       // Closing is at once, as for a terminal: nothing goes on behind a tab that is no more.
       for (const job of transfers) if (job.state === 'running') void api.sftpCancel(job.id)
     }
@@ -277,37 +306,41 @@
     if (active && front) views.local?.focus()
   })
 
-  // The menu takes the keys while it is open.
-  $effect(() => menuEl?.querySelector('button')?.focus())
-
-  function menukey(e: KeyboardEvent) {
-    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key]
-    if (!step || !menuEl) return
-    e.preventDefault()
-    const all = [...menuEl.querySelectorAll('button')]
-    all[(all.indexOf(document.activeElement as HTMLButtonElement) + step + all.length) % all.length].focus()
-  }
-
-  /** Does what a menu item stands for, for the entry the menu was opened on. */
-  function pick(act: (side: Side, entry: Entry) => void) {
-    const { side, entry } = menu!
-    views[side]?.focus()
-    act(side, entry!)
-  }
+  /** The right button's menu: for the row it was on, or for the pane where it was on none. */
+  const items = $derived.by((): MenuItem[] => {
+    if (!menu) return []
+    const { side, entry } = menu
+    const other = across(side)
+    /** The keys go back to the pane first: what a row opens takes them from there. */
+    const act = (run: () => void) => () => {
+      views[side]?.focus()
+      run()
+    }
+    const send = side === 'local' ? t('upload') : t('download')
+    const fetch = side === 'local' ? t('download') : t('upload')
+    // What the other pane has chosen, to bring here: files only.
+    const [, theirs] = chosen(other, views[other]?.current())
+    const none = !panes[other].entries.some((entry) => theirs.includes(entry.name) && !entry.is_dir)
+    return [
+      entry && !entry.is_dir
+        ? // A file goes to the other side, and with it the marked ones if it is one of them.
+          { label: send, keys: KEY.copy[0], run: act(() => copy([side, panes[side].marked.includes(entry.name) ? panes[side].marked : [entry.name]])) }
+        : { label: fetch, off: none, run: act(() => copy([other, theirs])) },
+      { label: t('new_folder'), run: act(() => void open({ kind: 'mkdir', side })) },
+      ...(entry
+        ? [
+            { label: t('rename'), run: act(() => void open({ kind: 'rename', side, entry })) },
+            { label: t('delete'), danger: true, run: act(() => void open({ kind: 'rm', side, entry })) },
+          ]
+        : []),
+      null,
+      { label: capital(t('refresh')), run: act(() => void load(side)) },
+    ]
+  })
 
   const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
   const arrow = 'cursor-pointer rounded-[10px] border border-edge bg-panel px-2.5 py-1.5 text-blue hover:border-dim/50 hover:bg-selection'
-  const item = 'w-full cursor-pointer rounded-lg px-3 py-1 text-left hover:bg-selection focus-visible:bg-selection'
 </script>
-
-<svelte:window
-  onclick={() => (menu = null)}
-  onkeydown={(e) => {
-    if (e.key !== 'Escape' || !menu) return
-    views[menu.side]?.focus()
-    menu = null
-  }}
-/>
 
 {#snippet pane(side: Side)}
   <FilePane
@@ -324,15 +357,25 @@
     oncopy={(entry) => copyKey(side, entry)}
     onmenu={(at, entry) => (menu = { ...at, side, entry })}
     onretry={() => load(side)}
-    ondragnames={(names) => (dragging = { side, names })}
+    target={over === side}
+    ondragnames={(names) => {
+      dragging = names && { side, names }
+      // Let go, wherever: nothing is a place to land any more.
+      if (!names) over = null
+    }}
+    onover={(on) => {
+      // Rows of this pane over itself land nowhere.
+      if (dragging && dragging.side !== side) over = on ? side : over === side ? null : over
+    }}
     ondropped={() => {
       if (dragging && dragging.side !== side) copy([dragging.side, dragging.names])
       dragging = null
+      over = null
     }}
   />
 {/snippet}
 
-<div role="tabpanel" aria-label="{t('files')} {host}" hidden={!active} class="min-h-0 flex-1 bg-bg p-3 text-[13px]">
+<div bind:this={root} data-files role="tabpanel" aria-label="{t('files')} {host}" hidden={!active} class="min-h-0 flex-1 bg-bg p-3 text-[13px]">
   <div class="flex h-full flex-col gap-3">
     <div class="flex min-h-0 flex-1 gap-3">
       {@render pane('local')}
@@ -446,52 +489,17 @@
 </div>
 
 {#if menu}
-  {@const entry = menu.entry}
-  <!-- At the pointer, and inside the window. -->
-  <ul
-    bind:this={menuEl}
-    role="menu"
-    aria-label={entry?.name ?? t('files')}
-    onkeydown={menukey}
-    style="left: {Math.min(menu.x, innerWidth - 176)}px; top: {Math.min(menu.y, innerHeight - 152)}px"
-    class="fixed z-30 min-w-40 rounded-xl border border-edge bg-panel p-1 shadow-float"
-  >
-    {#if entry && !entry.is_dir}
-      <li role="none">
-        <button type="button" role="menuitem" onclick={() => pick((side, entry) => copy([side, [entry.name]]))} class={item}>
-          {t('copy')}
-          <span aria-hidden="true" class="float-right"><Keys keys={KEY.copy[0]} /></span>
-        </button>
-      </li>
-    {/if}
-    <li role="none">
-      <button type="button" role="menuitem" onclick={() => pick((side) => void open({ kind: 'mkdir', side }))} class={item}>
-        {t('new_folder')}
-      </button>
-    </li>
-    {#if entry}
-      <li role="none">
-        <button
-          type="button"
-          role="menuitem"
-          onclick={() => pick((side, entry) => void open({ kind: 'rename', side, entry }))}
-          class={item}
-        >
-          {t('rename')}
-        </button>
-      </li>
-      <li role="none">
-        <button
-          type="button"
-          role="menuitem"
-          onclick={() => pick((side, entry) => void open({ kind: 'rm', side, entry }))}
-          class="{item} text-red"
-        >
-          {t('delete')}
-        </button>
-      </li>
-    {/if}
-  </ul>
+  {@const side = menu.side}
+  <Menu
+    label={menu.entry?.name ?? t('files')}
+    x={menu.x}
+    y={menu.y}
+    {items}
+    onclose={(escaped) => {
+      if (escaped) views[side]?.focus()
+      menu = null
+    }}
+  />
 {/if}
 
 {#if ask}

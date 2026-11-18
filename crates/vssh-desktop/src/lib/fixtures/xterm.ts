@@ -52,6 +52,9 @@ export class Terminal {
     terminals.splice(terminals.indexOf(this), 1)
   }
   getSelection = () => this.selection
+  /** As the real one: what is pasted is typed. */
+  paste = (text: string) => this.type(text)
+  selectAll = () => this.select(this.written)
   onData = (fn: Fn<string>) => void this.typed.push(fn)
   onResize = (fn: Fn<{ cols: number; rows: number }>) => void this.resized.push(fn)
   onSelectionChange = (fn: Fn<void>) => void this.selected.push(fn)

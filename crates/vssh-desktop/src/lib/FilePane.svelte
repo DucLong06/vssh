@@ -25,8 +25,11 @@
     /** The right button or the menu key, and the entry it was on. */
     onmenu: (at: { x: number; y: number }, entry: Entry | null) => void
     onretry: () => void
-    /** A drag of these names started here; something was dropped here. */
-    ondragnames: (names: string[]) => void
+    /** What is in hand would land here: said by a line around the pane. */
+    target?: boolean
+    /** A drag of these names started here, or (`null`) ended; something is over the pane, or left it; something was dropped here. */
+    ondragnames: (names: string[] | null) => void
+    onover?: (on: boolean) => void
     ondropped: () => void
   }
   let {
@@ -42,7 +45,9 @@
     oncopy,
     onmenu,
     onretry,
+    target = false,
     ondragnames,
+    onover,
     ondropped,
   }: Props = $props()
 
@@ -163,13 +168,26 @@
 <section
   aria-label={label}
   data-side={side}
+  data-drop={target || undefined}
   oncontextmenu={menu}
-  ondragover={(e) => e.preventDefault()}
+  ondragenter={(e) => {
+    e.preventDefault()
+    onover?.(true)
+  }}
+  ondragover={(e) => {
+    e.preventDefault()
+    onover?.(true)
+  }}
+  ondragleave={(e) => {
+    // By where the pointer is: a web view names no `relatedTarget`, and every row is left on the way across.
+    const box = e.currentTarget.getBoundingClientRect()
+    if (e.clientX <= box.left || e.clientX >= box.right || e.clientY <= box.top || e.clientY >= box.bottom) onover?.(false)
+  }}
   ondrop={(e) => {
     e.preventDefault()
     ondropped()
   }}
-  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-edge bg-panel text-[13px] focus-within:border-blue/70"
+  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-edge bg-panel text-[13px] focus-within:border-blue/70 data-[drop]:border-blue data-[drop]:bg-blue/8"
 >
   <header class="flex items-center gap-2 border-b border-edge px-3 py-2">
     <strong class="shrink-0 font-semibold text-ink">{label}</strong>
@@ -281,7 +299,8 @@
                 e.dataTransfer?.setData('text/plain', entry.name)
                 ondragnames(chosen ? marked : [entry.name])
               }}
-              class="cursor-default select-none hover:bg-selection/50 aria-selected:bg-selection data-[marked]:text-magenta"
+              ondragend={() => ondragnames(null)}
+              class="cursor-default select-none hover:bg-selection/50 active:cursor-grabbing aria-selected:bg-selection data-[marked]:text-magenta"
             >
               <td role="gridcell" class="px-3 py-0.5">
                 <div class="flex items-center gap-2">

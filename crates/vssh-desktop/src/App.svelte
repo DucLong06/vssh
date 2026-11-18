@@ -25,6 +25,7 @@
   import { down, live, poll, relabel, up } from './lib/live.svelte'
   import Modal from './lib/Modal.svelte'
   import Palette from './lib/Palette.svelte'
+  import { bars, half, ids, none, place, rects, resize, shift, without, zone, type Bar, type Layout, type Rect, type Zone } from './lib/panes'
   import QuickConnect from './lib/QuickConnect.svelte'
   import Shortcuts from './lib/Shortcuts.svelte'
   import Sidebar, { type Nav } from './lib/Sidebar.svelte'
@@ -55,14 +56,17 @@
   let files = $state<{ id: number; host: string }[]>([])
   /** The session or the file view whose tab is in front; `null` = the dashboard. */
   let active = $state<number | null>(null)
-  /** The tabs that are open together as panes, in their order; none: one tab at a time. */
-  let split = $state<number[]>([])
-  /** The panes are one over the other, not side by side. */
-  let stacked = $state(false)
-  /** A tab is being dragged, and the edge of the panes it is over. */
-  type Edge = 'left' | 'right' | 'top' | 'bottom'
+  /** The tabs that are open together as panes, and where each is; none: one tab at a time. */
+  let layout = $state<Layout>(none())
+  const split = $derived(ids(layout))
+  /** The tabs as somebody put them in the strip; one never moved comes after them, as it was opened. */
+  let arranged = $state<number[]>([])
+  /** A tab is being dragged, and the pane it is over: at an edge of it, or in its middle. */
   let dragging = $state<number | null>(null)
-  let edge = $state<Edge | null>(null)
+  let aim = $state<{ id: number; zone: Zone } | null>(null)
+  /** The line between two panes that the pointer holds: where it took it, and what the panes were then. */
+  let sizing: { bar: Bar; from: number; start: Layout } | null = null
+  let frame = $state<HTMLElement>()
   /** Focus mode: no rail and no status bar, and a tab's view from edge to edge. */
   let zen = $state(false)
   /** The tab somebody is asked about before it goes: its shell is running something. */
@@ -159,13 +163,24 @@
   // The window's shape changed, by a button that went with it (the rail's) or that
   // kept the focus (the strip's, a tab let go of): the keys are the terminal's in front again.
   $effect(() => {
-    void [zen, split, stacked, sessions.length, closing]
+    void [zen, shape, sessions.length, closing]
     const id = untrack(() => front?.id)
     if (id !== undefined) terms[id]?.focus()
   })
 
-  /** The tabs in order: the dashboard, the sessions, the file views. */
-  const tabs = $derived<(number | null)[]>([null, ...[...sessions, ...files].map((tab) => tab.id)])
+  /** The tabs as they stand in the strip: the sessions, then the file views, unless somebody moved them. */
+  const order = $derived.by(() => {
+    const all = [...sessions, ...files].map((tab) => tab.id)
+    return [...arranged.filter((id) => all.includes(id)), ...all.filter((id) => !arranged.includes(id))]
+  })
+  /** The tabs in order, the dashboard first. */
+  const tabs = $derived<(number | null)[]>([null, ...order])
+  /** Which panes there are and how they lie, not how big each is: a line moved is no new split. */
+  const shape = $derived(`${layout.stacked} ${layout.groups.map((group) => group.panes.join()).join('|')}`)
+  /** What is on screen, and where: the panes of the split the tab in front is in, or that tab alone. */
+  const where = $derived<Record<number, Rect>>(
+    active === null ? {} : split.includes(active) ? rects(layout) : { [active]: { x: 0, y: 0, w: 1, h: 1 } },
+  )
   const front = $derived(sessions.find((session) => session.id === active))
   /** The view in front, as the rail names it. */
   const current = $derived(active === null ? 'dashboard' : front ? 'sessions' : 'files')
@@ -175,7 +190,7 @@
   const called = (session: Session) => session.name ?? named(session.title)
   const listed = $derived(sessions.map((session) => ({ ...session, title: called(session) })))
   /** On screen: the tab in front, and the panes it is open together with. */
-  const seen = (id: number) => id === active || (active !== null && split.includes(active) && split.includes(id))
+  const seen = (id: number) => id in where
 
   /** The head of the view in front: what it is called, and a line about it. */
   const head = $derived.by(() => {
@@ -241,7 +256,7 @@
     } else if (e.key === '!') {
       unsplit()
     } else if (e.key === '{' || e.key === '}') {
-      swap(e.key === '{' ? -1 : 1)
+      if (active !== null) layout = shift(layout, active, e.key === '{' ? -1 : 1)
     } else if (e.key === 'z') {
       zen = !zen
     } else if (e.key === '?') {
@@ -309,14 +324,10 @@
     active = id
   }
 
-  /** Puts a tab at an edge of what is in front: the two are panes of one split, or change places in it. */
-  function join(id: number, at: Edge, beside = active) {
-    if (beside === null) return
-    const rest = (split.includes(beside) ? split : [beside]).filter((pane) => pane !== id)
-    // On itself, alone: nothing to be beside.
-    if (!rest.length) return
-    stacked = at === 'top' || at === 'bottom'
-    split = at === 'left' || at === 'top' ? [id, ...rest] : [...rest, id]
+  /** Puts a tab at an edge of a pane (the one in front, if none is named), or in its place: the two are panes of one split. */
+  function join(id: number, at: Zone, beside = active) {
+    if (beside === null || id === beside) return
+    layout = place(layout, id, at, beside)
     active = id
   }
 
@@ -338,49 +349,71 @@
 
   /** The pane in front leaves the split for a tab of its own; two are needed for a split. */
   function unsplit(id = active) {
-    split = split.filter((pane) => pane !== id)
-    if (split.length < 2) split = []
+    if (id !== null) layout = without(layout, id)
   }
 
-  /** The pane in front changes places with the one before it, or after. */
-  function swap(by: number) {
-    const at = active === null ? -1 : split.indexOf(active)
-    const to = at + by
-    if (at < 0 || to < 0 || to >= split.length) return
-    ;[split[at], split[to]] = [split[to], split[at]]
+  /** A tab let go on another in the strip: it stands before that one now, or after it. */
+  function move(id: number, onto: number, after: boolean) {
+    const next = order.filter((tab) => tab !== id)
+    next.splice(next.indexOf(onto) + Number(after), 0, id)
+    arranged = next
   }
 
-  /** The edge of the panes the pointer is nearest to; `null` once it is outside them. */
-  function nearest(e: DragEvent): Edge | null {
+  /** The pane the pointer is in, and where in it; `null` once it is outside them all. */
+  function under(e: DragEvent) {
     const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const x = (e.clientX - box.left) / (box.width || 1)
-    const y = (e.clientY - box.top) / (box.height || 1)
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null
-    const far: [number, Edge][] = [[x, 'left'], [1 - x, 'right'], [y, 'top'], [1 - y, 'bottom']]
-    return far.sort((a, b) => a[0] - b[0])[0][1]
+    return zone(where, (e.clientX - box.left) / (box.width || 1), (e.clientY - box.top) / (box.height || 1))
   }
 
   /**
-   * A tab in hand is over the panes: they are a place to drop it, and the half it would take is shown.
+   * A tab in hand is over the panes: they are a place to drop it, and the part it would take is shown.
    * For entering as for moving: a web view asks at both, and over a terminal, where every row is an
    * element of its own, the last thing it asked before the button is let go is mostly the first.
    */
   function hover(e: DragEvent) {
     if (dragging === null) return
     e.preventDefault()
-    edge = nearest(e)
+    const at = under(e)
+    // Over its own pane it would land where it is.
+    aim = at && at.id !== dragging ? at : null
   }
+
+  /** A line between two panes, held: it follows the pointer, and the panes on either side of it give and take. */
+  function size(e: PointerEvent, bar: Bar) {
+    if (e.type === 'pointerdown') {
+      ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+      sizing = { bar, from: bar.upright ? e.clientX : e.clientY, start: layout }
+    } else if (e.type === 'pointermove' && sizing) {
+      const box = frame!.getBoundingClientRect()
+      const by = ((bar.upright ? e.clientX : e.clientY) - sizing.from) / ((bar.upright ? box.width : box.height) || 1)
+      layout = resize(sizing.start, sizing.bar, by)
+    } else if (e.type !== 'pointermove' && sizing) {
+      sizing = null
+      // The line took the keys when it was pressed.
+      if (front) terms[front.id]?.focus()
+    }
+  }
+
+  /** The same by the arrows, a twentieth at a time. */
+  function nudge(e: KeyboardEvent, bar: Bar) {
+    const by = ((bar.upright ? { ArrowLeft: -1, ArrowRight: 1 } : { ArrowUp: -1, ArrowDown: 1 }) as Record<string, number>)[e.key]
+    if (!by) return
+    e.preventDefault()
+    layout = resize(layout, bar, by / 20)
+  }
+
+  const pct = (r: Rect) => `left: ${r.x * 100}%; top: ${r.y * 100}%; width: ${r.w * 100}%; height: ${r.h * 100}%`
 
   /** A pane's own box: where it is among the others, and a click or the keys in it bring it to the front. */
   const pane = (id: number) => ({
     hidden: !seen(id),
     'data-front': (split.length > 1 && id === active) || undefined,
     'data-back': (split.length > 1 && id !== active) || undefined,
-    style: `order: ${split.indexOf(id)}`,
+    style: seen(id) ? pct(where[id]) : undefined,
     onfocusin: () => (active = id),
     onpointerdown: () => (active = id),
     class:
-      "relative flex min-h-0 min-w-0 flex-1 basis-0 flex-col bg-page after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-10 after:h-0.5 data-[back]:*:opacity-70 data-[front]:after:bg-blue",
+      "absolute flex min-h-0 min-w-0 flex-col bg-page after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-10 after:h-0.5 data-[back]:*:opacity-70 data-[front]:after:bg-blue",
   })
 
   /** Opens a tab on a host of the config. Its terminal connects it. */
@@ -504,7 +537,13 @@
   }
 </script>
 
-<svelte:window onkeydowncapture={onkeydown} />
+<svelte:window
+  onkeydowncapture={onkeydown}
+  oncontextmenu={(e) => {
+    // The web view's own menu has Reload in it, which would end every session. A field keeps its own: cut, copy, paste.
+    if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) e.preventDefault()
+  }}
+/>
 
 <div class="grid h-full grid-rows-[minmax(0,1fr)_auto] {zen ? 'grid-cols-[minmax(0,1fr)]' : 'grid-cols-[244px_minmax(0,1fr)]'}">
   {#if !zen}
@@ -544,6 +583,7 @@
         <Tabs
           sessions={listed}
           {files}
+          {order}
           {active}
           {split}
           {zen}
@@ -557,7 +597,13 @@
           onrename={rename}
           ondrag={(id) => {
             dragging = id
-            edge = null
+            aim = null
+          }}
+          onmove={move}
+          oncloseothers={(id) => {
+            // One whose shell is busy is asked about, and stays until somebody says yes.
+            for (const other of order) if (other !== id) close(other)
+            active = id
           }}
         />
       </div>
@@ -592,25 +638,27 @@
       }}
       bind:marked
     />
-    <!-- The panes: the tab in front, and those it is open together with. A tab dragged to an edge of them joins them there. -->
+    <!-- The panes: the tab in front, and those it is open together with. A tab dragged to an edge of one joins it there; to its middle, takes its place. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
+      bind:this={frame}
       hidden={active === null}
       data-panes
+      data-stacked={(split.length > 1 && layout.stacked) || undefined}
       ondragenter={hover}
       ondragover={hover}
       ondragleave={(e) => {
         // By where the pointer is: WebKit names no `relatedTarget`, and every pane and every row in it is left on the way across.
-        if (!nearest(e)) edge = null
+        if (!under(e)) aim = null
       }}
       ondrop={(e) => {
         e.preventDefault()
         // Where it is let go, not where it was last seen: a leave may have come in between.
-        const at = nearest(e)
-        if (dragging !== null && at) join(dragging, at)
-        dragging = edge = null
+        const at = under(e)
+        if (dragging !== null && at) join(dragging, at.zone, at.id)
+        dragging = aim = null
       }}
-      class="relative flex min-h-0 flex-1 gap-px bg-edge {stacked ? 'flex-col' : ''}"
+      class="relative min-h-0 flex-1 bg-page"
     >
       {#each sessions as session (session.id)}
         <div {...pane(session.id)}>
@@ -633,12 +681,30 @@
           <Files host={view.host} active={seen(view.id)} front={view.id === active} />
         </div>
       {/each}
-      {#if edge}
-        <!-- Where the tab will land: that half of the panes. -->
-        <div
-          data-edge={edge}
-          class="pointer-events-none absolute z-20 rounded-lg border-2 border-blue bg-blue/15 data-[edge=bottom]:inset-[50%_0_0_0] data-[edge=left]:inset-[0_50%_0_0] data-[edge=right]:inset-[0_0_0_50%] data-[edge=top]:inset-[0_0_50%_0]"
-        ></div>
+      {#if active !== null && split.includes(active)}
+        <!-- The lines between the panes: each can be held and moved, by the pointer or the arrows. -->
+        {#each bars(layout) as bar (`${bar.group} ${bar.g} ${bar.at}`)}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+          <div
+            role="separator"
+            aria-label={t('resize_panes')}
+            aria-orientation={bar.upright ? 'vertical' : 'horizontal'}
+            tabindex="0"
+            style={pct(bar.rect)}
+            onpointerdown={(e) => size(e, bar)}
+            onpointermove={(e) => size(e, bar)}
+            onpointerup={(e) => size(e, bar)}
+            onpointercancel={(e) => size(e, bar)}
+            onkeydown={(e) => nudge(e, bar)}
+            class="absolute z-10 touch-none outline-none before:absolute before:bg-edge hover:before:bg-blue focus-visible:before:bg-blue active:before:bg-blue {bar.upright
+              ? '-ml-1 min-w-2 cursor-col-resize before:inset-y-0 before:left-[3.5px] before:w-px hover:before:w-0.5 active:before:w-0.5'
+              : '-mt-1 min-h-2 cursor-row-resize before:inset-x-0 before:top-[3.5px] before:h-px hover:before:h-0.5 active:before:h-0.5'}"
+          ></div>
+        {/each}
+      {/if}
+      {#if aim && where[aim.id]}
+        <!-- Where the tab will land: that half of the pane, or all of it for a change of places. A line and a tint, no shadow. -->
+        <div data-edge={aim.zone} style={pct(half(where[aim.id], aim.zone))} class="pointer-events-none absolute z-20 rounded-lg border-2 border-blue bg-blue/15"></div>
       {/if}
     </div>
     </div>

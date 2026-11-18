@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
-  import type { Host, Shown } from './api'
+  import { api, type Host, type Shown } from './api'
   import HostCard from './HostCard.svelte'
   import { address, groupOf, hasTag, tagsOf } from './hosts'
   import { t } from './i18n.svelte'
@@ -8,6 +8,7 @@
   import QuickPeek from './QuickPeek.svelte'
   import Keys from './Keys.svelte'
   import { KEY, tip } from './keymap'
+  import Menu, { pointed, type MenuItem } from './Menu.svelte'
   import Sparkline from './Sparkline.svelte'
 
   type Props = {
@@ -71,6 +72,8 @@
   /** The card whose quick peek is open, and whether the pointer opened it. */
   let peeking = $state<{ alias: string; hover: boolean } | null>(null)
   let resting: ReturnType<typeof setTimeout> | undefined
+  /** The right button's menu, and the card it is about. */
+  let menu = $state<{ x: number; y: number; alias: string } | null>(null)
   let search = $state<HTMLInputElement>()
   let grid = $state<HTMLElement>()
 
@@ -232,6 +235,24 @@
       void ask(peeking.alias, false)
     }
   }
+
+  /** What the right button offers on a card: what its keys do, and its address for the clipboard. */
+  const items = $derived.by((): MenuItem[] => {
+    if (!menu) return []
+    const alias = menu.alias
+    const host = hosts.find((host) => host.alias === alias)
+    return [
+      { label: t('connect'), keys: KEY.connect[0], run: () => onconnect(alias) },
+      ...(onfiles ? [{ label: t('files'), keys: KEY.files[0], run: () => onfiles(alias) }] : []),
+      ...(onforwards ? [{ label: t('forwards'), keys: KEY.forwards[0], run: () => onforwards(alias) }] : []),
+      ...(onedit ? [{ label: t('edit'), keys: KEY.edit[0], run: () => onedit(alias) }] : []),
+      // The address as the config has it, whatever the window shows of it.
+      { label: t('copy_address'), off: !host || !address(host), run: () => void api.copy(address(host!)) },
+      null,
+      { label: t('palette'), keys: KEY.palette[0], run: onpalette },
+      ...(ondelete ? [null, { label: t('delete'), keys: 'D', danger: true, run: () => ondelete(alias) }] : []),
+    ]
+  })
 
   const sorts = $derived<[Sort, string][]>([
     ['order', t('sort_order')],
@@ -479,6 +500,17 @@
                   if (peeking && peeking.alias !== host.alias) peeking = null
                 }}
                 onkeydown={(e) => onkeydown(e, host.alias)}
+                ondblclick={(e) => {
+                  // Not twice over for a button of the card's own.
+                  if (!(e.target as HTMLElement).closest('button')) onconnect(host.alias)
+                }}
+                oncontextmenu={(e) => {
+                  e.preventDefault()
+                  clearTimeout(resting)
+                  peeking = null
+                  onselect?.(host.alias)
+                  menu = { ...pointed(e), alias: host.alias }
+                }}
                 draggable="true"
                 ondragstart={(e) => {
                   clearTimeout(resting)
@@ -508,3 +540,17 @@
     </div>
   {/if}
 </section>
+
+{#if menu}
+  <Menu
+    label={menu.alias}
+    x={menu.x}
+    y={menu.y}
+    {items}
+    onclose={(escaped) => {
+      // Esc gives the keys back to the card it was about.
+      if (escaped && menu) card(menu.alias)?.focus()
+      menu = null
+    }}
+  />
+{/if}
