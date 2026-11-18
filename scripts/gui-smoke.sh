@@ -1168,14 +1168,16 @@ pane "$LEFT"
 step "a tab dragged to an edge of the panes changed their places"
 
 # Focus mode, by the key no shell is sent: the rail goes, and the panes are wider.
+# The pointer rests in a pane: where it rests on nothing with the rail there, a tab is now.
+inside() { xdotool mousemove --window "$win" 550 520; sleep 0.5; }
 language
 key ctrl+shift+b
-aside
+inside
 shot docs/img/desktop-d10-focus.vi.png
 key ctrl+shift+b
 language
 key ctrl+shift+b
-aside
+inside
 shot docs/img/desktop-d10-focus.png
 wide=$(cols wide)
 [ "$wide" -gt "$half" ] || fail "focus mode: the pane is $wide columns, as before ($half): the rail is still there"
