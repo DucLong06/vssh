@@ -21,10 +21,10 @@ test('the cheatsheet: a dialog with the keys in groups, each key a key cap', () 
   expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument()
   expect(groups()).toEqual(['Anywhere', 'Hosts', 'In a session, after Ctrl+A', 'Files', 'With the mouse', 'Command results'])
   expect(rows('Anywhere')).toEqual([
-    ['Command palette', ['Ctrl+K']],
+    ['Command palette', ['Ctrl+K', 'Ctrl+Shift+K']],
     ['Keyboard shortcuts', ['?', 'F1', 'Ctrl+/']],
     ['New tab: quick connect', ['Ctrl+T']],
-    ['Close tab', ['Ctrl+W']],
+    ['Close tab', ['Ctrl+Shift+W', 'Ctrl+W']],
     ['Next tab', ['Ctrl+Tab']],
     ['Previous tab', ['Ctrl+Shift+Tab']],
     ['Split right', ['Ctrl+Shift+D']],
@@ -89,5 +89,5 @@ test('keys that do the same are said as that: a stroke between them, the first o
   expect(next.textContent?.replace(/\s+/g, ' ').trim()).toBe('Tab / N')
   expect([...next.querySelectorAll('kbd')].map((key) => key.className.includes('opacity-60'))).toEqual([false, true])
   // One key: no stroke.
-  expect(within(screen.getByRole('region', { name: 'Anywhere' })).getByText('Command palette').nextElementSibling!.textContent).not.toContain('/')
+  expect(within(screen.getByRole('region', { name: 'Anywhere' })).getByText('New tab: quick connect').nextElementSibling!.textContent).not.toContain('/')
 })

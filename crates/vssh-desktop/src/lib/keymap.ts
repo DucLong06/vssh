@@ -6,10 +6,11 @@ import { t } from './i18n.svelte'
 
 /** The keys a button names in its tooltip. Several: any of them. */
 export const KEY = {
-  palette: ['Ctrl+K'],
+  // In a terminal the plain chord is the shell's own: there, and anywhere, the one with Shift.
+  palette: ['Ctrl+K', 'Ctrl+Shift+K'],
   shortcuts: ['?', 'F1', 'Ctrl+/'],
   newTab: ['Ctrl+T'],
-  closeTab: ['Ctrl+W'],
+  closeTab: ['Ctrl+Shift+W', 'Ctrl+W'],
   // With Shift: no shell is sent these, so they are the window's in a terminal too.
   splitRight: ['Ctrl+Shift+D'],
   splitDown: ['Ctrl+Shift+E'],

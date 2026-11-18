@@ -23,6 +23,7 @@
   import { fromTarget } from './lib/hosts'
   import { i18n, t } from './lib/i18n.svelte'
   import { down, live, poll, relabel, up } from './lib/live.svelte'
+  import Modal from './lib/Modal.svelte'
   import Palette from './lib/Palette.svelte'
   import QuickConnect from './lib/QuickConnect.svelte'
   import Shortcuts from './lib/Shortcuts.svelte'
@@ -64,6 +65,8 @@
   let edge = $state<Edge | null>(null)
   /** Focus mode: no rail and no status bar, and a tab's view from edge to edge. */
   let zen = $state(false)
+  /** The tab somebody is asked about before it goes: its shell is running something. */
+  let closing = $state<number | null>(null)
   /** Ctrl-A was pressed: the next key is a command, as in the TUI. */
   let leader = $state(false)
   /** The terminals, by session. */
@@ -156,7 +159,7 @@
   // The window's shape changed, by a button that went with it (the rail's) or that
   // kept the focus (the strip's, a tab let go of): the keys are the terminal's in front again.
   $effect(() => {
-    void [zen, split, stacked, sessions.length]
+    void [zen, split, stacked, sessions.length, closing]
     const id = untrack(() => front?.id)
     if (id !== undefined) terms[id]?.focus()
   })
@@ -249,7 +252,7 @@
   // Before the terminal sees the key: these never reach the shell.
   function onkeydown(e: KeyboardEvent) {
     // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
-    if (modal !== null || failure !== null) return
+    if (modal !== null || failure !== null || closing !== null) return
     const ctrl = e.ctrlKey || e.metaKey
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     const mine = () => {
@@ -262,13 +265,15 @@
       mine()
       leader = false
       command(e)
-    } else if (ctrl && e.key === 'k') {
+    } else if (ctrl && e.key.toLowerCase() === 'k' && (e.shiftKey || !front)) {
+      // In a terminal the plain key is the shell's (readline cuts to the end of the line): with Shift it is the window's.
       mine()
       modal = 'palette'
     } else if (ctrl && e.key === 'a' && !(e.target instanceof HTMLInputElement)) {
       mine()
       leader = true
-    } else if (ctrl && e.key === 'w' && active !== null) {
+    } else if (ctrl && e.key.toLowerCase() === 'w' && active !== null && (e.shiftKey || !front)) {
+      // As Ctrl-K: in a terminal Ctrl-W is the word before the cursor, and not the end of the session.
       mine()
       close(active)
     } else if (e.ctrlKey && e.code === 'Tab') {
@@ -405,10 +410,15 @@
     active = id
   }
 
-  /** Closes a tab at once, as the TUI does; the one that takes its place comes to the front. */
-  function close(id: number) {
+  /** Closes a tab; the one that takes its place comes to the front. One whose shell runs something is asked about first, unless `sure`. */
+  function close(id: number, sure = false) {
     const at = tabs.indexOf(id)
     if (at < 0) return
+    const session = sessions.find((session) => session.id === id)
+    if (!sure && session?.busy && session.state === 'up') {
+      closing = id
+      return
+    }
     // A pane that goes leaves the front to one of those it was with.
     const kin = split.includes(id) ? split.find((pane) => pane !== id) : undefined
     unsplit(id)
@@ -449,7 +459,7 @@
 
   /** A host is gone: so are its sessions and its files, as the tabs of a host that is not there. */
   async function deleted(alias: string) {
-    for (const session of sessions.filter((session) => !session.quick && session.title === alias)) close(session.id)
+    for (const session of sessions.filter((session) => !session.quick && session.title === alias)) close(session.id, true)
     for (const view of files.filter((view) => view.host === alias)) close(view.id)
     marked = marked.filter((name) => name !== alias)
     forwarding_of(alias, [])
@@ -474,6 +484,8 @@
       Object.assign(session, { state: 'closed', busy: null, error: said.error })
     }
   }
+
+  const answer = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
 
   function reconnect(session: Session) {
     failure = null
@@ -656,6 +668,28 @@
     onretry={() => reconnect(session)}
     onclose={() => (failure = null)}
   />
+{/if}
+
+{#if closing !== null}
+  {@const session = sessions.find((session) => session.id === closing)}
+  <Modal label={t('close_tab')} onclose={() => (closing = null)}>
+    <form
+      class="grid gap-4 p-6"
+      onsubmit={(e) => {
+        e.preventDefault()
+        const id = closing
+        closing = null
+        if (id !== null) close(id, true)
+      }}
+    >
+      <p>{t('close_busy').replace('{command}', session?.busy ?? '').replace('{name}', session ? called(session) : '')}</p>
+      <!-- Cancel comes first and has the focus: Enter is not a yes. -->
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick={() => (closing = null)} class="{answer} text-white">{t('cancel')}</button>
+        <button type="submit" class="{answer} border-red text-red">{t('close_tab')}</button>
+      </div>
+    </form>
+  </Modal>
 {/if}
 
 {#if modal === 'palette'}

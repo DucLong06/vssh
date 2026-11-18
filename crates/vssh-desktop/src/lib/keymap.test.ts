@@ -9,7 +9,7 @@ const listed = () => new Set(sheet().flatMap((group) => group.rows.flatMap(([key
 
 test('a tooltip is what the button does and its keys, as the cheatsheet writes them', () => {
   expect(tip('Files', KEY.files)).toBe('Files (F)')
-  expect(tip(capital('close'), KEY.closeTab)).toBe('Close (Ctrl+W)')
+  expect(tip(capital('close'), KEY.closeTab)).toBe('Close (Ctrl+Shift+W, Ctrl+W)')
   expect(tip('Filter', KEY.search)).toBe('Filter (/, Ctrl+F)')
   // A host's name is left as it is typed.
   expect(tip('web-01', ['Ctrl+A 1'])).toBe('web-01 (Ctrl+A 1)')

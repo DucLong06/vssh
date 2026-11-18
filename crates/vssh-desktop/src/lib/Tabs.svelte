@@ -65,8 +65,8 @@
   const tool = 'grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-dim hover:bg-selection hover:text-fg'
   /** A tab's number is its key after the leader. */
   const chord = (title: string, n: number) => (n < 10 ? tip(title, [`${KEY.leader[0]} ${n}`]) : title)
-  /** Ctrl-W closes the tab in front, and no other. */
-  const shut = (id: number) => (id === active ? tip(capital(t('close')), KEY.closeTab) : undefined)
+  /** Its key closes the tab in front, and no other. The one that works in a terminal too. */
+  const shut = (id: number) => (id === active ? tip(capital(t('close')), [KEY.closeTab[0]]) : undefined)
 
   /**
    * What makes a tab one to pick up, and to close with the wheel's button. On
@@ -148,7 +148,6 @@
             <span class={digit}>{at + 1}</span>
             {session.title}
             {#if session.busy}
-              <!-- Closing is at once, as in the TUI: this is the warning there is. -->
               <span class="rounded-full bg-bar px-2 text-xs font-normal text-white">{t('running')} <span class="font-mono">{session.busy}</span></span>
             {/if}
           </button>

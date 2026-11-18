@@ -415,6 +415,12 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     // A forward's kind in words: ssh's L, R and D.
     ("fwd_local", "Local", "Cục bộ"),
     ("fwd_remote", "Remote", "Từ xa"),
+    // Before a tab goes whose shell is in the middle of something.
+    (
+        "close_busy",
+        "{command} is running on {name}. Close the tab?",
+        "{command} đang chạy trên {name}. Đóng tab?",
+    ),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

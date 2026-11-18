@@ -76,6 +76,9 @@ const prints = (id: number, text: string) => emit(`pty-data:${id}`, [...new Text
 const says = (id: number, state: object) => emit(`pty-state:${id}`, state)
 const copied = () => asked('plugin:clipboard-manager|write_text').map((args) => args.text)
 const leader = '{Control>}a{/Control}'
+/** The window's own chords, which work in a terminal too: close the tab, the palette. */
+const ctrlW = '{Control>}{Shift>}W{/Shift}{/Control}'
+const ctrlK = '{Control>}{Shift>}K{/Shift}{/Control}'
 
 afterEach(async () => {
   vi.useRealTimers()
@@ -184,8 +187,8 @@ test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second C
   expect(status().querySelector('kbd')).toBeNull()
   expect(await tab(/web-01/)).toHaveAttribute('title', 'web-01 (Ctrl+A 1)')
   expect(screen.getByRole('tab', { name: /Hosts/ })).toHaveAttribute('title', 'Hosts (Ctrl+A 0)')
-  // Ctrl-W closes the tab in front: its × says so, and no other does.
-  expect(screen.getByRole('button', { name: 'close web-01' })).toHaveAttribute('title', 'Close (Ctrl+W)')
+  // Its key closes the tab in front: its × says so, and no other does.
+  expect(screen.getByRole('button', { name: 'close web-01' })).toHaveAttribute('title', 'Close (Ctrl+Shift+W)')
   await user.keyboard(`${leader}0`)
   expect(picked()).toHaveTextContent('0 Hosts')
   await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
@@ -203,12 +206,12 @@ test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second C
   await user.keyboard(`${leader}p`)
   expect(picked()).toHaveTextContent('2 web-02')
   // A host chosen in the palette is a card: the dashboard comes forward for it.
-  await user.keyboard('{Control>}k{/Control}')
+  await user.keyboard(ctrlK)
   await user.type(palette(), 'db{Enter}')
   expect(picked()).toHaveTextContent('0 Hosts')
   await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
   // Chosen again from a terminal, the same host has its card focused again.
-  await user.keyboard(`${leader}2{Control>}k{/Control}`)
+  await user.keyboard(`${leader}2${ctrlK}`)
   await user.type(palette(), 'db{Enter}')
   expect(picked()).toHaveTextContent('0 Hosts')
   await vi.waitFor(async () => expect(await card('db-primary')).toHaveFocus())
@@ -223,8 +226,12 @@ test('Ctrl-A is the leader, as in the TUI: digits and Tab change tab, a second C
     { id: 2, data: '\x01' },
     { id: 2, data: '\x17' },
   ])
-  // On its own Ctrl-W closes the tab in front, at once; Ctrl-A x is the TUI's key for it.
-  await user.keyboard('{Control>}w{/Control}')
+  // On their own, in a terminal, Ctrl-W and Ctrl-K are the shell's: a word is deleted there, the line cut, and no tab closed.
+  await user.keyboard('{Control>}w{/Control}{Control>}k{/Control}')
+  expect(asked('session_close')).toEqual([])
+  expect(screen.queryByRole('dialog')).toBeNull()
+  // With Shift they are the window's; Ctrl-A x is the TUI's key for the same.
+  await user.keyboard(ctrlW)
   expect(asked('session_close')).toEqual([{ id: 2 }])
   expect(picked()).toHaveTextContent('1 web-01')
   await user.keyboard(`${leader}x`)
@@ -1148,7 +1155,7 @@ test('a quick connect in front can be kept: Save this host opens the form with w
   await tab(/web-01/)
   expect(screen.queryByRole('button', { name: 'Save this host' })).toBeNull()
 
-  await user.keyboard('{Control>}k{/Control}')
+  await user.keyboard(ctrlK)
   await user.type(palette(), 'qc{Enter}')
   const quick = await screen.findByRole('dialog', { name: 'Quick connect' })
   await user.type(within(quick).getByLabelText('Host'), 'sandbox.example')
@@ -1790,7 +1797,7 @@ test('Ctrl+Shift+D is another shell on the same host beside the one in front, Ct
   expect(asked('session_write')).toEqual([])
 
   // Closed, a pane leaves the front to one it was with; the last one left is a tab on its own.
-  await user.keyboard('{Control>}w{/Control}')
+  await user.keyboard(ctrlW)
   expect(panels()).toHaveLength(2)
   expect(picked()).toHaveTextContent('1 web-01')
   await user.click(screen.getByRole('button', { name: 'Unsplit: this pane back to a tab of its own' }))
@@ -1811,7 +1818,7 @@ test('after the leader the split has tmux\'s keys: | and % beside, - and " under
     expect(frame().classList.contains('flex-col'), key).toBe(stacked)
     // Under it or beside it, the new one comes after.
     expect(order()).toEqual(['first', 'web-01'])
-    await user.keyboard('{Control>}w{/Control}')
+    await user.keyboard(ctrlW)
     expect(panels()).toEqual(['first'])
   }
   await user.keyboard(`${leader}|`)
@@ -2001,7 +2008,7 @@ test('focus mode: the rail and the status bar go, a tab\'s view is all there is;
   await user.keyboard(`${leader}z`)
   expect(rail()).toBeNull()
   // From the palette too.
-  await user.keyboard('{Control>}k{/Control}')
+  await user.keyboard(ctrlK)
   await user.type(palette(), 'focus{Enter}')
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(rail()).toBeInTheDocument()
@@ -2056,7 +2063,7 @@ test('panes and focus mode in Vietnamese: the strip\'s buttons, the palette\'s r
   expect(screen.getByRole('button', { name: 'Hiện thanh bên' })).toBeInTheDocument()
   expect(stray()).toEqual([])
   // The palette has them by name, and by their English one.
-  await user.keyboard('{Control>}k{/Control}')
+  await user.keyboard(ctrlK)
   const rows = () => within(screen.getByRole('dialog')).getAllByRole('option').map((row) => row.textContent?.replace(/\s+/g, ' ').trim())
   expect(rows()).toContain('Chia đôi sang phải Ctrl+Shift+D')
   expect(rows()).toContain('Chia đôi xuống dưới Ctrl+Shift+E')
@@ -2096,4 +2103,48 @@ test('a split of a quick connect connects to the same address again, and that is
   // The new one is on no host of the config either: it can be kept as one.
   expect(picked()).toHaveTextContent('2 deploy@10.0.0.9')
   expect(within(status()).getByRole('button', { name: 'Save this host' })).toBeInTheDocument()
+})
+
+test('a tab whose shell is running something is asked about before it goes; Cancel comes first, so Enter is not a yes', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/web-01/)
+  await says(1, { state: 'up' })
+  await says(1, { state: 'busy', command: 'pg_dump' })
+  // By the key, by the ×, by the leader's x: the same question, and nothing closed.
+  await user.keyboard(ctrlW)
+  const ask = await screen.findByRole('dialog', { name: 'Close tab' })
+  expect(ask).toHaveTextContent('pg_dump is running on web-01. Close the tab?')
+  // Cancel is the first button: a dialog opens with the focus on it (the web view's doing, not jsdom's).
+  expect(within(ask).getAllByRole('button')[0]).toHaveTextContent('Cancel')
+  await user.click(within(ask).getByRole('button', { name: 'Cancel' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(asked('session_close')).toEqual([])
+  // The keys are the terminal's again.
+  expect(terminals[0].focused).toBe(true)
+  await user.click(screen.getByRole('button', { name: 'close web-01' }))
+  await user.click(within(await screen.findByRole('dialog', { name: 'Close tab' })).getByRole('button', { name: 'Close tab' }))
+  expect(asked('session_close')).toEqual([{ id: 1 }])
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+
+  // At its prompt a tab goes at once, as it did; so does one whose session is over.
+  await user.click(within(await card('web-02')).getByRole('button', { name: 'Connect' }))
+  await says(2, { state: 'up' })
+  await says(2, { state: 'busy', command: 'top' })
+  await says(2, { state: 'closed', error: null })
+  await user.keyboard(ctrlW)
+  expect(asked('session_close')).toEqual([{ id: 1 }, { id: 2 }])
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('the question before a busy tab goes, in Vietnamese', async () => {
+  setLang('vi')
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Kết nối' }))
+  await says(1, { state: 'up' })
+  put.push('pg_dump')
+  await says(1, { state: 'busy', command: 'pg_dump' })
+  await user.keyboard(`${leader}x`)
+  expect(await screen.findByRole('dialog', { name: 'Đóng tab' })).toHaveTextContent('pg_dump đang chạy trên web-01. Đóng tab?')
+  expect(stray()).toEqual([])
 })
