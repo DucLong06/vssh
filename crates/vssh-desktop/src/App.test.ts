@@ -1,6 +1,6 @@
 import { emit } from '@tauri-apps/api/event'
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
-import { cleanup, render, screen, within } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App.svelte'
@@ -1638,6 +1638,14 @@ test('Ctrl+Tab and Ctrl+Shift+Tab go through the tabs, from a terminal too; Ctrl
   await user.keyboard(next)
   expect(picked()).toHaveTextContent('2 web-02')
   await user.keyboard(next)
+  expect(picked()).toHaveTextContent('0 Hosts')
+  await user.keyboard(back)
+  expect(picked()).toHaveTextContent('2 web-02')
+  // As WebKitGTK says Shift+Tab: a key with no name (ISO_Left_Tab), in Tab's place. After the leader too.
+  await fireEvent.keyDown(document.body, { key: 'Unidentified', code: 'Tab', ctrlKey: true, shiftKey: true })
+  expect(picked()).toHaveTextContent('1 web-01')
+  await user.keyboard(leader)
+  await fireEvent.keyDown(document.body, { key: 'Unidentified', code: 'Tab', shiftKey: true })
   expect(picked()).toHaveTextContent('0 Hosts')
   await user.keyboard(back)
   expect(picked()).toHaveTextContent('2 web-02')

@@ -40,7 +40,9 @@
     />
     <kbd>Esc</kbd>
   </label>
-  <div class="max-h-[62vh] columns-2 gap-10 overflow-y-auto border-t border-edge px-6 pt-5 pb-2">
+  <!-- The scroll is the outer box's: columns with a height of their own would overflow sideways. -->
+  <div class="max-h-[62vh] overflow-y-auto border-t border-edge">
+  <div class="columns-2 gap-10 px-6 pt-5 pb-2">
     {#each groups as group (group.name)}
       <section aria-label={group.name} class="mb-5 break-inside-avoid">
         <h3 class="pb-1 text-[11px] font-semibold tracking-widest text-dim uppercase">{group.name}</h3>
@@ -59,5 +61,6 @@
     {:else}
       <p role="status" class="pb-3 text-white">{t('no_shortcut')}</p>
     {/each}
+  </div>
   </div>
 </Modal>

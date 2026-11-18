@@ -185,7 +185,8 @@
       if (front) input(front, String.fromCharCode(e.key.toUpperCase().charCodeAt(0) - 64))
     } else if (/^[0-9]$/.test(e.key)) {
       if (Number(e.key) < tabs.length) active = tabs[Number(e.key)]
-    } else if (e.key === 'Tab' || e.key === 'n') {
+    } else if (e.code === 'Tab' || e.key === 'n') {
+      // By its place on the board: with Shift, WebKitGTK has no name for the key (ISO_Left_Tab).
       step(e.shiftKey ? -1 : 1)
     } else if (e.key === 'p') {
       step(-1)
@@ -231,7 +232,7 @@
     } else if (ctrl && e.key === 'w' && active !== null) {
       mine()
       close(active)
-    } else if (e.ctrlKey && e.key === 'Tab') {
+    } else if (e.ctrlKey && e.code === 'Tab') {
       // No shell is sent this one: it is the window's in a terminal too.
       mine()
       step(e.shiftKey ? -1 : 1)
