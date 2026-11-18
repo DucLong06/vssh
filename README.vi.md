@@ -22,11 +22,13 @@ SSH viết thuần Rust ([russh](https://github.com/warp-tech/russh)); không c�
 
 Các máy chủ của bạn trong một cửa sổ: bảng điều khiển gồm các thẻ máy chủ với số liệu trực tiếp, các tab terminal có chế độ phát, trình duyệt SFTP hai khung, đoạn lệnh, chạy lệnh hàng loạt, chuyển tiếp cổng và kho mật khẩu.
 
-![Bảng điều khiển: thanh điều hướng bên trái, một hàng số liệu, các thẻ máy chủ nhóm theo thẻ kèm sparkline và thanh ổ đĩa, hai phiên đang mở trong tab](docs/img/desktop-d9-rail.vi.png)
+![Bảng điều khiển: thanh điều hướng bên trái không còn danh sách máy, ô tìm kiếm và hàng thẻ phía trên một hàng số liệu, các thẻ máy chủ theo nhóm kèm địa chỉ, hai phiên đang mở trong tab](docs/img/desktop-d9-rail.vi.png)
 
 | Xem nhanh | Tab terminal, đang phát |
 |---|---|
-| ![Xem nhanh một máy chủ: kết nối, hệ thống, thời gian đã chạy, tải, CPU, bộ nhớ và đĩa](docs/img/desktop-d2-peek.vi.png) | ![Một shell trong tab terminal, hai tab đang bật phát, thanh trạng thái báo điều đó](docs/img/desktop-d3-terminal.vi.png) |
+| ![Xem nhanh một máy chủ: kết nối, hệ thống, thời gian đã chạy, tải, CPU, bộ nhớ và đĩa](docs/img/desktop-d2-peek.vi.png) | ![Một shell trong tab terminal, hai tab đang bật phát: nút phát trên dải tab sáng lên, thanh trạng thái báo điều đó](docs/img/desktop-d3-terminal.vi.png) |
+| **Hai ô, một bàn phím** | **Mọi phím tắt** |
+| ![Hai shell cạnh nhau đang bật phát: nút trên dải tab sáng lên, mỗi ô có công tắc riêng](docs/img/desktop-d12-broadcast.vi.png) | ![Bảng phím tắt: mọi phím của cửa sổ, theo nơi dùng](docs/img/desktop-d10-shortcuts.vi.png) |
 | **Tệp: máy mình và máy chủ** | **Một lệnh trên bốn máy** |
 | ![Trình duyệt tệp hai khung với hai lượt tải lên đang chạy: phần trăm, tốc độ, thời gian còn lại](docs/img/desktop-d4-sftp.vi.png) | ![Một lượt chạy hàng loạt: hai máy trả lời, hai máy lỗi và nêu lý do](docs/img/desktop-d5-batch.vi.png) |
 | **Biểu mẫu máy chủ** | **Kho mật khẩu** |
@@ -38,19 +40,19 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 
 ## Tính năng
 
-- **Bảng điều khiển.** Mỗi máy chủ trong `~/.ssh/config` là một thẻ: nhãn độ trễ, các thẻ (tag), sparkline CPU và bộ nhớ của phút vừa qua, một thanh cho đĩa gốc. Phía trên là một hàng số liệu: số máy kết nối được, CPU, bộ nhớ, và những máy đang mất kết nối. Máy mất kết nối hoặc vượt ngưỡng nguy hiểm được xếp lên đầu, và thẻ của nó nêu lý do (`DNS`, `BỊ TỪ CHỐI`, `XÁC THỰC`, …) kèm nút "Thử lại".
-- **Nhóm, sắp xếp, tìm kiếm.** Các thẻ máy chủ được nhóm theo thẻ hoặc để phẳng; sắp xếp theo thứ tự của bạn, tên, độ trễ hoặc CPU. Kéo một thẻ máy chủ lên thẻ khác để đổi chỗ, hoặc `Alt` + phím mũi tên. `/` tìm theo tên, địa chỉ hoặc `#thẻ`; bấm một thẻ trên thanh điều hướng cũng lọc.
+- **Bảng điều khiển.** Mỗi máy chủ trong `~/.ssh/config` là một thẻ ở giữa cửa sổ: tên máy, `user@host`, các thẻ (tag), nhãn độ trễ, sparkline CPU và bộ nhớ của phút vừa qua, một thanh cho đĩa gốc. Thanh điều hướng bên trái không liệt kê máy nào: nó dẫn tới các màn hình và đếm số lượng. Phía trên là một hàng số liệu: số máy kết nối được, CPU, bộ nhớ, và những máy đang mất kết nối. Máy mất kết nối hoặc vượt ngưỡng nguy hiểm được xếp lên đầu, và thẻ của nó nêu lý do (`DNS`, `BỊ TỪ CHỐI`, `XÁC THỰC`, …) kèm nút "Thử lại".
+- **Nhóm, sắp xếp, tìm kiếm.** Các thẻ máy chủ nằm trong từng mục theo nhóm, mỗi mục có tiêu đề `tên (số máy)`, hoặc để phẳng; sắp xếp theo thứ tự của bạn, tên, độ trễ hoặc CPU. Kéo một thẻ máy chủ lên thẻ khác để đổi chỗ, hoặc `Alt` + phím mũi tên. `/` tìm theo tên, địa chỉ hoặc `#thẻ`, rồi `Enter` hoặc mũi tên xuống để tới thẻ đầu tiên tìm được. Dưới ô tìm kiếm là một hàng thẻ (tag): bấm để lọc; bấm một thẻ trên thanh điều hướng cũng lọc.
 - **Số liệu trực tiếp, không gây bất ngờ.** Số liệu được đọc mỗi 5 giây qua một kết nối giữ sẵn cho mỗi máy, không đăng nhập lại mỗi lượt. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`) và không cần máy trung gian; các máy còn lại ghi "chưa kiểm tra" cho tới khi bạn hỏi bằng `v`. Việc kiểm tra kết nối được chạy mỗi phút một lần.
 - **Xem nhanh.** `v` trên một thẻ máy chủ: máy đó tự nói gì về mình — tên máy, hệ thống, thời gian đã chạy, tải, CPU, bộ nhớ, đĩa — cùng địa chỉ và việc nó có trả lời hay không. Câu trả lời được giữ 30 giây; `r` hỏi lại, `Esc` đóng.
-- **Tab terminal.** `Enter` hoặc nút "Kết nối" mở một shell thật trong tab (PTY qua russh, vẽ bằng xterm.js). Đánh dấu nhiều thẻ bằng `Space` rồi `Enter` để kết nối tới tất cả. Tab cho biết trạng thái của nó và, với máy chủ Linux, lệnh đang chạy trong đó. Bôi chọn chữ là chép. Khi shell kết thúc, tab có nút "Kết nối lại".
-- **Phát (broadcast).** `Ctrl-A` `b` bật phát cho một tab, `Ctrl-A` `B` cho mọi tab: những gì bạn gõ được gửi tới mọi tab đang bật. Các tab đó chuyển màu vàng và thanh trạng thái ghi "Đang phát: N".
+- **Tab terminal.** `Enter` hoặc nút "Kết nối" mở một shell thật trong tab (PTY qua russh, vẽ bằng xterm.js). Đánh dấu nhiều thẻ bằng `Space` rồi `Enter` để kết nối tới tất cả. Tab cho biết trạng thái của nó và, với máy chủ Linux, lệnh đang chạy trong đó. Bôi chọn chữ là chép; `Ctrl-Shift-V` hoặc chuột phải để dán. Khi chia ô cạnh nhau, bấm vào ô nào thì ô đó nhận phím, các ô còn lại vẫn có con trỏ mờ nhấp nháy. Khi shell kết thúc, tab có nút "Kết nối lại".
+- **Phát (broadcast).** Khi có từ hai shell đang mở, dù là tab hay ô, dải tab có nút "Phát" (`Ctrl-A` `B`): bật lên thì những gì bạn gõ hoặc dán vào một shell được gửi tới tất cả. Nút sáng lên, các tab đó chuyển màu vàng và thanh trạng thái ghi "Đang phát: N". Trong lúc đang phát, mỗi ô có công tắc riêng ở góc trên bên phải (`Ctrl-A` `b`): tách ô đó ra, rồi cho vào lại.
 - **Khi kết nối thất bại**, một hộp thoại cho biết vì sao, theo cùng các loại lỗi như ứng dụng terminal, tới cả chặng nào của chuỗi máy trung gian bị lỗi. Khoá máy chủ thay đổi thì hộp thoại hiện dấu vân tay mới cùng dòng `known_hosts` mà nó xung đột, và hỏi: Chấp nhận một lần, Tin cậy, hoặc Huỷ.
-- **SFTP hai khung.** `f` trên một thẻ máy chủ, hoặc "Tệp" trong menu chuột phải của thẻ: máy mình bên trái, máy chủ bên phải, trong một tab riêng. `Space` đánh dấu, `c` chép sang bên kia; hai mũi tên giữa hai khung và việc kéo các dòng sang cũng vậy. Tệp đã có ở bên kia thì chờ bạn đồng ý ghi đè. Chuột phải để Tải lên hoặc Tải xuống, Tạo thư mục, Đổi tên, Xoá, Làm mới. Mỗi lượt truyền có một dòng dưới hai khung: thanh tiến độ, phần trăm, tốc độ, thời gian còn lại, Huỷ; ba lượt chạy cùng lúc. `.` hiện tệp ẩn, `/` lọc. Chỉ chép tệp: không chép thư mục.
+- **SFTP hai khung.** `f` trên một thẻ máy chủ, "Tệp" trong menu chuột phải của thẻ, hoặc "Tệp" trên thanh điều hướng (nó sẽ hỏi của máy nào): máy mình bên trái, máy chủ bên phải, trong một tab riêng. `Space` đánh dấu, `c` chép sang bên kia; hai mũi tên giữa hai khung và việc kéo các dòng sang cũng vậy. Tệp đã có ở bên kia thì chờ bạn đồng ý ghi đè. Chuột phải để Tải lên hoặc Tải xuống, Tạo thư mục, Đổi tên, Xoá, Làm mới. Mỗi lượt truyền có một dòng dưới hai khung: thanh tiến độ, phần trăm, tốc độ, thời gian còn lại, Huỷ; ba lượt chạy cùng lúc. `.` hiện tệp ẩn, `/` lọc. Chỉ chép tệp: không chép thư mục.
 - **Đoạn lệnh (snippet).** `s`, hoặc "Đoạn lệnh" trên thanh điều hướng: các lệnh đã lưu, cho một máy hoặc cho mọi máy. Đoạn lệnh có thể có tham số (`systemctl restart {{unit}}`); tham số được hỏi khi chạy. Nó chạy trên các máy bạn đã đánh dấu.
 - **Chạy hàng loạt.** Đánh dấu các máy bằng `Space`, nhấn `x`, gõ một lệnh. Lệnh chạy cùng lúc trên mọi máy đó, mỗi máy một kết nối riêng; từng máy hiện kết quả của nó, hoặc lý do lỗi. `j`/`k` để cuộn, `/` lọc theo máy, "Chép tất cả" lấy toàn bộ.
-- **Chuyển tiếp cổng.** `L` trên một thẻ máy chủ, hoặc "Chuyển tiếp" trong menu chuột phải của thẻ: các chuyển tiếp của máy trong một bảng — Local, Remote hoặc SOCKS, cổng, đích, đang chạy hay không. Bật hoặc tắt, thêm, xoá. Cổng đã bị dùng thì biểu mẫu báo ngay, kèm một cổng khác để thử.
+- **Chuyển tiếp cổng.** `L` trên một thẻ máy chủ, "Chuyển tiếp" trong menu chuột phải của thẻ, hoặc "Chuyển tiếp" trên thanh điều hướng (nó sẽ hỏi của máy nào): các chuyển tiếp của máy trong một bảng — Local, Remote hoặc SOCKS, cổng, đích, đang chạy hay không. Bật hoặc tắt, thêm, xoá. Cổng đã bị dùng thì biểu mẫu báo ngay, kèm một cổng khác để thử.
 - **Máy chủ.** `a` hoặc nút "Thêm máy chủ", `e` để sửa, `d` để xoá (có hỏi trước). Biểu mẫu gồm tên gọi, máy chủ, người dùng, cổng, cách đăng nhập (mật khẩu trong kho, tệp khoá hoặc agent), máy trung gian, thẻ, nhóm, ghim, ghi chú; có thể nhập các máy chủ từ một ssh config khác, có xem trước. Máy chủ được ghi vào `~/.ssh/config` thành các khối `Host` bình thường.
-- **Kết nối nhanh.** Trong bảng lệnh: `user@host[:port]`, và không có gì được lưu. Khi một phiên như vậy đang ở trước mặt, thanh trạng thái có nút "Lưu máy chủ này".
+- **Kết nối nhanh.** Trong ô tìm máy chủ hoặc trong bảng lệnh: `user@host[:port]`, và không có gì được lưu. Khi một phiên như vậy đang ở trước mặt, thanh trạng thái có nút "Lưu máy chủ này".
 - **Kho mật khẩu.** Mật khẩu các máy chủ của bạn, mã hoá bằng Argon2id + XChaCha20-Poly1305 dưới một mật khẩu kho. Kho đang khoá sẽ hỏi mật khẩu khi ứng dụng khởi động và ở trạng thái mở cho tới khi đóng ứng dụng. Hộp thoại này cũng tạo kho, đổi mật khẩu kho và xuất một bản sao lưu đã mã hoá. Quên mật khẩu kho thì không lấy lại được.
 - **Chế độ phát trực tiếp.** Trong phần cài đặt (bánh răng ở chân thanh điều hướng): mọi địa chỉ cửa sổ hiển thị trở thành địa chỉ giả thuộc các dải dành cho tài liệu (`203.0.113.x`, `198.51.100.x`), cùng một máy thì luôn cùng một địa chỉ. Chỉ phần hiển thị thay đổi: file cấu hình, cơ sở dữ liệu và những gì gửi tới máy chủ vẫn dùng địa chỉ thật. Tên gọi của máy chủ và những gì shell in ra được giữ nguyên.
 - **Giao diện.** TokyoNight Tối (mặc định) và Sáng, đổi trong phần cài đặt. Riêng terminal luôn giữ màu Tối.
@@ -62,7 +64,7 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 | Ở đâu | Phím | Tác dụng |
 |-------|------|----------|
 | Mọi nơi | `Ctrl-K`; trong terminal là `Ctrl-Shift-K` | bảng lệnh |
-| Bảng điều khiển | `/` | tìm máy chủ, `#thẻ` để lọc theo thẻ |
+| Bảng điều khiển | `/` | tìm máy chủ, `#thẻ` để lọc theo thẻ; `Enter` hoặc `↓` tới thẻ đầu tiên; gõ `user@host` rồi `Enter` để kết nối |
 | | `a` | thêm máy chủ |
 | | `s` | đoạn lệnh |
 | | `x` | chạy một lệnh trên các máy đã đánh dấu |
@@ -75,6 +77,7 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 | Tab | `Ctrl-A`, rồi `0`-`9` | tới tab số đó |
 | | `Ctrl-A`, rồi `Tab` hoặc `n` / `p` | tab kế tiếp / tab trước |
 | | `Ctrl-A`, rồi `b` / `B` | phát: tab này / mọi tab |
+| | `Ctrl-Shift-V` | dán vào terminal đang ở trước |
 | | `Ctrl-A`, rồi `y` | chép kết quả của lệnh cuối |
 | | `Ctrl-A`, rồi `q` | về bảng điều khiển |
 | | `Ctrl-A`, rồi `x` hoặc `d`; `Ctrl-W`, trong terminal là `Ctrl-Shift-W` | đóng tab |
