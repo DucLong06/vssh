@@ -42,6 +42,8 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 
 - **Bảng điều khiển.** Mỗi máy chủ trong `~/.ssh/config` là một thẻ ở giữa cửa sổ: tên máy, `user@host`, các thẻ (tag), nhãn độ trễ, sparkline CPU và bộ nhớ của phút vừa qua, một thanh cho đĩa gốc. Thanh điều hướng bên trái không liệt kê máy nào: nó dẫn tới các màn hình và đếm số lượng. Phía trên là một hàng số liệu: số máy kết nối được, CPU, bộ nhớ, và những máy đang mất kết nối. Máy mất kết nối hoặc vượt ngưỡng nguy hiểm được xếp lên đầu, và thẻ của nó nêu lý do (`DNS`, `BỊ TỪ CHỐI`, `XÁC THỰC`, …) kèm nút "Thử lại".
 - **Nhóm, sắp xếp, tìm kiếm.** Các thẻ máy chủ nằm trong từng mục theo nhóm, mỗi mục có tiêu đề `tên (số máy)`, hoặc để phẳng; sắp xếp theo thứ tự của bạn, tên, độ trễ hoặc CPU. Kéo một thẻ máy chủ lên thẻ khác để đổi chỗ, hoặc `Alt` + phím mũi tên. `/` tìm theo tên, địa chỉ hoặc `#thẻ`, rồi `Enter` hoặc mũi tên xuống để tới thẻ đầu tiên tìm được. Dưới ô tìm kiếm là một hàng thẻ (tag): bấm để lọc; bấm một thẻ trên thanh điều hướng cũng lọc.
+- **Chuột, đủ cả.** Kéo một tab thả vào cạnh ô để chia, kéo vạch chia để đổi cỡ, kéo tab để đổi thứ tự, bấm chuột giữa để đóng. Thanh bên gập lại chỉ còn icon (nút ở đầu thanh), và mọi view, thẻ máy, tab, dòng tệp, terminal đều có menu chuột phải riêng.
+- **Cửa sổ nhớ lại.** Ô chia, tên tab, thanh bên gập, chế độ tập trung và view cuối cùng quay lại đúng như cũ khi mở lại ứng dụng.
 - **Số liệu trực tiếp, không gây bất ngờ.** Số liệu được đọc mỗi 5 giây qua một kết nối giữ sẵn cho mỗi máy, không đăng nhập lại mỗi lượt. Chỉ hỏi máy bạn đã từng kết nối (khoá của nó đã có trong `known_hosts`) và không cần máy trung gian; các máy còn lại ghi "chưa kiểm tra" cho tới khi bạn hỏi bằng `v`. Việc kiểm tra kết nối được chạy mỗi phút một lần.
 - **Xem nhanh.** `v` trên một thẻ máy chủ: máy đó tự nói gì về mình — tên máy, hệ thống, thời gian đã chạy, tải, CPU, bộ nhớ, đĩa — cùng địa chỉ và việc nó có trả lời hay không. Câu trả lời được giữ 30 giây; `r` hỏi lại, `Esc` đóng.
 - **Tab terminal.** `Enter` hoặc nút "Kết nối" mở một shell thật trong tab (PTY qua russh, vẽ bằng xterm.js). Đánh dấu nhiều thẻ bằng `Space` rồi `Enter` để kết nối tới tất cả. Tab cho biết trạng thái của nó và, với máy chủ Linux, lệnh đang chạy trong đó. Bôi chọn chữ là chép; `Ctrl-Shift-V` hoặc chuột phải để dán. Khi chia ô cạnh nhau, bấm vào ô nào thì ô đó nhận phím, các ô còn lại vẫn có con trỏ mờ nhấp nháy. Khi shell kết thúc, tab có nút "Kết nối lại".
@@ -64,6 +66,9 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 | Ở đâu | Phím | Tác dụng |
 |-------|------|----------|
 | Mọi nơi | `Ctrl-K`; trong terminal là `Ctrl-Shift-K` | bảng lệnh |
+| | `Ctrl-Shift-B` (`Ctrl-B` trần khi không có terminal trước mặt) | chế độ tập trung: thanh bên ẩn, terminal chiếm cả cửa sổ; `Esc` để trở lại |
+| | `Ctrl-T` | mở tab mới, từ bảng lệnh |
+| | `?`; trong terminal là `Ctrl-A` `?` | bảng phím tắt: mọi phím, tìm kiếm được |
 | Bảng điều khiển | `/` | tìm máy chủ, `#thẻ` để lọc theo thẻ; `Enter` hoặc `↓` tới thẻ đầu tiên; gõ `user@host` rồi `Enter` để kết nối |
 | | `a` | thêm máy chủ |
 | | `s` | đoạn lệnh |
@@ -77,6 +82,9 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 | Tab | `Ctrl-A`, rồi `0`-`9` | tới tab số đó |
 | | `Ctrl-A`, rồi `Tab` hoặc `n` / `p` | tab kế tiếp / tab trước |
 | | `Ctrl-A`, rồi `b` / `B` | phát: tab này / mọi tab |
+| | `Ctrl-Shift-D` / `Ctrl-Shift-E` | chia tab sang phải / xuống; kéo một tab thả vào cạnh ô bằng chuột cũng vậy |
+| | `Ctrl-A`, rồi `!` | bỏ chia: ô trở thành tab riêng |
+| | bấm chuột giữa | đóng một tab |
 | | `Ctrl-Shift-V` | dán vào terminal đang ở trước |
 | | `Ctrl-A`, rồi `y` | chép kết quả của lệnh cuối |
 | | `Ctrl-A`, rồi `q` | về bảng điều khiển |
