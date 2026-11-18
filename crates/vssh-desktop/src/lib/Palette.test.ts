@@ -213,3 +213,27 @@ test('over the dashboard there is nothing to split: the palette does not offer i
   open({ onzen: vi.fn() })
   expect(options().slice(0, 2)).toEqual(['Snippets', 'Focus mode'])
 })
+
+// --- D12: asked whose ------------------------------------------------------------
+
+test('asked whose: the question is its name, the hosts are all it offers, in the order given, and what is typed is the name of one of them or of nothing', async () => {
+  const order = [hosts[2], hosts[0], hosts[1], hosts[3]]
+  const { user, input, onhost, onconnect } = open({ hosts: order, pick: 'Files: which host?', onadd: vi.fn(), onvault: vi.fn() })
+  expect(screen.getByRole('dialog', { name: 'Files: which host?' })).toBeInTheDocument()
+  expect(input).toHaveAttribute('placeholder', 'Files: which host?')
+  // No snippets, no new host, no vault: a host is the answer.
+  expect(options()).toEqual(['db-primary', 'web-01', 'web-02', 'bare'])
+  expect(chosen()).toHaveTextContent('db-primary')
+  await user.type(input, 'web')
+  expect(options()).toEqual(['web-01', 'web-02'])
+  await user.clear(input)
+  // An address is no host: its files and forwards are not asked for.
+  await user.type(input, 'deploy@10.9.9.9')
+  expect(screen.queryAllByRole('option')).toHaveLength(0)
+  expect(screen.getByRole('status')).toHaveTextContent('No host matches the search.')
+  await user.keyboard('{Enter}')
+  expect(onconnect).not.toHaveBeenCalled()
+  await user.clear(input)
+  await user.type(input, 'bare{Enter}')
+  expect(onhost).toHaveBeenCalledExactlyOnceWith('bare')
+})

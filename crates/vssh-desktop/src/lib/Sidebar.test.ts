@@ -9,32 +9,29 @@ import { theme } from './theme.svelte'
 import Sidebar from './Sidebar.svelte'
 
 const hosts: Host[] = fixture
-const props = (over = {}) => ({ hosts, selected: null, onselect: vi.fn(), ...over })
-const rows = () => within(screen.getByRole('list', { name: 'Hosts' })).getAllByRole('button')
+const props = (over = {}) => ({ hosts, ...over })
 
-test('no hosts: nothing listed; the dashboard is where it says what to do', () => {
+test('no hosts: none counted; the dashboard is where it says what to do', () => {
   render(Sidebar, props({ hosts: [] }))
-  expect(screen.getByRole('heading', { name: 'Hosts 0' })).toBeInTheDocument()
-  expect(screen.queryByRole('list', { name: 'Hosts' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Hosts 0' })).toBeInTheDocument()
   expect(screen.getByText('no tags')).toBeInTheDocument()
 })
 
-test('many hosts: every one is listed by its name, a short line each, in the order given; its address is said to the pointer that rests on it', () => {
-  render(Sidebar, props())
-  expect(rows().map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['★ web-01', 'web-02', 'db-primary', 'bare'])
-  expect(rows().map((row) => row.getAttribute('title'))).toEqual(['deploy@10.0.0.5:2222', 'deploy@10.0.0.6', 'postgres@db.internal.example.com', null])
-  expect(screen.getByRole('img', { name: 'pinned' })).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: 'Hosts 4' })).toBeInTheDocument()
+// --- D12: the hosts are the view's in the middle -------------------------------
+
+test('the rail has no list of hosts: their row counts them, and not one is named, in full or narrow', async () => {
+  const { rerender } = render(Sidebar, props())
+  const nav = screen.getByRole('navigation')
+  expect(screen.getByRole('button', { name: 'Hosts 4' })).toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: 'Hosts' })).not.toBeInTheDocument()
+  for (const host of hosts) expect(nav, host.alias).not.toHaveTextContent(host.alias)
+  expect(nav.textContent).not.toMatch(/10\.0\.0\.|@/)
+  await rerender(props({ compact: true }))
+  expect(screen.queryByRole('list')).toBeNull()
+  for (const host of hosts) expect(nav, host.alias).not.toHaveTextContent(host.alias)
 })
 
-test('a host with nothing but a name shows the name and nothing made up', () => {
-  const { container } = render(Sidebar, props({ hosts: hosts.filter((h) => h.alias === 'bare') }))
-  expect(rows()).toHaveLength(1)
-  expect(rows()[0]).toHaveTextContent(/^bare$/)
-  expect(container.textContent).not.toMatch(/null|undefined|@|:/)
-})
-
-test('tags and groups are counted, and one click filters by them', async () => {
+test('tags and groups are counted, and one click narrows what the hosts\' row counts', async () => {
   const user = userEvent.setup()
   render(Sidebar, props())
   const tags = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('button')
@@ -51,21 +48,10 @@ test('tags and groups are counted, and one click filters by them', async () => {
   expect(db).toHaveAttribute('aria-pressed', 'false')
   await user.click(db)
   expect(db).toHaveAttribute('aria-pressed', 'true')
-  expect(rows().map((row) => row.textContent?.trim().split(/\s+/)[0])).toEqual(['db-primary'])
-  expect(screen.getByRole('heading', { name: 'Hosts 1' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Hosts 1' })).toBeInTheDocument()
 
   await user.click(db)
-  expect(rows()).toHaveLength(4)
-})
-
-test('a click selects a host, and the selected one is marked', async () => {
-  const user = userEvent.setup()
-  const onselect = vi.fn()
-  render(Sidebar, props({ onselect, selected: 'web-02' }))
-  expect(screen.getByRole('button', { name: /web-02/ })).toHaveAttribute('aria-current', 'true')
-  expect(screen.getByRole('button', { name: /db-primary/ })).not.toHaveAttribute('aria-current')
-  await user.click(screen.getByRole('button', { name: /db-primary/ }))
-  expect(onselect).toHaveBeenCalledExactlyOnceWith('db-primary')
+  expect(screen.getByRole('button', { name: 'Hosts 4' })).toBeInTheDocument()
 })
 
 test('open sessions are listed with their state; a click goes to the tab', async () => {
@@ -92,7 +78,7 @@ test('open sessions are listed with their state; a click goes to the tab', async
 test('in Vietnamese the words are the TUI\'s', () => {
   setLang('vi')
   render(Sidebar, props({ hosts: [] }))
-  expect(screen.getByRole('heading', { name: 'Máy chủ 0' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Máy chủ 0' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Thẻ 0' })).toBeInTheDocument()
   expect(screen.getByText('chưa có thẻ')).toBeInTheDocument()
 })
@@ -120,7 +106,7 @@ test('the tag chosen is the caller\'s to use: the dashboard filters by it too', 
 const rail = (over = {}) => {
   const heard = { onnav: vi.fn(), onvault: vi.fn() }
   const sessions = [{ id: 1, title: 'web-01', state: 'up', busy: null }]
-  render(Sidebar, props({ selected: 'web-01', sessions, snippets: 3, ...heard, ...over }))
+  render(Sidebar, props({ sessions, snippets: 3, ...heard, ...over }))
   return heard
 }
 const item = (name: string) => screen.getByRole('button', { name })
@@ -151,9 +137,9 @@ test('the view in front is the current page of the rail', () => {
   expect(item('Status')).not.toHaveAttribute('aria-current')
 })
 
-test("files and forwards are the selected host's: with none selected there is nowhere to go, nor to a session with none open", async () => {
+test('files and forwards are a host\'s: with no host there is nowhere to go, nor to a session with none open', async () => {
   const user = userEvent.setup()
-  const { onnav } = rail({ selected: null, sessions: [] })
+  const { onnav } = rail({ hosts: [], sessions: [] })
   for (const name of ['Files', 'Forwards', 'Sessions']) {
     expect(item(name), name).toBeDisabled()
     await user.click(item(name))
@@ -161,6 +147,15 @@ test("files and forwards are the selected host's: with none selected there is no
   expect(onnav).not.toHaveBeenCalled()
   expect(item('Status')).toBeEnabled()
   expect(item('Snippets 3')).toBeEnabled()
+})
+
+test('with hosts, files and forwards are there to ask for whether or not one is selected: the window asks whose', async () => {
+  const user = userEvent.setup()
+  const { onnav } = rail({ sessions: [] })
+  await user.click(item('Files'))
+  expect(onnav).toHaveBeenLastCalledWith('files')
+  await user.click(item('Forwards'))
+  expect(onnav).toHaveBeenLastCalledWith('forwards')
 })
 
 test('the vault says what it is on its row', () => {
@@ -179,9 +174,9 @@ test("the rail in Vietnamese: the table's words, and no other", () => {
 })
 
 test('forwards that listen are counted on their row, also with the dialog shut; none: no number', () => {
-  const { rerender } = render(Sidebar, props({ selected: 'web-01', tunnels: 2 }))
+  const { rerender } = render(Sidebar, props({ tunnels: 2 }))
   expect(screen.getByRole('button', { name: 'Forwards 2' })).toBeInTheDocument()
-  void rerender(props({ selected: 'web-01', tunnels: 0 }))
+  void rerender(props({ tunnels: 0 }))
   expect(screen.getByRole('button', { name: 'Forwards' })).toBeInTheDocument()
 })
 
@@ -233,7 +228,7 @@ test('in full the corner\'s button asks for the narrow rail, and the rows say th
   await user.click(narrow)
   expect(oncompact).toHaveBeenLastCalledWith(true)
   expect(item('Sessions 1')).not.toHaveAttribute('title')
-  expect(screen.getByRole('list', { name: 'Hosts' })).toBeInTheDocument()
+  expect(screen.getByRole('list', { name: 'Sessions' })).toBeInTheDocument()
 })
 
 test('the rail\'s first row is the way to the palette, with its key', async () => {

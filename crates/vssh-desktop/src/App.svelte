@@ -86,8 +86,8 @@
   /** Whom a command is for: the marked hosts, else the selected one, as in the TUI; in the order of the config. */
   const picked = $derived(hosts.filter((host) => (marked.length ? marked.includes(host.alias) : host.alias === selected)))
   let dashboard = $state<Dashboard>()
-  /** `newtab`: the palette, asked for a tab: the host chosen there is connected to. */
-  type Dialog = 'palette' | 'newtab' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
+  /** `newtab`: the palette, asked for a tab: the host chosen there is connected to. `pick-`: asked whose files, whose forwards. */
+  type Dialog = 'palette' | 'newtab' | 'pick-files' | 'pick-forwards' | 'snippets' | 'batch' | 'forwards' | 'vault' | 'host' | 'delete' | 'keys' | 'shortcuts'
   let modal = $state<Dialog | null>(null)
   /** The host form's host (none: a new one), and what a new one's form opens with. Also the host to delete, or to give a key. */
   let editing = $state<string>()
@@ -252,18 +252,32 @@
     restored = true
   }
 
+  /**
+   * Whose files, whose forwards: the rail has no host of its own to answer with, so it asks. First the
+   * host that is looked at (the session's in front, the card chosen), then those with a session, then the rest.
+   */
+  const asked = $derived.by(() => {
+    const looked = active === null ? selected : front ? (front.quick ? null : front.title) : files.find((view) => view.id === active)?.host
+    const open = [looked, ...sessions.filter((session) => !session.quick).map((session) => session.title)]
+    const first = [...new Set(open)].flatMap((alias) => hosts.find((host) => host.alias === alias) ?? [])
+    return [...first, ...hosts.filter((host) => !first.includes(host))]
+  })
+
+  /** A host's forwards, in their dialog. */
+  function tunnel(alias: string) {
+    forwarding = alias
+    modal = 'forwards'
+  }
+
   /** What the rail asks for: a view, or the dialog of what has no view of its own. */
   function go(to: Nav) {
     if (to === 'dashboard' || to === 'hosts') active = null
-    // The list of hosts is the dashboard's: there, at its search.
+    // The hosts are the dashboard's: there, at its search.
     if (to === 'hosts') void rendered().then(() => dashboard?.seek())
     else if (to === 'sessions') active = sessions.at(-1)?.id ?? active
-    else if (to === 'files' && selected) browse(selected)
+    else if (to === 'files') modal = 'pick-files'
     else if (to === 'snippets') modal = 'snippets'
-    else if (to === 'forwards' && selected) {
-      forwarding = selected
-      modal = 'forwards'
-    }
+    else if (to === 'forwards') modal = 'pick-forwards'
   }
 
   function step(by: number) {
@@ -602,9 +616,7 @@
   {#if !zen}
   <Sidebar
     {hosts}
-    {selected}
     bind:tag
-    onselect={(alias) => (selected = alias)}
     sessions={listed}
     {active}
     onsession={(id) => (active = id)}
@@ -655,6 +667,11 @@
             for (const other of order) if (other !== id) close(other)
             active = id
           }}
+          onbroadcast={(on) => {
+            // Every session, as the TUI's broadcast; the keys go back to the terminal that is typed in.
+            for (const session of sessions) session.broadcast = on
+            if (front) terms[front.id]?.focus()
+          }}
         />
     {/if}
     {#if active === null}
@@ -664,17 +681,15 @@
     <Dashboard
       bind:this={dashboard}
       {hosts}
-      {tag}
+      bind:tag
       {selected}
       hidden={active !== null}
       error={failed}
       onselect={(alias) => (selected = alias)}
       onconnect={open}
+      onquick={connect}
       onfiles={browse}
-      onforwards={(alias) => {
-        forwarding = alias
-        modal = 'forwards'
-      }}
+      onforwards={tunnel}
       onsnippets={() => (modal = 'snippets')}
       onbatch={() => {
         if (!picked.length) return
@@ -725,6 +740,8 @@
             oninput={(data) => input(session, data)}
             onstate={(said) => heard(session, said)}
             onreconnect={() => reconnect(session)}
+            broadcast={sessions.length > 1 && sessions.some((other) => other.broadcast) ? session.broadcast : undefined}
+            onbroadcast={() => (session.broadcast = !session.broadcast)}
           />
         </div>
       {/each}
@@ -809,14 +826,18 @@
   </Modal>
 {/if}
 
-{#if modal === 'palette' || modal === 'newtab'}
+{#if modal === 'palette' || modal === 'newtab' || modal === 'pick-files' || modal === 'pick-forwards'}
+  {@const whose = modal === 'pick-files' ? t('files') : modal === 'pick-forwards' ? t('forwards') : undefined}
   <Palette
-    {hosts}
+    hosts={whose ? asked : hosts}
+    pick={whose && `${whose}: ${t('which_host')}`}
     onhost={(alias) => {
-      const tab = modal === 'newtab'
+      const was = modal
       modal = null
-      // Asked for a tab: the host is connected to.
-      if (tab) return void open(alias)
+      // Asked for a tab: the host is connected to. Asked whose: its files, its forwards.
+      if (was === 'newtab') return void open(alias)
+      if (was === 'pick-files') return browse(alias)
+      if (was === 'pick-forwards') return tunnel(alias)
       // Its card is on the dashboard: from a terminal, that comes forward.
       selected = alias
       active = null

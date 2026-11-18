@@ -30,6 +30,7 @@ test('the cheatsheet: a dialog with the keys in groups, each key a key cap', () 
     ['Split right', ['Ctrl+Shift+D']],
     ['Split down', ['Ctrl+Shift+E']],
     ['Focus mode: hide the sidebar', ['Ctrl+Shift+B', 'Ctrl+B']],
+    ['Paste into the session in front', ['Ctrl+Shift+V']],
     ['close', ['Esc']],
   ])
   // After the leader the split has tmux's keys, and the two that draw the line they make.
@@ -61,7 +62,7 @@ test('the field narrows the rows, by what a key does or by the key; nothing foun
   expect(rows('Anywhere').map(([label]) => label)).toEqual(['New tab: quick connect', 'Close tab', 'Next tab', 'Previous tab'])
   await user.clear(field)
   await user.type(field, 'ctrl+f')
-  expect(rows('Hosts')).toEqual([['Search hosts, #tag', ['/', 'Ctrl+F']]])
+  expect(rows('Hosts')).toEqual([['Find a host, or type user@hostname to connect', ['/', 'Ctrl+F']]])
   expect(groups()).toEqual(['Hosts', 'Files', 'Command results'])
   await user.type(field, 'zzz')
   expect(screen.queryAllByRole('region')).toHaveLength(0)

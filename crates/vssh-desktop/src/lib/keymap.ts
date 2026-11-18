@@ -29,6 +29,8 @@ export const KEY = {
   copy: ['C'],
   hidden: ['.'],
   copyAll: ['Y'],
+  // With Shift: plain Ctrl-V is the shell's own (the next key, as it is).
+  paste: ['Ctrl+Shift+V'],
 } as const
 
 type Keys = readonly string[]
@@ -53,6 +55,7 @@ export const sheet = (): Group[] => [
       [KEY.splitRight, t('split_right')],
       [KEY.splitDown, t('split_down')],
       [KEY.focus, focus()],
+      [KEY.paste, t('paste_session')],
       [['Esc'], t('close')],
     ],
   },

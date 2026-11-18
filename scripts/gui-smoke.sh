@@ -56,6 +56,16 @@
 #   the rail            narrow: its icons, a wider terminal, kept by the web view
 #   what was open       is open again when the app comes back, after the vault
 #
+# And the hosts in the middle (D12):
+#
+#   the rail            names no host: where the list was it is empty
+#   the search          Enter there is the card found; the arrow down too
+#   the broadcast       button of the strip: one line in both shells; a pane's
+#                       own switch takes it out and in again
+#   Ctrl-Shift-V        pastes into the terminal in front, once
+#   the other pane      keeps its cursor, and it breathes
+#   Files in the rail   asks whose, and opens that host's
+#
 # Then the vault, the host form and the key setup (D6):
 #
 #   the vault           made by a passphrase, a sealed backup exported; at the
@@ -75,8 +85,8 @@
 #
 # Then what D7 added, in the app as it was started last, in Vietnamese:
 #
-#   the toolbar         with cards marked its controls take a second row
-#                       together, from the search's own margin
+#   the bar             over the cards: with cards marked it is still two rows
+#                       from one margin, the search and under it the tags
 #   the Day theme       TokyoNight Day around a terminal that stays dark
 #   streamer mode       made-up addresses on screen, the real ones in the
 #                       config and on the wire; both switches are kept by the
@@ -84,15 +94,15 @@
 #
 # Screenshots land in docs/img/desktop-d1*.png, desktop-d2*.png, desktop-d3*.png,
 # desktop-d4*.png, desktop-d5*.png, desktop-d6*.png, desktop-d7*.png,
-# desktop-d9-rail*.png, desktop-d10-{shortcuts,split,focus}*.png and
-# desktop-d11-compact*.png
+# desktop-d9-rail*.png, desktop-d10-{shortcuts,split,focus}*.png,
+# desktop-d11-compact*.png and desktop-d12-broadcast*.png
 # (.vi.png: the Vietnamese UI; d3-fail: a connection that fails, d3-closed:
 # one that drops; d4-sftp: the file view with transfers under way; d5-batch:
 # what four hosts answered to one command; d6-vault: the vault's manager,
 # d6-host: the host form; d7-day: the Day theme, d7-streamer: streamer mode;
 # d9-rail: the rail with every row in use; d10-shortcuts: the cheatsheet,
 # d10-split: two shells side by side, d10-focus: the same with no rail;
-# d11-compact: the rail as icons);
+# d11-compact: the rail as icons; d12-broadcast: two panes with broadcast on);
 # those of the steps in between, in target/smoke/.
 #
 # shortcut: the window is driven blind with xdotool, and what is asserted is
@@ -303,10 +313,20 @@ shot docs/img/desktop-d2.png
 
 # Concept A in TokyoNight Night is what is on screen: the page in the gutter
 # left of the cards, the panel inside the first card (its padding, low enough
-# to be under a down card's tint), and the header's band beside the title.
-night="$(pixel docs/img/desktop-d2.png 264 300) $(pixel docs/img/desktop-d2.png 285 500) $(pixel docs/img/desktop-d2.png 600 20)"
-[ "$night" = "16161e 1f2335 1a1b26" ] || { echo "FAIL: page, card and header are $night, not 16161e 1f2335 1a1b26"; exit 1; }
-step "the Night theme: page #16161e, cards #1f2335, the header's band #1a1b26"
+# to be under a down card's tint), and the band the search is on, right of
+# its last button.
+night="$(pixel docs/img/desktop-d2.png 264 300) $(pixel docs/img/desktop-d2.png 285 500) $(pixel docs/img/desktop-d2.png 1085 36)"
+[ "$night" = "16161e 1f2335 1a1b26" ] || { echo "FAIL: page, card and the search's band are $night, not 16161e 1f2335 1a1b26"; exit 1; }
+step "the Night theme: page #16161e, cards #1f2335, the search's band #1a1b26"
+
+# D12: the rail names no host. Its seven rows end with the vault's, and from
+# there down to the tags, where rows were pushed by the list of hosts, it is
+# its own ground and nothing else: one colour along every line looked at.
+for y in 370 400 430 460 490 520; do
+    [ "$(ffmpeg -loglevel error -i docs/img/desktop-d2.png -vf "crop=150:1:54:$y" -f rawvideo -pix_fmt rgb24 - | od -An -v -tx1 -w3 | sort -u | wc -l)" -eq 1 ] ||
+        { echo "FAIL: the rail has something at y $y, under its rows: a list of hosts?"; exit 1; }
+done
+step "the rail has no list of hosts: under its rows it is empty down to the tags"
 
 # One connection per host that lets us in, however many rounds were asked.
 logins=$(accepted)
@@ -316,14 +336,16 @@ grep -q '127.0.0.2' "$home/.ssh/known_hosts" && { echo "FAIL: the dashboard reco
 step "the host nobody connected to was left alone"
 
 xdotool windowfocus "$win"
-# / is the search box; four Tabs on (Group by tag, Add host, the sort) is the first card.
-first_card() { xdotool key --window "$win" slash Tab Tab Tab Tab; }
+# / is the search box; the arrow down from it is the first card, however many
+# tags and controls are in the bar between them.
+first_card() { xdotool key --window "$win" slash Down; }
 # The dashboard back at its top: the wheel, in the gutter between the two
 # columns of cards. A quick peek that opens under a card scrolls the page.
 top() { xdotool mousemove --window "$win" 672 420 click --repeat 40 --delay 10 4; aside; }
-# The pointer where it rests on nothing: the right of the dashboard's head, which
-# is under the tabs when there are some. No card's peek, no button's tooltip.
-aside() { xdotool mousemove --window "$win" 1000 70; sleep 0.5; }
+# The pointer where it rests on nothing in any view: the status bar, right of
+# its figures. No card's peek, no button's tooltip. (In focus mode, which has
+# no status bar, that is the foot of a terminal.)
+aside() { xdotool mousemove --window "$win" 700 690; sleep 0.5; }
 # The settings, at the rail's foot: a menu whose first row has the keys. Down to
 # the row asked for, and Enter: 1 the language, 2 the theme, 3 streamer mode,
 # 4 focus mode, 5 the cheatsheet. RAIL: the middle of the rail, which may be narrow.
@@ -370,16 +392,14 @@ sleep 1
 shot target/smoke/hover.png
 aside
 
-# A person asking about the host nobody connected to: the last card. On the
-# way, a tall card is five tab stops (the card, Edit, Forwards, Files, Connect)
-# and one more if it is down (Try again): web-02, then db-replica, cache-01 and
-# legacy. A low one is two (the card, Connect): web-01 and db-primary; and one
-# more for the card before the last, which nobody asked either (its Quick peek
-# button). That is
+# A person asking about the host nobody connected to: the last card, which
+# the palette finds. That is
 # a decision: its key goes on record, as with `v` in the TUI, and from then
 # on it is polled like the others.
-first_card
-xdotool key --window "$win" --repeat 30 Tab
+xdotool key --window "$win" ctrl+k
+xdotool type --window "$win" new-box
+xdotool key --window "$win" Return
+sleep 1
 xdotool key --window "$win" v
 sleep 3
 shot target/smoke/asked.png
@@ -482,6 +502,38 @@ key ctrl+Tab
 run 'touch stepped-on'
 there 2205/stepped-on "Ctrl-Tab did not bring shell-02's tab back to the front"
 step "Ctrl-Shift-Tab and Ctrl-Tab went through the tabs, from inside a terminal"
+
+# D12: the strip's own switch, there since two shells are open. One click,
+# and one line typed runs in both: the click left the keys where they were.
+# The pointer goes back into the terminal: no tooltip in a picture.
+cast() { xdotool mousemove --window "$win" 960 24 click 1; xdotool mousemove --window "$win" 700 400; sleep 0.7; }
+# A pane's own switch, top right of its terminal while broadcast is on.
+PANE_CAST="1034 75"
+cast
+run 'touch cast'
+there 2204/cast "the strip's broadcast button: what was typed did not reach shell-01"
+there 2205/cast "the strip's broadcast button: what was typed did not run in shell-02, where it was typed"
+shot target/smoke/cast-on.png
+# shell-02, in front, out of it by its own switch: it hears itself only, and
+# is not heard.
+xdotool mousemove --window "$win" $PANE_CAST click 1
+xdotool mousemove --window "$win" 700 400
+sleep 0.7
+run 'touch alone'
+shot target/smoke/cast-pane-off.png
+there 2205/alone "a pane switched out of broadcast lost the keys"
+[ ! -e "$home/sshd/2204/alone" ] || { echo "FAIL: shell-01 heard a pane that was switched out of broadcast"; exit 1; }
+# In again by the same switch; then all of it off by the strip's.
+xdotool mousemove --window "$win" $PANE_CAST click 1
+xdotool mousemove --window "$win" 700 400
+sleep 0.7
+run 'touch together'
+there 2204/together "a pane switched back into broadcast was not heard by the other"
+cast
+run 'touch after-cast'
+there 2205/after-cast "with broadcast off again the terminal in front lost the keys"
+[ ! -e "$home/sshd/2204/after-cast" ] || { echo "FAIL: the strip's button did not turn broadcast off"; exit 1; }
+step "the strip's broadcast button: one line ran in both shells; a pane's own switch took it out and in; off again by the button"
 
 # Broadcast on both tabs: one line typed, two shells run it.
 key ctrl+a b
@@ -1064,7 +1116,7 @@ key Escape
 # brings it to the front, and what is typed then is typed in its shell.
 for name in shell-01 cache-01 legacy shell-02; do mark "$name"; done
 rail() { xdotool mousemove --window "$win" 120 "$1" click 1; sleep 1; }
-rail 294
+rail 198
 run 'touch rail'
 there 2205/rail "the rail's Sessions row did not bring shell-02's terminal to the front"
 step "the rail's Sessions row brought the open session to the front"
@@ -1078,6 +1130,24 @@ sleep 5
 there 2205/rail-back "the rail's first row did not bring the dashboard back: x asked for no command"
 key Escape
 step "the rail's first row brought the dashboard back, with its keys"
+# D12: files and forwards are some host's, and the rail names none: it asks
+# whose. Left unanswered nobody is asked; answered with files-01, that host is
+# asked for its SFTP. Ctrl-W closes the files' tab.
+before=$(sftps)
+rail 282
+shot target/smoke/whose-files.png
+key Escape
+sleep 2
+[ "$(sftps)" -eq "$before" ] || fail "the rail's Files row opened somebody's files before it was said whose"
+rail 282
+typed files-01
+key Return
+sleep 5
+shot target/smoke/whose-files-answered.png
+[ "$(sftps)" -gt "$before" ] || fail "the rail's Files row, answered with files-01, did not ask that host for its files"
+key ctrl+w
+key ctrl+a 0
+step "the rail's Files row asked whose, and opened the files of the host it was told"
 top
 shot docs/img/desktop-d9-rail.png
 language
@@ -1150,13 +1220,13 @@ key ctrl+shift+w
 step "Ctrl-T's palette connected to an address as it was typed; in a terminal Ctrl-T and ? stayed the shell's"
 
 # From the last tab Ctrl-Tab comes round to the dashboard. There Ctrl-F is the
-# search: what is typed is a filter, not the dashboard's keys, and the one
-# card it leaves is four tab stops on.
+# search: what is typed is a filter, not the dashboard's keys. Enter there is
+# the one card it leaves, and Enter on the card its tab.
 key ctrl+Tab
 key ctrl+f
 xdotool type --window "$win" shell-01
 shot target/smoke/find.png
-key Tab Tab Tab Tab Return
+key Return Return
 sleep 3
 run 'touch found'
 there 2204/found "Ctrl-F did not put the keys in the hosts' search"
@@ -1166,7 +1236,14 @@ step "Ctrl-Tab came round to the dashboard, and Ctrl-F there searched the hosts"
 # --- D10: panes, focus mode, and the tabs under the pointer --------------------
 # What the shell in front says of itself, in shell-01's directory: the columns
 # of its terminal, and which terminal it is.
-cols() { run "stty size >$1"; cut -d' ' -f2 "$home/sshd/2204/$1"; }
+# The shell may be a moment behind the keys: its answer is waited for, and a
+# shell that never gave one is in a picture.
+cols() {
+    run "stty size >$1"
+    for _ in 1 2 3 4 5 6; do [ -s "$home/sshd/2204/$1" ] && break; sleep 1; done
+    [ -s "$home/sshd/2204/$1" ] || fail "the shell in front did not answer stty: no $1 in shell-01's directory" >&2
+    cut -d' ' -f2 "$home/sshd/2204/$1"
+}
 tty_of() { run "tty >$1"; cat "$home/sshd/2204/$1"; }
 # The middle of the tab in front: in the strip of tabs it alone has the
 # terminal's ground. Right of the rail, which has it too.
@@ -1207,6 +1284,26 @@ shot docs/img/desktop-d10-split.png
 language
 shot docs/img/desktop-d10-split.vi.png
 language
+# D12: the pane that has not the keys keeps its cursor, and it breathes: eight
+# pictures of the left half of the frame, where nothing else moves, are not
+# all one picture.
+frames=$(for n in 1 2 3 4 5 6 7 8; do
+    ffmpeg -loglevel error -f x11grab -draw_mouse 0 -video_size 400x560 -i "$DISPLAY+260,70" -frames:v 1 -f rawvideo -pix_fmt rgb24 - | cksum
+    sleep 0.2
+done | sort -u | wc -l)
+[ "$frames" -gt 1 ] || fail "the cursor of the pane that has not the keys stands still: 8 pictures of it are one"
+step "the pane beside the one in front shows its cursor, and it breathes ($frames different pictures of 8)"
+# Broadcast across the two panes: the strip's button lit, each pane with its own switch.
+cast
+shot docs/img/desktop-d12-broadcast.png
+# The settings took the keys: a click gives them back to the pane on the right,
+# so both pictures are of the same state.
+language
+pane "$RIGHT"
+shot docs/img/desktop-d12-broadcast.vi.png
+language
+pane "$RIGHT"
+cast
 # A click in a pane brings it to the front.
 pane "$LEFT"
 [ "$(tty_of clicked-tty)" = "$first" ] || fail "a click in the left pane did not give it the keys"
@@ -1319,6 +1416,16 @@ if command -v xclip >/dev/null; then
     sleep 1
     there 2204/pasted-by-menu "Paste in the terminal's menu did not type what the clipboard had"
     step "the right button in a terminal pasted the clipboard into the shell"
+    # D12: the same by Ctrl-Shift-V, once: the web view's own paste did not come after it.
+    printf 'touch pasted-by-key' | xclip -selection clipboard
+    key ctrl+shift+v
+    sleep 1
+    shot target/smoke/pasted-by-key.png
+    key Return
+    sleep 1
+    there 2204/pasted-by-key "Ctrl-Shift-V did not type what the clipboard had into the terminal in front"
+    [ ! -e "$home/sshd/2204/pasted-by-keytouch" ] || fail "Ctrl-Shift-V pasted twice"
+    step "Ctrl-Shift-V pasted the clipboard into the terminal in front, once"
 fi
 
 # The rail narrow, by its corner's button: the terminal is wider by what the
@@ -1412,28 +1519,29 @@ sleep 3
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the vault, the host form and the key setup"
 
-# --- D7: the toolbar's second row, the Day theme, streamer mode ---------------
+# --- D7: the bar's two rows, the Day theme, streamer mode ---------------------
 # The app is in Vietnamese.
 # The two switches, rows of the settings.
 streamer() { setting 3; }
 theme() { setting 2; }
 pixels() { file=$1; shift; while [ $# -ge 2 ]; do printf '%s ' "$(pixel "$file" "$1" "$2")"; shift 2; done; }
 
-# With cards marked the Vietnamese controls have no room beside the search:
-# they are on a second row, all of them. Its first button starts where the
-# search does: left of x 276 the band is the band's own in both rows, and at
-# x 276 both have their border. Under the second row the band is its own to
-# its end: no card shows through. (The tabs that came back with the app are
-# the window's top row: the dashboard's head and its band are under them.)
+# With cards marked the second row of the bar has two buttons more, in
+# Vietnamese the longest it gets: it is still two rows, and the tags give way.
+# Both start where the search does: left of x 276 the band is the band's own
+# in both rows, and at x 276 both have their line. Under the second row the
+# band is its own down to the line it ends with: no third row, and no card
+# shows through, though the cards are scrolled under it. (The tabs that came
+# back with the app are the window's top row: the bar is under them.)
 for name in shell-01 shell-02; do mark "$name"; done
 aside
 shot target/smoke/toolbar-wrap.vi.png
-rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 155 275 205 500 235)
-[ "$rows" = "1a1b26 1a1b26 1a1b26 " ] || fail "the toolbar's two rows do not start at one margin, or a card shows through: $rows"
-case "$(pixels target/smoke/toolbar-wrap.vi.png 276 155 276 205)" in
-*1a1b26*) fail "the toolbar's two rows do not both start at x 276" ;;
+rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 85 275 135 500 164 500 171)
+[ "$rows" = "1a1b26 1a1b26 1a1b26 2a2f45 " ] || fail "the bar over the cards is not two rows from one margin, or it took a third: $rows"
+case "$(pixels target/smoke/toolbar-wrap.vi.png 276 85 276 135)" in
+*1a1b26*) fail "the bar's two rows do not both start at x 276" ;;
 esac
-step "with cards marked, the Vietnamese toolbar is two rows from one margin"
+step "with cards marked, the Vietnamese bar is two rows from one margin, and no third"
 for name in shell-01 shell-02; do mark "$name"; done
 
 # Day: the window's background, and the panel of the first card (its padding,

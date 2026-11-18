@@ -23,9 +23,11 @@
     /** Focus mode, on or off; and, with a tab in front, another shell beside it or (`down`) under it. */
     onzen?: () => void
     onsplit?: (down: boolean) => void
+    /** A question whose answer is a host ("Files: which host?"): the hosts are all it offers, in the order given. */
+    pick?: string
     onclose: () => void
   }
-  let { hosts, onhost, onconnect, onsnippets, onadd, onvault, onshortcuts, onzen, onsplit, onclose }: Props = $props()
+  let { hosts, onhost, onconnect, onsnippets, onadd, onvault, onshortcuts, onzen, onsplit, pick, onclose }: Props = $props()
 
   /** `keys`: an action's own key, for the next time. */
   type Item = { key: string; label: string; detail: string; keys?: readonly string[]; action: boolean; run: () => void }
@@ -78,6 +80,10 @@
       return { item, score: best(fuzzy(query, host.alias), rest === null ? null : rest + 100) }
     })
     const typed = query.trim()
+    if (pick) {
+      const asked = typed ? rows.filter((row) => row.score !== null).sort((a, b) => a.score! - b.score!) : rows
+      return asked.map((row) => row.item)
+    }
     if (!typed) return [...actions, ...rows].map((row) => row.item)
     const found = actions.map(({ item, en }) => ({ item, score: best(fuzzy(query, item.label), fuzzy(query, en)) }))
     const matched = [...rows, ...found]
@@ -111,7 +117,7 @@
   }
 </script>
 
-<Modal label={t('palette')} {onclose}>
+<Modal label={pick ?? t('palette')} {onclose}>
   <!-- The concept's search: a glass, the field, and the key that closes it. -->
   <label class="flex items-center gap-3 px-5 text-dim">
   <Icon name="search" />
@@ -124,11 +130,11 @@
     data-masked={(streamer.on && /[.:@]/.test(query)) || undefined}
     {onkeydown}
     role="combobox"
-    aria-label={t('search')}
+    aria-label={pick ?? t('search')}
     aria-expanded="true"
     aria-controls="palette-options"
     aria-activedescendant={items.length ? `palette-option-${at}` : undefined}
-    placeholder={t('search')}
+    placeholder={pick ?? t('search')}
     autocomplete="off"
     autocapitalize="off"
     spellcheck="false"

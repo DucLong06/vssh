@@ -139,3 +139,61 @@ test('with the sidebar there, the strip has no button for it and no leader to sa
   expect(screen.queryByRole('button', { name: 'Show the sidebar' })).toBeNull()
   expect(screen.queryByRole('status')).toBeNull()
 })
+
+// --- D12: broadcast, from the strip ---------------------------------------------
+
+const cast = () => screen.queryByRole('button', { name: 'broadcast' })
+
+test('the broadcast button is there once two sessions are open and not before: one session has nobody to broadcast to, and a host\'s files are no session', async () => {
+  const onbroadcast = vi.fn()
+  const { rerender } = render(Tabs, { sessions: [], active: null, onpick: vi.fn(), onclose: vi.fn(), onbroadcast })
+  expect(cast()).toBeNull()
+  await rerender({ sessions: [session(1, 'web-01')], files: [{ id: -1, host: 'web-01' }, { id: -2, host: 'web-02' }], active: 1 })
+  expect(cast()).toBeNull()
+  await rerender({ sessions: [session(1, 'web-01'), session(2, 'web-01')] })
+  expect(cast()).toBeInTheDocument()
+  // On the dashboard too: what is open is open behind it.
+  await rerender({ active: null })
+  expect(cast()).toBeInTheDocument()
+  // One of the two closed: the button goes with it.
+  await rerender({ sessions: [session(2, 'web-01')] })
+  expect(cast()).toBeNull()
+})
+
+test('nobody to tell: without a way to ask for it the strip has no broadcast button', () => {
+  open()
+  expect(cast()).toBeNull()
+})
+
+test('the broadcast button is a switch: off it asks for all of them, and says in its tooltip what it does and its key; on it is lit, and asks for none', async () => {
+  const onbroadcast = vi.fn()
+  const user = userEvent.setup()
+  const sessions = [session(1, 'web-01'), session(2, 'web-02'), session(3, 'db-primary')]
+  const { rerender } = render(Tabs, { sessions, active: 1, onpick: vi.fn(), onclose: vi.fn(), onbroadcast })
+  const button = cast()!
+  expect(button).toHaveAttribute('aria-pressed', 'false')
+  expect(button).toHaveAccessibleName('broadcast')
+  expect(button).toHaveAttribute('title', 'Broadcast: type once, run in every open session (Ctrl+A Shift+B)')
+  // Lit and with a line around it only while it is on.
+  expect(button).toHaveClass('aria-pressed:border-yellow', 'aria-pressed:text-yellow', 'border-transparent')
+  await user.click(button)
+  expect(onbroadcast).toHaveBeenLastCalledWith(true)
+
+  await rerender({ sessions: sessions.map((tab) => ({ ...tab, broadcast: true })) })
+  expect(button).toHaveAttribute('aria-pressed', 'true')
+  // No wider for being on: the tabs beside it keep their room.
+  expect(button).toHaveAccessibleName('broadcast')
+  // One pane taken out of it by its own switch: still on, for the two that are left.
+  await rerender({ sessions: sessions.map((tab) => ({ ...tab, broadcast: tab.id !== 2 })) })
+  expect(button).toHaveAttribute('aria-pressed', 'true')
+  await user.click(button)
+  expect(onbroadcast).toHaveBeenLastCalledWith(false)
+})
+
+test('the broadcast button in Vietnamese', () => {
+  setLang('vi')
+  render(Tabs, { sessions: [session(1, 'web-01'), session(2, 'web-02')], active: 1, onpick: vi.fn(), onclose: vi.fn(), onbroadcast: vi.fn() })
+  const button = screen.getByRole('button', { name: 'phát' })
+  expect(button).toHaveAttribute('title', 'Phát: gõ một lần, chạy ở mọi phiên đang mở (Ctrl+A Shift+B)')
+  setLang('en')
+})

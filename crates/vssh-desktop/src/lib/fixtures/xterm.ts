@@ -43,7 +43,8 @@ export class Terminal {
   loadAddon() {}
   open() {}
   write(data: Uint8Array | string) {
-    this.written += typeof data === 'string' ? data : new TextDecoder().decode(data)
+    // As the real one: a switch of its modes is obeyed, and nothing of it is on the screen.
+    this.written += (typeof data === 'string' ? data : new TextDecoder().decode(data)).replace(/\x1b\[\?\d+[hl]/g, '')
   }
   focus() {
     for (const other of terminals) other.focused = other === this

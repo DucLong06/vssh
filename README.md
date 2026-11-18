@@ -22,11 +22,13 @@ Pure Rust SSH ([russh](https://github.com/warp-tech/russh)); no `ssh` binary nee
 
 Your hosts in a window: a dashboard of host cards with live stats, terminal tabs with broadcast, a dual-pane SFTP view, snippets, batch runs, port forwards and the vault.
 
-![The dashboard: the nav rail on the left, a row of figures, host cards grouped by tag with sparklines and disk bars, two sessions open in tabs](docs/img/desktop-d9-rail.png)
+![The dashboard: the nav rail on the left with no list of hosts in it, the search and the tags over a row of figures, host cards by group with their addresses, two sessions open in tabs](docs/img/desktop-d9-rail.png)
 
 | Quick peek | Terminal tabs, broadcasting |
 |---|---|
-| ![The quick peek of a host: connection, system, uptime, load, CPU, memory and disk](docs/img/desktop-d2-peek.png) | ![A shell in a terminal tab, two tabs with broadcast on, the status bar saying so](docs/img/desktop-d3-terminal.png) |
+| ![The quick peek of a host: connection, system, uptime, load, CPU, memory and disk](docs/img/desktop-d2-peek.png) | ![A shell in a terminal tab, two tabs with broadcast on: the strip's button lit, the status bar saying so](docs/img/desktop-d3-terminal.png) |
+| **Two panes, one keyboard** | **Every key** |
+| ![Two shells side by side with broadcast on: the button of the strip lit, each pane with its own switch](docs/img/desktop-d12-broadcast.png) | ![The cheatsheet: every key the window has, by where it works](docs/img/desktop-d10-shortcuts.png) |
 | **Files: this machine and the host** | **One command on four hosts** |
 | ![The dual-pane file view with two uploads under way: per cent, speed, time left](docs/img/desktop-d4-sftp.png) | ![A batch run: two hosts answered, two failed and say why](docs/img/desktop-d5-batch.png) |
 | **The host form** | **The vault** |
@@ -38,19 +40,19 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 
 ## Features
 
-- **Dashboard.** Every host of `~/.ssh/config` is a card: a latency badge, its tags, sparklines of CPU and memory over the last minute, a bar for the root disk. Above the cards a row of figures: hosts reachable, CPU, memory, and which hosts are down. A host that is down or past a critical mark comes first, and its card says why (`DNS`, `REFUSED`, `AUTH`, …) with a "Try again" button.
-- **Group, sort, search.** Cards are grouped by tag or shown flat; sorted by your own order, name, latency or CPU. Drag a card onto another to reorder, or `Alt` + arrow. `/` searches by name, address or `#tag`; a tag clicked in the rail filters too.
+- **Dashboard.** Every host of `~/.ssh/config` is a card in the middle of the window: its name, `user@host`, its tags, a latency badge, sparklines of CPU and memory over the last minute, a bar for the root disk. The rail on the left lists no hosts: it leads to the views and counts. Above the cards a row of figures: hosts reachable, CPU, memory, and which hosts are down. A host that is down or past a critical mark comes first, and its card says why (`DNS`, `REFUSED`, `AUTH`, …) with a "Try again" button.
+- **Group, sort, search.** Cards are in sections by group, each headed `name (how many)`, or shown flat; sorted by your own order, name, latency or CPU. Drag a card onto another to reorder, or `Alt` + arrow. `/` searches by name, address or `#tag`, and `Enter` or the arrow down goes to the first card found. Under the search the tags are one row: a click filters, and so does a tag in the rail.
 - **Live stats without surprises.** Stats are read every 5 seconds over one connection per host that is kept open, not a login per round. Only a host you have connected to before (its key is in `known_hosts`) and that needs no jump host is asked; the others say "not checked" until you ask them with `v`. Reachability is checked once a minute.
 - **Quick peek.** `v` on a card: what the host says about itself — name, system, uptime, load, CPU, memory, disk — with its address and whether it answers. The answer is kept for 30 seconds; `r` asks again, `Esc` closes.
-- **Terminal tabs.** `Enter` or "Connect" opens a real shell in a tab (a PTY over russh, drawn by xterm.js). Mark several cards with `Space` and `Enter` connects to all of them. A tab shows its state and, on Linux hosts, the command running in it. Selecting text copies it. When a shell ends the tab offers "Reconnect".
-- **Broadcast.** `Ctrl-A` `b` turns broadcast on for a tab, `Ctrl-A` `B` for all: what you type goes to every tab that has it on. Those tabs turn yellow and the status bar says "Broadcasting: N".
+- **Terminal tabs.** `Enter` or "Connect" opens a real shell in a tab (a PTY over russh, drawn by xterm.js). Mark several cards with `Space` and `Enter` connects to all of them. A tab shows its state and, on Linux hosts, the command running in it. Selecting text copies it; `Ctrl-Shift-V` or the right button pastes. Side by side in panes, a click gives a pane the keys, and the others keep a dim cursor that breathes. When a shell ends the tab offers "Reconnect".
+- **Broadcast.** With two shells open, in tabs or panes, the strip of tabs has a "Broadcast" button (`Ctrl-A` `B`): on, what you type or paste in one goes to all of them. The button is lit, those tabs turn yellow and the status bar says "Broadcasting: N". While it is on every pane has its own switch at its top right (`Ctrl-A` `b`): out of it, and in again.
 - **When a connection fails** a dialog says why, in the same classes as the terminal app, down to which hop of a jump chain failed. A host key that changed shows the new fingerprint and the `known_hosts` line it conflicts with, and asks: Accept once, Trust, or Cancel.
-- **SFTP, two panes.** `f` on a card, or "Files" in its right-click menu: this machine on the left, the host on the right, in a tab of its own. `Space` marks, `c` copies to the other side; so do the two arrows between the panes and dragging rows across. A file that exists on the other side waits for a yes. Right-click for Upload or Download, New folder, Rename, Delete, Refresh. Each transfer has a line under the panes: bar, per cent, speed, time left, Cancel; three run at once. `.` shows hidden files, `/` filters. Files only: directories are not copied.
+- **SFTP, two panes.** `f` on a card, "Files" in its right-click menu, or "Files" in the rail, which asks which host: this machine on the left, the host on the right, in a tab of its own. `Space` marks, `c` copies to the other side; so do the two arrows between the panes and dragging rows across. A file that exists on the other side waits for a yes. Right-click for Upload or Download, New folder, Rename, Delete, Refresh. Each transfer has a line under the panes: bar, per cent, speed, time left, Cancel; three run at once. `.` shows hidden files, `/` filters. Files only: directories are not copied.
 - **Snippets.** `s`, or "Snippets" in the rail: saved commands, for one host or for all. A snippet may have parameters (`systemctl restart {{unit}}`); they are asked for when it runs. It runs on the hosts you marked.
 - **Batch runs.** Mark hosts with `Space`, press `x`, type one command. It runs on all of them at once, each over its own connection; every host shows its output, or the reason it failed. `j`/`k` scroll, `/` filters by host, "Copy all" takes the lot.
-- **Port forwards.** `L` on a card, or "Forwards" in its right-click menu: the host's forwards in a table — Local, Remote or SOCKS, the port, where it leads, whether it runs. Switch one on or off, add one, delete one. A port that is taken is said in the form, with another port to try.
+- **Port forwards.** `L` on a card, "Forwards" in its right-click menu, or "Forwards" in the rail, which asks which host: the host's forwards in a table — Local, Remote or SOCKS, the port, where it leads, whether it runs. Switch one on or off, add one, delete one. A port that is taken is said in the form, with another port to try.
 - **Hosts.** `a` or "Add host", `e` to edit, `d` to delete (it asks first). The form has alias, host, user, port, how to sign in (vault password, key file or agent), jump host, tags, group, pinned, notes; it can import the hosts of another ssh config, with a preview. Hosts are written to `~/.ssh/config` as normal `Host` blocks.
-- **Quick connect.** In the palette: `user@host[:port]`, and nothing is saved. With such a session in front the status bar offers "Save this host".
+- **Quick connect.** In the hosts' search or in the palette: `user@host[:port]`, and nothing is saved. With such a session in front the status bar offers "Save this host".
 - **Vault.** Passwords of your hosts, encrypted with Argon2id + XChaCha20-Poly1305 under one passphrase. A locked vault asks for it as the app starts and stays unlocked until the app is closed. The dialog also creates a vault, changes the passphrase and exports an encrypted backup. A forgotten passphrase cannot be recovered.
 - **Streamer mode.** In the settings (the cog at the foot of the rail): every address the window shows becomes a made-up one from the documentation ranges (`203.0.113.x`, `198.51.100.x`), the same for the same host every time. Only what is shown changes: the config, the database and what is sent to a host keep the real ones. Host aliases and what a shell prints are left as they are.
 - **Themes.** TokyoNight Night (the default) and Day, switched in the settings. The terminal itself stays Night in both.
@@ -62,7 +64,7 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 | Where | Key | Action |
 |-------|-----|--------|
 | Anywhere | `Ctrl-K`; in a terminal `Ctrl-Shift-K` | command palette |
-| Dashboard | `/` | search hosts, `#tag` for a tag |
+| Dashboard | `/` | search hosts, `#tag` for a tag; `Enter` or `↓` to the first card; `user@host` and `Enter` connects |
 | | `a` | add a host |
 | | `s` | snippets |
 | | `x` | run one command on the marked hosts |
@@ -75,6 +77,7 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 | Tabs | `Ctrl-A`, then `0`-`9` | go to a tab |
 | | `Ctrl-A`, then `Tab` or `n` / `p` | next / previous tab |
 | | `Ctrl-A`, then `b` / `B` | broadcast: this tab / all tabs |
+| | `Ctrl-Shift-V` | paste into the terminal in front |
 | | `Ctrl-A`, then `y` | copy the last command's output |
 | | `Ctrl-A`, then `q` | back to the dashboard |
 | | `Ctrl-A`, then `x` or `d`; `Ctrl-W`, in a terminal `Ctrl-Shift-W` | close the tab |
