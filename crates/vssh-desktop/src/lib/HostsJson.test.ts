@@ -163,3 +163,18 @@ test('in Vietnamese, and in streamer mode no address of the file is on screen', 
   expect(button('Bỏ qua')).toBeInTheDocument()
   expect(button('Ghi đè')).toBeInTheDocument()
 })
+
+// --- D14: the file to read is chosen in the desktop's dialog
+
+test('import: the folder button asks the desktop for the file and reads it at once; an export, which names a new file, has no such button', async () => {
+  const { user } = shell('import', { pick_file: () => '~/Downloads/hosts.json' })
+  await user.click(button('Choose a file'))
+  await vi.waitFor(() => expect(screen.getByLabelText('Path')).toHaveValue('~/Downloads/hosts.json'))
+  expect(asked('pick_file')).toEqual([{ title: 'Choose a file' }])
+  await vi.waitFor(() => expect(asked('import_hosts_json_preview')).toEqual([{ path: '~/Downloads/hosts.json' }]))
+  expect(await screen.findByRole('list', { name: 'Hosts' })).toBeInTheDocument()
+  cleanup()
+
+  shell('export')
+  expect(screen.queryByRole('button', { name: 'Choose a file' })).not.toBeInTheDocument()
+})

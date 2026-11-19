@@ -34,6 +34,8 @@ function shell(over: Record<string, (args: Args) => unknown> = {}) {
     list_snippets: () => snippets,
     get_host_stats: () => peek,
     ping_host: () => 12,
+    watch_paused: () => false,
+    watch_set: () => null,
     session_open: () => ++sessions,
     quick_connect: () => ++sessions,
     session_start: () => null,
@@ -135,6 +137,117 @@ test('every five seconds each host is asked again, on the dashboard\'s own accou
   // A minute after the first: the twelfth round since.
   await vi.advanceTimersByTimeAsync(55_000)
   expect(asked('ping_host')).toHaveLength(8)
+})
+
+// --- D14: a host that is not watched, and the switch over them all
+
+test('a host whose watching is off is asked for nothing on the dashboard\'s own, no ping either; the others are asked as before', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  // As the database has it when the app opens: web-02 was left unwatched.
+  let list: Host[] = hosts.map((host) => ({ ...host, meta: { ...host.meta, paused: host.alias === 'web-02' } }))
+  const user = shell({
+    list_hosts: () => list,
+    watch_set: ({ alias, paused }) => {
+      list = list.map((host) => (host.alias === alias ? { ...host, meta: { ...host.meta, paused: paused as boolean } } : host))
+      return null
+    },
+  })
+  await card('bare')
+  const watched = ['web-01', 'db-primary', 'bare']
+  await vi.waitFor(() => expect(asked('get_host_stats')).toHaveLength(3))
+  expect(asked('get_host_stats').map((args) => args.alias)).toEqual(watched)
+  expect(asked('ping_host').map((args) => args.alias)).toEqual(watched)
+  // Its card says so, and is not left "asking".
+  expect(await card('web-02')).toHaveTextContent('watching stopped')
+  expect(await card('web-02')).not.toHaveTextContent('Asking')
+  expect(within(await card('web-02')).getByRole('switch', { name: 'Watch' })).not.toBeChecked()
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(asked('get_host_stats').map((args) => args.alias)).toEqual([...watched, ...watched])
+
+  // A person asking is still answered: the quick peek is no round of the dashboard.
+  ;(await card('web-02')).focus()
+  await user.keyboard('v')
+  await vi.waitFor(() => expect(asked('get_host_stats').at(-1)).toEqual({ alias: 'web-02', passive: false }))
+  await user.keyboard('{Escape}')
+
+  // Another card's switch: said to the shell, and from the next round on it is left alone too.
+  await user.click(within(await card('web-01')).getByRole('switch', { name: 'Watch' }))
+  await vi.waitFor(() => expect(asked('watch_set')).toEqual([{ alias: 'web-01', paused: true }]))
+  await vi.waitFor(async () => expect(await card('web-01')).toHaveTextContent('watching stopped'))
+  // What it last said stays on its card.
+  expect(await card('web-01')).toHaveTextContent('CPU 23%')
+  calls = []
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(asked('get_host_stats').map((args) => args.alias)).toEqual(['db-primary', 'bare'])
+
+  // On again: asked in the next round.
+  await user.click(within(await card('web-02')).getByRole('switch', { name: 'Watch' }))
+  await vi.waitFor(() => expect(asked('watch_set')).toEqual([{ alias: 'web-02', paused: false }]))
+  calls = []
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(asked('get_host_stats').map((args) => args.alias)).toEqual(['web-02', 'db-primary', 'bare'])
+})
+
+test('Pause watching in the settings stops every round; the dashboard says so and has the way back, and the app opens as it was left', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  let paused = false
+  const over = {
+    watch_paused: () => paused,
+    watch_set: ({ alias, paused: off }: Args) => {
+      if (alias === null) paused = off as boolean
+      return null
+    },
+  }
+  const user = shell(over)
+  await card('bare')
+  await vi.waitFor(() => expect(asked('get_host_stats')).toHaveLength(4))
+  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+  await setting(user, /Pause watching/)
+  await vi.waitFor(() => expect(asked('watch_set')).toEqual([{ alias: null, paused: true }]))
+  const said = await screen.findByRole('status')
+  expect(said).toHaveTextContent('Pause watching No host is asked for its figures, and no connection is kept open.')
+  // Every card says it; each keeps its own switch for when the watching is back.
+  for (const host of hosts) {
+    expect(await card(host.alias)).toHaveTextContent('watching stopped')
+    expect(within(await card(host.alias)).getByRole('switch', { name: 'Watch' })).toBeChecked()
+  }
+  calls = []
+  await vi.advanceTimersByTimeAsync(15_000)
+  expect(asked('get_host_stats')).toEqual([])
+  expect(asked('ping_host')).toEqual([])
+  // The row of the settings is ticked.
+  await user.click(screen.getByRole('button', { name: 'Settings' }))
+  expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Pause watching/ })).toHaveTextContent('✓')
+  await user.keyboard('{Escape}')
+
+  // Closed and opened again: nobody is asked on the way in.
+  await again(over)
+  await card('bare')
+  expect(await screen.findByRole('status')).toHaveTextContent('Pause watching')
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(asked('get_host_stats')).toEqual([])
+  expect(asked('ping_host')).toEqual([])
+
+  // The way back is where it is said.
+  await user.click(within(screen.getByRole('status')).getByRole('button', { name: 'Watch' }))
+  await vi.waitFor(() => expect(asked('watch_set')).toEqual([{ alias: null, paused: false }]))
+  await vi.waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(asked('get_host_stats')).toHaveLength(4)
+  expect(await card('web-01')).not.toHaveTextContent('watching stopped')
+})
+
+test('in Vietnamese: the switch over every host, and what the dashboard says of it', async () => {
+  setLang('vi')
+  const user = shell({ watch_paused: () => true })
+  await card('bare')
+  const said = await screen.findByRole('status')
+  expect(said).toHaveTextContent('Tạm dừng theo dõi Không hỏi số liệu máy nào, và không giữ kết nối nào.')
+  expect(within(said).getByRole('button', { name: 'Theo dõi' })).toBeInTheDocument()
+  expect(await card('web-01')).toHaveTextContent('đã ngừng theo dõi')
+  await user.click(screen.getByRole('button', { name: 'Cài đặt' }))
+  expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Tạm dừng theo dõi/ })).toHaveTextContent('✓')
 })
 
 test('a host that does not answer: its card says which kind of failure, in the language of the window', async () => {

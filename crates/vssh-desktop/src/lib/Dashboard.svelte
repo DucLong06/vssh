@@ -43,6 +43,10 @@
     onimport?: () => void
     /** The cards chosen to act on together, as Space marks hosts in the TUI. */
     marked?: string[]
+    /** No host is watched; and a card's own switch, and the one over them all. */
+    paused?: boolean
+    onwatch?: (alias: string, watched: boolean) => void
+    onpause?: (paused: boolean) => void
   }
   let {
     hosts,
@@ -64,6 +68,9 @@
     onexport,
     onimport,
     marked = $bindable([]),
+    paused = false,
+    onwatch,
+    onpause,
   }: Props = $props()
 
   /** How long the pointer rests on a card before its quick peek opens, and how long an answer is good for. */
@@ -517,6 +524,17 @@
       </div>
     </div>
 
+    {#if paused}
+      <!-- Said where it is seen: the figures below are what was last heard, and stay so. -->
+      <p role="status" class="mt-5 flex items-center gap-3 rounded-xl border border-dashed border-yellow/50 bg-bg px-4 py-2 text-yellow">
+        <strong class="shrink-0 font-semibold">{t('watch_pause')}</strong>
+        <span class="min-w-0 flex-1 text-white">{t('watch_pause_note')}</span>
+        {#if onpause}
+          <button type="button" onclick={() => onpause(false)} class="{control} h-8 shrink-0">{t('watch')}</button>
+        {/if}
+      </p>
+    {/if}
+
     <!-- The concept's row of figures. A picture of the cards below: what it says, they say to a reader of the screen. -->
     <div aria-hidden="true" class="grid grid-cols-4 gap-4 pt-5">
       <div class="{tile} pb-3">
@@ -581,6 +599,8 @@
                 onedit={onedit && (() => onedit(host.alias))}
                 onretry={() => void ask(host.alias, false)}
                 onpeek={() => peek(host.alias)}
+                onwatch={onwatch && ((watched) => onwatch(host.alias, watched))}
+                {paused}
                 trail={trail[host.alias]}
                 tabindex={0}
                 aria-current={host.alias === selected ? 'true' : undefined}

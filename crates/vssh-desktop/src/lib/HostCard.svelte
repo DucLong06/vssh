@@ -3,6 +3,7 @@
   import type { Host } from './api'
   import { tagsOf } from './hosts'
   import { t } from './i18n.svelte'
+  import Icon from './Icon.svelte'
   import { critical, down, type Live, type Trail } from './live.svelte'
   import { KEY, tip } from './keymap'
   import Sparkline from './Sparkline.svelte'
@@ -26,6 +27,10 @@
     onretry?: () => void
     /** Opens its quick peek, which asks a host nobody asked yet. */
     onpeek?: () => void
+    /** Watches the host, or stops: its switch. */
+    onwatch?: (watched: boolean) => void
+    /** No host is watched: this one neither, whatever its own switch says. */
+    paused?: boolean
     /** Its last rounds, for the sparklines; without them the figure of now is the one point there is. */
     trail?: Trail
   } & HTMLAttributes<HTMLElement>
@@ -39,18 +44,22 @@
     onedit,
     onretry,
     onpeek,
+    onwatch,
+    paused = false,
     trail,
     class: extra = '',
     ...rest
   }: Props = $props()
 
   const list = $derived(info?.peek ? parts(info.peek.stats, t('mem')) : [])
+  /** Nobody asks it on the dashboard's own: what the card shows is what was last heard, and it says so. */
+  const stopped = $derived(paused || host.meta.paused)
   const kind = $derived(
-    down(info) ? 'down' : critical(info) ? 'crit' : info?.peek ? 'ok' : info?.peek === null ? 'unchecked' : 'asking',
+    down(info) ? 'down' : critical(info) ? 'crit' : info?.peek ? 'ok' : info?.peek === null || stopped ? 'unchecked' : 'asking',
   )
   // The TUI's `latency`.
   const latency = $derived(
-    info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
+    stopped ? t('watch_stopped') : info?.ms === undefined ? '—' : info.ms === null ? t('down') : info.ms === 0 ? '<1 ms' : `${info.ms} ms`,
   )
   const reached = $derived(typeof info?.ms === 'number')
   /** A host that needs no looking at is three short lines: its name, where it is and its tags, and its three figures. One that is down or past a mark keeps the room to say why. */
@@ -136,8 +145,23 @@
       <span role="img" aria-label={t('pinned')} class="text-yellow">★</span>
     {/if}
     <!-- The concept's badge, in the TUI's words: how long the host takes to answer, or that it does not. -->
+    {#if onwatch}
+      <!-- Its own switch, on until someone turns it off: off, the dashboard asks the host for nothing and keeps no connection to it. -->
+      <button
+        type="button"
+        role="switch"
+        aria-checked={!host.meta.paused}
+        aria-label={t('watch')}
+        title={t('watch')}
+        onclick={() => onwatch(host.meta.paused)}
+        class="ml-auto grid size-6 shrink-0 cursor-pointer place-items-center rounded-md hover:bg-selection hover:text-fg {host.meta.paused ? 'text-yellow' : 'text-dim'}"
+      >
+        <Icon name={host.meta.paused ? 'blind' : 'eye'} class="size-4" />
+      </button>
+    {/if}
     <span
-      class="ml-auto inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap {info?.ms === null ? 'text-red inset-ring inset-ring-red/50' : info?.ms === undefined ? 'bg-bar text-dim' : kind === 'down' ? 'bg-bar text-white' : 'bg-green/12 text-green'}"
+      data-stopped={stopped || undefined}
+      class="{onwatch ? '' : 'ml-auto'} inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold whitespace-nowrap {stopped || info?.ms === undefined ? 'bg-bar text-dim' : info.ms === null ? 'text-red inset-ring inset-ring-red/50' : kind === 'down' ? 'bg-bar text-white' : 'bg-green/12 text-green'}"
     >
       <!-- Whether the host answers, and nothing else: one that is overloaded
            says so in its figures and its border. A ring until it is known. -->
@@ -217,7 +241,7 @@
         {/if}
       {/each}
     </div>
-  {:else if info?.peek === null}
+  {:else if info?.peek === null || stopped}
     <p class="text-[13px] text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">
       {t('not_checked')}
       {#if onpeek}

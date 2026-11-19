@@ -108,6 +108,8 @@
   let job = $state<{ hosts: Host[]; command: string; params: Record<string, string> }>()
   /** Why the hosts could not be read. */
   let failed = $state<Shown | null>(null)
+  /** No host is watched: the dashboard asks none for anything. The database keeps it, as it keeps each host's own switch. */
+  let paused = $state(false)
 
   const fail = async (error: unknown) => (failed = await explain(error, i18n.lang))
 
@@ -126,10 +128,15 @@
 
   onMount(() => {
     let round = 0
+    // Known before the first round: what was stopped when the app was closed is not asked once on the way in.
+    const told = api.watchPaused().then((now) => (paused = now), fail)
     const tick = async () => {
       await reload()
+      await told
+      // A host that is not watched is asked for nothing, a ping neither: the shell opens and keeps no connection to it.
+      const watched = paused ? [] : hosts.filter((host) => !host.meta.paused)
       poll(
-        hosts.map((host) => host.alias),
+        watched.map((host) => host.alias),
         round++ % PING_ROUNDS === 0,
       )
     }
@@ -268,6 +275,17 @@
     const first = [...new Set(open)].flatMap((alias) => hosts.find((host) => host.alias === alias) ?? [])
     return [...first, ...hosts.filter((host) => !first.includes(host))]
   })
+
+  /** A card's switch, or the one over every host (no alias): said to the shell, which closes what it kept, and read back. */
+  async function watch(alias: string | null, off: boolean) {
+    try {
+      await api.watchSet(alias, off)
+      if (alias === null) paused = off
+      await reload()
+    } catch (error) {
+      await fail(error)
+    }
+  }
 
   /** A host's forwards, in their dialog. */
   function tunnel(alias: string) {
@@ -640,6 +658,8 @@
     onpalette={() => (modal = 'palette')}
     onshortcuts={() => (modal = 'shortcuts')}
     onzen={() => (zen = true)}
+    {paused}
+    onpause={(off) => void watch(null, off)}
   />
   {/if}
 
@@ -712,6 +732,9 @@
         modal = 'delete'
       }}
       bind:marked
+      {paused}
+      onwatch={(alias, watched) => void watch(alias, !watched)}
+      onpause={(off) => void watch(null, off)}
     />
     <!-- The panes: the tab in front, and those it is open together with. A tab dragged to an edge of one joins it there; to its middle, takes its place. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
