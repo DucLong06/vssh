@@ -100,15 +100,16 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 
 ## Cài đặt
 
-Linux x86_64, từ bản [v0.2.0](https://github.com/DucLong06/vssh/releases/tag/v0.2.0) (đã phát hành). Mỗi bản phát hành có ba gói; chọn một:
+Ubuntu hoặc Debian, đúng hai lệnh:
 
-| Gói | Dành cho | Cài đặt |
-|---|---|---|
-| `vssh-desktop_<phiên-bản>_amd64.deb` | Ubuntu 22.04 trở lên, Debian 12 trở lên | `sudo apt install ./vssh-desktop_<phiên-bản>_amd64.deb` |
-| `vssh-desktop-<phiên-bản>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<phiên-bản>-1.x86_64.rpm` |
-| `vssh-desktop_<phiên-bản>_amd64.AppImage` | các bản phân phối khác | `chmod +x vssh-desktop_<phiên-bản>_amd64.AppImage`, rồi chạy file đó |
+```sh
+wget https://github.com/DucLong06/vssh/releases/download/v0.2.0/vssh-desktop_0.2.0_amd64.deb
+sudo apt install ./vssh-desktop_0.2.0_amd64.deb
+```
 
-Mở từ menu ứng dụng, hoặc gõ `vssh-desktop`. Gói `.deb` và `.rpm` phụ thuộc WebKitGTK 4.1 và GTK 3; trình quản lý gói sẽ cài kèm. Trước khi một bản được phát hành, gói `.deb` của nó được cài vào một Ubuntu 22.04 trống và phải hiện được cửa sổ: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
+Cài xong mở từ menu ứng dụng, hoặc gõ `vssh-desktop`.
+
+Fedora lấy file `.rpm`, bản phân phối khác lấy `.AppImage` — cả hai đều có trên [trang releases](https://github.com/DucLong06/vssh/releases). Mọi gói đều cần WebKitGTK 4.1 và GTK 3, trình quản lý gói sẽ tự cài kèm.
 
 ### Biên dịch từ mã nguồn
 

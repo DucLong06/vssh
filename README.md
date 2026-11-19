@@ -100,15 +100,16 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 
 ## Install
 
-Linux x86_64, from [v0.2.0](https://github.com/DucLong06/vssh/releases/tag/v0.2.0) (out now). Each release carries three packages; take one:
+Ubuntu or Debian, two commands:
 
-| Package | For | Install |
-|---|---|---|
-| `vssh-desktop_<version>_amd64.deb` | Ubuntu 22.04 or newer, Debian 12 or newer | `sudo apt install ./vssh-desktop_<version>_amd64.deb` |
-| `vssh-desktop-<version>-1.x86_64.rpm` | Fedora | `sudo dnf install ./vssh-desktop-<version>-1.x86_64.rpm` |
-| `vssh-desktop_<version>_amd64.AppImage` | any other distribution | `chmod +x vssh-desktop_<version>_amd64.AppImage`, then run the file |
+```sh
+wget https://github.com/DucLong06/vssh/releases/download/v0.2.0/vssh-desktop_0.2.0_amd64.deb
+sudo apt install ./vssh-desktop_0.2.0_amd64.deb
+```
 
-Start it from the application menu, or as `vssh-desktop`. The `.deb` and the `.rpm` depend on WebKitGTK 4.1 and GTK 3, which the package manager installs with them. Before a release is published its `.deb` is installed in a bare Ubuntu 22.04 and has to show its window: [`scripts/deb-smoke.sh`](scripts/deb-smoke.sh).
+Then start it from the application menu, or run `vssh-desktop`.
+
+Fedora: take the `.rpm`, any other distribution: the `.AppImage` — both on the [releases page](https://github.com/DucLong06/vssh/releases). Every package depends on WebKitGTK 4.1 and GTK 3, which the package manager installs with it.
 
 ### Build from source
 
