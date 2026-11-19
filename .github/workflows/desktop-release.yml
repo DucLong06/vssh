@@ -6,7 +6,8 @@ name: desktop-release
 # The version is the tag's: it is merged over tauri.conf.json at build time,
 # the way release.yml takes the terminal app's from the tag, so no commit has
 # to bump Cargo.toml first. The same merge names the bundle vssh-desktop
-# (the terminal app's package is already called vssh) and drops devUrl.
+# (the terminal app's package is already called vssh), drops devUrl, and
+# has the .deb depend on wget: the app's own update fetches the next one with it.
 on:
   push:
     tags: ["v0.2.*"]
@@ -34,7 +35,8 @@ jobs:
               "publisher": "Hoang Duc Long <hoangduclongg@gmail.com>",
               "category": "Utility",
               "shortDescription": "Desktop SSH connection manager",
-              "longDescription": "Host dashboard with live stats, terminal tabs with broadcast typing, SFTP dual-pane, snippets, batch runs, port forwards and an encrypted vault. The desktop frontend of vssh, on the same core as the terminal app."
+              "longDescription": "Host dashboard with live stats, terminal tabs with broadcast typing, SFTP dual-pane, snippets, batch runs, port forwards and an encrypted vault. The desktop frontend of vssh, on the same core as the terminal app.",
+              "linux": { "deb": { "depends": ["wget"] } }
             }
           }
           JSON
