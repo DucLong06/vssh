@@ -27,7 +27,8 @@
       <p>{named(t('update_by_hand'))}</p>
       <code class="rounded-md bg-black px-3 py-2 font-mono text-xs break-all select-all">{command}</code>
       <div class="flex justify-end">
-        <button type="button" onclick={close} class="{button} text-white">{t('close')}</button>
+        <!-- The word is the key hints', which are in small letters. -->
+        <button type="button" onclick={close} class="{button} text-white first-letter:uppercase">{t('close')}</button>
       </div>
     {/if}
   </div>

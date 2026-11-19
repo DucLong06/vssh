@@ -148,6 +148,7 @@ fn install(backend: &Backend, tag: &str) -> Result<Option<PathBuf>> {
     let file = kept(backend, ver)?;
     // Read again: this is what root is about to install.
     verify(&file, ver)?;
+    // shortcut: dpkg installs no dependency, so a release that needs a library this machine lacks is left unconfigured, with dpkg's words as the error; `apt-get install <file>` under pkexec once a release adds one.
     // pkexec gives what it runs a bare environment: `env` puts the one word back.
     let dpkg = Command::new("pkexec")
         .args(["env", "DEBIAN_FRONTEND=noninteractive", "dpkg", "-i"])
