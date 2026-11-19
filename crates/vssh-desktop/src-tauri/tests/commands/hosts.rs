@@ -28,7 +28,7 @@ fn a_host_is_added_to_the_config_and_the_database() {
         "alias": "db.lan", "hostname": "10.0.0.7", "user": "ops", "port": 2200,
         "meta": {
             "grp": "prod", "tags": "db eu", "notes": "primary", "pinned": false,
-            "last_connected": 0, "connects": 0,
+            "last_connected": 0, "connects": 0, "paused": false,
         },
     });
     assert_eq!(added, Ok(host.clone()));
@@ -306,6 +306,82 @@ fn a_quick_connect_is_saved_as_a_host_and_its_password_only_in_the_vault() {
     assert_eq!(vault.get("db.example"), Some("s3cret"));
 }
 
+/// D14: the road to a host is its `ProxyJump`, hop by hop, as ssh writes it;
+/// the key a hop was given is the app's to keep, and the one the hop is
+/// logged in to with.
+#[test]
+fn a_hop_of_the_road_is_given_a_key_of_its_own_and_the_config_says_proxyjump_only() {
+    let home = home("hosts-hops");
+    let (_app, window) = window(&home, Fake::silent());
+    let read = || call(&window, "hosts_form", json!({ "alias": "web-01" })).unwrap();
+    let update = |form: &Value| {
+        let args = json!({ "alias": "web-01", "form": form });
+        call(&window, "hosts_update", args).unwrap()
+    };
+    let config = || fs::read_to_string(home.join("config")).unwrap();
+
+    let mut form = read();
+    form["proxy_jump"] = json!(" bare , ops@gw:2222 ");
+    form["jump_auth"] = json!([
+        { "hop": "ops@gw:2222", "key": " ~/.ssh/gw ", "user": "jump" },
+        { "hop": "bare", "key": "~/.ssh/hop" },
+        // No hop of this road, and a hop with no key: nothing to keep.
+        { "hop": "gone", "key": "~/.ssh/none" },
+        { "hop": "bare", "key": " " },
+    ]);
+    update(&form);
+    let written = config();
+    assert!(
+        written.contains("    ProxyJump bare,ops@gw:2222\n"),
+        "{written}"
+    );
+    assert!(!written.contains(".ssh/hop") && !written.contains(".ssh/gw"));
+    // Read back in the order of the road.
+    let form = read();
+    assert_eq!(form["proxy_jump"], "bare,ops@gw:2222");
+    assert_eq!(
+        form["jump_auth"],
+        json!([
+            { "hop": "bare", "key": "~/.ssh/hop", "user": "" },
+            { "hop": "ops@gw:2222", "key": "~/.ssh/gw", "user": "jump" },
+        ])
+    );
+    // What a connection is made with: each hop's own key and no other.
+    let hops = || {
+        let sshc = SshConfig::load(&home.join("config")).unwrap();
+        let given = db(&home).jump_auth().unwrap();
+        match Target::with_jump_auth(&sshc, "web-01", &given).unwrap().via {
+            Via::Jump(hops) => hops,
+            other => panic!("{other:?}"),
+        }
+    };
+    let road = hops();
+    assert_eq!(road.len(), 2);
+    assert!(road[0].only_keys && road[0].keys[0].ends_with(".ssh/hop"));
+    assert!(road[1].only_keys && road[1].keys[0].ends_with(".ssh/gw"));
+    assert_eq!((road[1].user.as_str(), road[1].port), ("jump", 2222));
+
+    // A form that says nothing of the keys leaves them; one that says none takes them.
+    let mut silent = read();
+    silent.as_object_mut().unwrap().remove("jump_auth");
+    update(&silent);
+    assert_eq!(read()["jump_auth"].as_array().unwrap().len(), 2);
+    // A hop taken off the road takes its key with it.
+    let mut shorter = read();
+    shorter["proxy_jump"] = json!("bare");
+    update(&shorter);
+    assert_eq!(
+        read()["jump_auth"],
+        json!([{ "hop": "bare", "key": "~/.ssh/hop", "user": "" }])
+    );
+    assert_eq!(db(&home).jump_auth().unwrap().len(), 1);
+    let mut plain = read();
+    plain["jump_auth"] = json!([]);
+    update(&plain);
+    assert!(db(&home).jump_auth().unwrap().is_empty());
+    assert!(!hops()[0].only_keys);
+}
+
 #[test]
 fn the_window_form_adds_the_jump_host_the_pin_and_the_vault_password() {
     let home = home("hosts-form");
@@ -325,7 +401,7 @@ fn the_window_form_adds_the_jump_host_the_pin_and_the_vault_password() {
         Ok(json!({
             "alias": "web-01", "hostname": "10.0.0.5", "user": "deploy", "port": 2222,
             "identity_file": "", "proxy_jump": "", "grp": "", "tags": "", "notes": "",
-            "pinned": false,
+            "pinned": false, "jump_auth": [],
         }))
     );
     assert_eq!(read("nobody"), Err(other("no host named \"nobody\"")));
@@ -408,6 +484,7 @@ fn an_import_is_previewed_and_takes_only_the_hosts_chosen() {
     let preview = || call(&window, "hosts_import_preview", json!({ "path": theirs }));
     let meta = json!({
         "grp": "", "tags": "", "notes": "", "pinned": false, "last_connected": 0, "connects": 0,
+        "paused": false,
     });
 
     // Those we have not: as they are reached there, patterns and all.
@@ -466,11 +543,12 @@ fn the_hosts_go_out_as_json_without_a_password_and_come_in_again() {
     let web = json!({
         "alias": "web-01", "hostname": "10.0.0.7", "user": "ops", "port": 2200,
         "identity_file": "~/.ssh/db", "proxy_jump": "bare", "grp": "prod",
-        "tags": "db eu", "notes": "primary", "pinned": true,
+        "tags": "db eu", "notes": "primary", "pinned": true, "jump_auth": [],
     });
     let bare = json!({
         "alias": "bare", "hostname": "", "user": "", "port": null, "identity_file": "",
         "proxy_jump": "", "grp": "", "tags": "", "notes": "", "pinned": false,
+        "jump_auth": [],
     });
     let written: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(written, json!([web, bare]));
@@ -535,7 +613,7 @@ fn the_hosts_go_out_as_json_without_a_password_and_come_in_again() {
     let listed = call(&window, "list_hosts", json!({})).unwrap();
     let meta = json!({
         "grp": "prod", "tags": "db eu", "notes": "primary", "pinned": true,
-        "last_connected": 0, "connects": 0,
+        "last_connected": 0, "connects": 0, "paused": false,
     });
     let host = json!({ "alias": "web-01", "hostname": "10.0.0.7", "user": "ops", "port": 2200, "meta": meta });
     assert_eq!(listed[0], host);

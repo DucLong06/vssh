@@ -4,27 +4,27 @@
     "hostname": "10.0.0.5",
     "user": "deploy",
     "port": 2222,
-    "meta": { "grp": "prod", "tags": "web eu", "notes": "", "pinned": true, "last_connected": 1794000000, "connects": 12 }
+    "meta": { "grp": "prod", "tags": "web eu", "notes": "", "pinned": true, "last_connected": 1794000000, "connects": 12, "paused": false }
   },
   {
     "alias": "web-02",
     "hostname": "10.0.0.6",
     "user": "deploy",
     "port": null,
-    "meta": { "grp": "prod", "tags": "web,us", "notes": "", "pinned": false, "last_connected": 0, "connects": 0 }
+    "meta": { "grp": "prod", "tags": "web,us", "notes": "", "pinned": false, "last_connected": 0, "connects": 0, "paused": false }
   },
   {
     "alias": "db-primary",
     "hostname": "db.internal.example.com",
     "user": "postgres",
     "port": null,
-    "meta": { "grp": "", "tags": "db eu", "notes": "failover: db-replica", "pinned": false, "last_connected": 0, "connects": 3 }
+    "meta": { "grp": "", "tags": "db eu", "notes": "failover: db-replica", "pinned": false, "last_connected": 0, "connects": 3, "paused": false }
   },
   {
     "alias": "bare",
     "hostname": null,
     "user": null,
     "port": null,
-    "meta": { "grp": "", "tags": "", "notes": "", "pinned": false, "last_connected": 0, "connects": 0 }
+    "meta": { "grp": "", "tags": "", "notes": "", "pinned": false, "last_connected": 0, "connects": 0, "paused": false }
   }
 ]
