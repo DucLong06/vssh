@@ -232,7 +232,7 @@
   {#if importing}
     <HostImport {onimported} oncancel={() => (importing = false)} />
   {:else}
-    <form bind:this={root} novalidate onsubmit={save} class="grid max-h-[84vh] gap-4 overflow-y-auto p-6 text-[13px] text-white">
+    <form bind:this={root} novalidate onsubmit={save} class="grid max-h-[84vh] gap-4 overflow-y-auto px-6 pt-6 text-[13px] text-white">
       <p class="text-base font-semibold text-ink">{title}</p>
       <div class="grid grid-cols-[1fr_1.5fr_1fr_6rem] gap-2">
         <div>
@@ -491,7 +491,8 @@
           <span>{failed.message}</span>
         </p>
       {/if}
-      <div class="flex flex-wrap gap-2">
+      <!-- A long road makes the form taller than a low window: it scrolls, and what saves it stays in view. -->
+      <div class="sticky bottom-0 -mx-6 -mt-4 flex flex-wrap gap-2 bg-panel px-6 pt-4 pb-6">
         {#if alias}
           <button type="button" onclick={() => ondelete(alias)} class="{button} border-red text-red">
             {t('delete')}
