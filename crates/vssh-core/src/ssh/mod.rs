@@ -3,6 +3,7 @@
 pub mod forward;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,9 @@ pub struct Target {
     pub user: String,
     /// Private key files to try, in order.
     pub keys: Vec<PathBuf>,
+    /// These keys and no other (`IdentitiesOnly`): the agent is asked for
+    /// them alone. Set for a jump host that was given a key of its own.
+    pub only_keys: bool,
     /// `RemoteCommand` of the ssh config: run instead of the login shell.
     pub remote_command: Option<String>,
     /// How to get to it.
@@ -51,14 +55,47 @@ pub enum Via {
     Command(String),
 }
 
+/// How a jump host is logged in to on the road to one host, where the app
+/// and not the ssh config says so: with this key and no other, whatever the
+/// jump host's own block names.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct HopAuth {
+    /// The private key file; `~/` is the home.
+    pub key: String,
+    /// Empty: the jump host's own user.
+    pub user: String,
+}
+
+/// Every [`HopAuth`] there is, by the host whose road it is on and the hop
+/// as that host's `ProxyJump` names it. The database keeps them
+/// (`Db::jump_auth`): the ssh config has no word for this.
+pub type JumpAuth = HashMap<(String, String), HopAuth>;
+
+/// A path of the ssh config, with no shell to read the `~`.
+fn tilde(path: &str) -> PathBuf {
+    match path.strip_prefix("~/") {
+        Some(rest) => crate::config::home().join(rest),
+        None => PathBuf::from(path),
+    }
+}
+
 impl Target {
     /// Resolves an alias the way `ssh alias` would.
     pub fn from_config(c: &SshConfig, alias: &str) -> Result<Self> {
-        Self::resolve(c, alias, 0)
+        Self::resolve(c, alias, 0, &JumpAuth::new())
+    }
+
+    /// [`Target::from_config`], and then what the app says about the jump
+    /// hosts on the way: a hop that `auth` names logs in with that key only,
+    /// and as that user if one is given. A hop's own road is under its own
+    /// name, so it is the same road wherever it is part of another.
+    pub fn with_jump_auth(c: &SshConfig, alias: &str, auth: &JumpAuth) -> Result<Self> {
+        Self::resolve(c, alias, 0, auth)
     }
 
     /// `depth` counts jump hosts resolved on the way here, to stop a loop.
-    fn resolve(c: &SshConfig, alias: &str, depth: usize) -> Result<Self> {
+    fn resolve(c: &SshConfig, alias: &str, depth: usize, auth: &JumpAuth) -> Result<Self> {
         if depth > 8 {
             bail!("ProxyJump loops or is more than 8 hosts deep (at {alias})");
         }
@@ -69,8 +106,15 @@ impl Target {
         let via = match (set("ProxyJump"), set("ProxyCommand")) {
             (Some(jump), _) => {
                 let mut hops = vec![];
-                for hop in jump.split(',') {
-                    let mut hop = Self::hop(c, hop.trim(), depth + 1)?;
+                for spec in jump.split(',').map(str::trim) {
+                    let mut hop = Self::hop(c, spec, depth + 1, auth)?;
+                    if let Some(own) = auth.get(&(alias.to_string(), spec.to_string())) {
+                        hop.keys = vec![tilde(&own.key)];
+                        hop.only_keys = true;
+                        if !own.user.is_empty() {
+                            hop.user.clone_from(&own.user);
+                        }
+                    }
                     // A hop reached through hops of its own: those come first.
                     if let Via::Jump(before) = std::mem::take(&mut hop.via) {
                         hops.extend(before);
@@ -84,15 +128,8 @@ impl Target {
         };
         let host = c.get(alias, "HostName").unwrap_or(alias);
         crate::proto::ensure_ssh(host)?;
-        let home = crate::config::home();
-        let mut keys: Vec<PathBuf> = c
-            .get_all(alias, "IdentityFile")
-            .iter()
-            .map(|p| match p.strip_prefix("~/") {
-                Some(rest) => home.join(rest),
-                None => PathBuf::from(p),
-            })
-            .collect();
+        let named = c.get_all(alias, "IdentityFile");
+        let mut keys: Vec<PathBuf> = named.iter().map(|p| tilde(p)).collect();
         if keys.is_empty() {
             keys = default_keys();
         }
@@ -106,6 +143,7 @@ impl Target {
                 .get(alias, "User")
                 .map_or_else(current_user, str::to_string),
             keys,
+            only_keys: false,
             remote_command: c
                 .get(alias, "RemoteCommand")
                 .filter(|cmd| !cmd.eq_ignore_ascii_case("none"))
@@ -119,7 +157,7 @@ impl Target {
     /// with its own key, user and jump hosts; `user@` and `:port` override.
     // shortcut: no bracketed IPv6 literals and no ssh:// URIs as hops; give
     // such a hop a Host block and name its alias.
-    fn hop(c: &SshConfig, spec: &str, depth: usize) -> Result<Self> {
+    fn hop(c: &SshConfig, spec: &str, depth: usize, auth: &JumpAuth) -> Result<Self> {
         let (user, rest) = match spec.rsplit_once('@') {
             Some((user, rest)) => (Some(user), rest),
             None => (None, spec),
@@ -131,7 +169,7 @@ impl Target {
         if name.is_empty() {
             bail!("ProxyJump has an empty host in {spec:?}");
         }
-        let mut hop = Self::resolve(c, name, depth)?;
+        let mut hop = Self::resolve(c, name, depth, auth)?;
         if let Some(user) = user {
             hop.user = user.to_string();
         }
@@ -189,6 +227,7 @@ impl Target {
             port: port.parse().context("port must be a number up to 65535")?,
             user,
             keys: default_keys(),
+            only_keys: false,
             remote_command: None,
             via: Via::Direct,
         })
@@ -564,11 +603,14 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
             .iter()
             .filter_map(|k| load_public_key(format!("{}.pub", k.display())).ok())
             .collect();
-        ids.sort_by_key(|id| {
-            !wanted
-                .iter()
-                .any(|w| w.key_data() == id.public_key().key_data())
-        });
+        let named = |id: &russh::keys::agent::AgentIdentity| {
+            let key = id.public_key();
+            wanted.iter().any(|w| w.key_data() == key.key_data())
+        };
+        ids.sort_by_key(|id| !named(id));
+        if t.only_keys {
+            ids.retain(named);
+        }
         for id in ids {
             let key = id.public_key().into_owned();
             keys += 1;
@@ -1031,6 +1073,69 @@ mod tests {
         };
         let hop = (hops[0].host.as_str(), hops[0].user.as_str(), hops[0].port);
         assert_eq!((hops.len(), hop), (1, ("bastion", "admin", 22)));
+    }
+
+    #[test]
+    fn a_hop_given_a_key_logs_in_with_it_and_nothing_else() {
+        let c = SshConfig::parse(
+            "Host bastion
+  HostName 203.0.113.1
+  User jump
+  IdentityFile /keys/bastion
+             Host inner
+  ProxyJump bastion
+             Host deep
+  ProxyJump ops@gw:2222, inner
+             Host plain
+  ProxyJump bastion
+",
+        );
+        let auth = |key: &str, user: &str| HopAuth {
+            key: key.into(),
+            user: user.into(),
+        };
+        let on = |host: &str, hop: &str| (host.to_string(), hop.to_string());
+        let given = JumpAuth::from([
+            (on("inner", "bastion"), auth("~/.ssh/hop", "")),
+            (on("deep", "ops@gw:2222"), auth("/keys/gw", "other")),
+        ]);
+        let hops = |alias| match Target::with_jump_auth(&c, alias, &given).unwrap().via {
+            Via::Jump(hops) => hops,
+            other => panic!("{alias}: {other:?}"),
+        };
+        // The key the app gave, not the one of the jump host's block; its user stays.
+        let hop = &hops("inner")[0];
+        let home = crate::config::home();
+        assert_eq!(hop.keys, [home.join(".ssh/hop")]);
+        assert_eq!((hop.only_keys, hop.user.as_str()), (true, "jump"));
+        // Another host through the same jump host is not that road: the block's key.
+        let hop = &hops("plain")[0];
+        assert_eq!(hop.keys, [PathBuf::from("/keys/bastion")]);
+        assert!(!hop.only_keys);
+        // A user given with the key is the one, whatever the hop's spec says. And a hop's own
+        // road is its own wherever it is a part of another: inner's bastion keeps inner's key.
+        let deep = hops("deep");
+        let seen: Vec<_> = deep
+            .iter()
+            .map(|hop| (hop.host.as_str(), hop.user.as_str(), hop.only_keys))
+            .collect();
+        let me = current_user();
+        assert_eq!(
+            seen,
+            [
+                ("gw", "other", true),
+                ("203.0.113.1", "jump", true),
+                ("inner", me.as_str(), false)
+            ]
+        );
+        assert_eq!(deep[0].keys, [PathBuf::from("/keys/gw")]);
+        assert_eq!(deep[1].keys, [home.join(".ssh/hop")]);
+        // Without the app's word it is `ssh alias`, as it was.
+        let plain = Target::from_config(&c, "inner").unwrap();
+        assert_eq!(
+            plain,
+            Target::with_jump_auth(&c, "inner", &JumpAuth::new()).unwrap()
+        );
     }
 
     #[test]

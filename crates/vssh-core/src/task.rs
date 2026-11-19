@@ -281,6 +281,16 @@ impl Peeks {
             .insert(alias.to_string(), (target, h));
         Ok(stats::parse_peek(&out))
     }
+
+    /// Closes the connection kept for `alias`, or every one of them: a host
+    /// nobody watches any more is not held on to.
+    pub fn forget(&self, alias: Option<&str>) {
+        let mut kept = self.0.lock().unwrap();
+        match alias {
+            Some(alias) => drop(kept.remove(alias)),
+            None => kept.clear(),
+        }
+    }
 }
 
 /// Runs a port forward until it fails or is aborted. [`Event::Forward`]

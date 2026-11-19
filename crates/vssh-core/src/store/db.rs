@@ -5,6 +5,8 @@ use std::path::Path;
 
 use rusqlite::{params, Connection, Result};
 
+use crate::ssh::{HopAuth, JumpAuth};
+
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Meta {
@@ -16,6 +18,8 @@ pub struct Meta {
     /// Unix seconds; 0 = never.
     pub last_connected: i64,
     pub connects: i64,
+    /// Not watched: a dashboard asks it for nothing on its own.
+    pub paused: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -50,8 +54,21 @@ impl Db {
                 id INTEGER PRIMARY KEY,
                 host TEXT NOT NULL DEFAULT '',
                 name TEXT NOT NULL,
-                command TEXT NOT NULL);",
+                command TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS jump_auth(
+                host TEXT NOT NULL,
+                hop TEXT NOT NULL,
+                key TEXT NOT NULL,
+                user TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(host, hop));
+             CREATE TABLE IF NOT EXISTS flags(name TEXT PRIMARY KEY);",
         )?;
+        // A database from before hosts could be left unwatched; one that has
+        // the column says so, which is all this error can be.
+        let _ = c.execute(
+            "ALTER TABLE hosts ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         Ok(Self(c))
     }
 
@@ -67,7 +84,7 @@ impl Db {
 
     pub fn metas(&self) -> Result<HashMap<String, Meta>> {
         let mut st = self.0.prepare(
-            "SELECT alias, grp, tags, notes, pinned, last_connected, connects FROM hosts",
+            "SELECT alias, grp, tags, notes, pinned, last_connected, connects, paused FROM hosts",
         )?;
         let rows = st.query_map([], |r| {
             Ok((
@@ -79,6 +96,7 @@ impl Db {
                     pinned: r.get(4)?,
                     last_connected: r.get(5)?,
                     connects: r.get(6)?,
+                    paused: r.get(7)?,
                 },
             ))
         })?;
@@ -93,6 +111,61 @@ impl Db {
             params![alias, m.grp, m.tags, m.notes, m.pinned],
         )?;
         Ok(())
+    }
+
+    /// Whether a dashboard leaves the host alone; no part of `set_meta`,
+    /// which a form saves that does not show it.
+    pub fn set_paused(&self, alias: &str, paused: bool) -> Result<()> {
+        self.0.execute(
+            "INSERT INTO hosts(alias, paused) VALUES (?1, ?2)
+             ON CONFLICT(alias) DO UPDATE SET paused = ?2",
+            params![alias, paused],
+        )?;
+        Ok(())
+    }
+
+    /// A switch of the app, by name: off until it is set.
+    pub fn flag(&self, name: &str) -> Result<bool> {
+        let sql = "SELECT EXISTS(SELECT 1 FROM flags WHERE name = ?1)";
+        self.0.query_row(sql, [name], |row| row.get(0))
+    }
+
+    pub fn set_flag(&self, name: &str, on: bool) -> Result<()> {
+        let sql = match on {
+            true => "INSERT OR IGNORE INTO flags(name) VALUES (?1)",
+            false => "DELETE FROM flags WHERE name = ?1",
+        };
+        self.0.execute(sql, [name])?;
+        Ok(())
+    }
+
+    /// The keys jump hosts were given, by host and hop.
+    pub fn jump_auth(&self) -> Result<JumpAuth> {
+        let mut st = self
+            .0
+            .prepare("SELECT host, hop, key, user FROM jump_auth")?;
+        let rows = st.query_map([], |r| {
+            let auth = HopAuth {
+                key: r.get(2)?,
+                user: r.get(3)?,
+            };
+            Ok(((r.get(0)?, r.get(1)?), auth))
+        })?;
+        rows.collect()
+    }
+
+    /// What `host`'s jump hosts are given from now on: these, by hop, and
+    /// nothing of what was there.
+    pub fn set_jump_auth(&self, host: &str, hops: &[(String, HopAuth)]) -> Result<()> {
+        let tx = self.0.unchecked_transaction()?;
+        tx.execute("DELETE FROM jump_auth WHERE host = ?1", [host])?;
+        for (hop, auth) in hops {
+            tx.execute(
+                "INSERT OR REPLACE INTO jump_auth(host, hop, key, user) VALUES (?1, ?2, ?3, ?4)",
+                params![host, hop, auth.key, auth.user],
+            )?;
+        }
+        tx.commit()
     }
 
     /// Records a successful connection.
@@ -118,6 +191,10 @@ impl Db {
             .execute("UPDATE hosts SET alias = ?2 WHERE alias = ?1", [old, new])?;
         self.0
             .execute("UPDATE snippets SET host = ?2 WHERE host = ?1", [old, new])?;
+        // Its road is its own under the new name; where it is another
+        // host's hop, that host's ProxyJump still says the old one.
+        self.0
+            .execute("UPDATE jump_auth SET host = ?2 WHERE host = ?1", [old, new])?;
         Ok(())
     }
 
@@ -127,6 +204,8 @@ impl Db {
             .execute("DELETE FROM hosts WHERE alias = ?1", [alias])?;
         self.0
             .execute("DELETE FROM snippets WHERE host = ?1", [alias])?;
+        self.0
+            .execute("DELETE FROM jump_auth WHERE host = ?1", [alias])?;
         Ok(())
     }
 
@@ -210,5 +289,53 @@ mod tests {
         db.delete("c").unwrap();
         assert!(db.snippets().unwrap().is_empty());
         assert!(!db.metas().unwrap().contains_key("c"));
+    }
+
+    #[test]
+    fn what_the_ssh_config_has_no_word_for() {
+        let db = Db::init(Connection::open_in_memory().unwrap()).unwrap();
+        // A host is watched until someone says otherwise, and the form's save leaves that alone.
+        db.import(&["a".into()]).unwrap();
+        assert!(!db.metas().unwrap()["a"].paused);
+        db.set_paused("a", true).unwrap();
+        db.set_meta("a", &Meta::default()).unwrap();
+        assert!(db.metas().unwrap()["a"].paused);
+        db.set_paused("a", false).unwrap();
+        assert!(!db.metas().unwrap()["a"].paused);
+
+        assert!(!db.flag("watch_paused").unwrap());
+        db.set_flag("watch_paused", true).unwrap();
+        db.set_flag("watch_paused", true).unwrap();
+        assert!(db.flag("watch_paused").unwrap());
+        db.set_flag("watch_paused", false).unwrap();
+        assert!(!db.flag("watch_paused").unwrap());
+
+        let auth = |key: &str, user: &str| HopAuth {
+            key: key.into(),
+            user: user.into(),
+        };
+        let hops = [
+            ("bastion".to_string(), auth("~/.ssh/hop", "")),
+            ("ops@gw:2222".to_string(), auth("/keys/gw", "jump")),
+        ];
+        db.set_jump_auth("a", &hops).unwrap();
+        db.set_jump_auth("b", &hops[..1]).unwrap();
+        let key = |host: &str, hop: &str| (host.to_string(), hop.to_string());
+        let kept = db.jump_auth().unwrap();
+        assert_eq!(kept.len(), 3);
+        assert_eq!(kept[&key("a", "ops@gw:2222")], auth("/keys/gw", "jump"));
+        // Saved again, a host's hops are those it is saved with.
+        db.set_jump_auth("a", &hops[..1]).unwrap();
+        assert!(!db
+            .jump_auth()
+            .unwrap()
+            .contains_key(&key("a", "ops@gw:2222")));
+        // They go with the host: to its new name, and away with it.
+        db.rename("a", "c").unwrap();
+        assert_eq!(db.jump_auth().unwrap()[&key("c", "bastion")], hops[0].1);
+        db.delete("c").unwrap();
+        assert_eq!(db.jump_auth().unwrap().len(), 1);
+        // A database that has the column already opens as before.
+        Db::init(db.0).unwrap();
     }
 }
