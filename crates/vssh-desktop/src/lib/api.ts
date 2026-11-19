@@ -266,6 +266,14 @@ export const api = {
     invoke<string[]>('import_hosts_json', { path, only, overwrite }),
   /** The project's releases, in the user's browser. */
   openReleases: () => invoke<void>('open_releases'),
+  /** Whether the app that runs came as the `.deb` a release has: only then can a newer one be installed from here. */
+  updatePossible: () => invoke<boolean>('update_possible'),
+  /** Fetches the `.deb` of the release with that tag and holds it to be this app's; `update-progress` carries the bytes that are here meanwhile. */
+  updateDownload: (tag: string) => invoke<void>('update_download', { tag }),
+  /** Installs it, the system asking for the password. `null` once installed; where nobody could be asked, the file's path, to install by hand: its folder is open. */
+  updateInstall: (tag: string) => invoke<string | null>('update_install', { tag }),
+  /** Ends the app and starts it again. */
+  updateRestart: () => invoke<void>('update_restart'),
   /**
    * A new key for the host, proven to open it, then its password login is
    * turned off. Resolves to the private key's path; `key-setup-step` carries
