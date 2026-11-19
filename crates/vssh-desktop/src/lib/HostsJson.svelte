@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { api, explain, type Offered, type Shown } from './api'
   import { i18n, t } from './i18n.svelte'
+  import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import { addr } from './streamer.svelte'
 
@@ -51,6 +52,16 @@
       ticked = found.map((host) => host.alias)
     })
 
+  /** The file to read, chosen in the desktop's dialog, and read at once. */
+  const choose = () =>
+    attempt(async () => {
+      const chosen = await api.pickFile(t('choose_file'))
+      if (!chosen) return
+      path = chosen
+      found = null
+      await preview()
+    })
+
   const take = (overwrite: boolean) =>
     attempt(async () => onimported(await api.importHostsJson(path.trim(), ticked, overwrite)))
 
@@ -66,7 +77,7 @@
       <p>{t('export_hosts_note')}</p>
     {/if}
     <form
-      class="grid grid-cols-[1fr_auto] items-end gap-2"
+      class="grid {mode === 'import' ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]'} items-end gap-2"
       onsubmit={(e) => {
         e.preventDefault()
         void (mode === 'export' ? save() : preview())
@@ -90,6 +101,18 @@
           class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-[13px] text-fg placeholder:text-dim"
         />
       </label>
+      <!-- To read a file that is there: one to write is named, and must not be there yet. -->
+      {#if mode === 'import'}
+        <button
+          type="button"
+          aria-label={t('choose_file')}
+          title={t('choose_file')}
+          onclick={choose}
+          class="grid size-[38px] cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg"
+        >
+          <Icon name="folder" />
+        </button>
+      {/if}
       <button type="submit" class="{button} text-fg">{mode === 'export' ? t('export') : t('preview')}</button>
     </form>
 

@@ -224,3 +224,56 @@ test('a button says its key in its tooltip; a host nobody asked has a button for
   const tall = screen.getByRole('article', { name: 'bare' })
   expect(within(tall).getAllByRole('button').map((button) => button.title)).toEqual(['Edit (E)', 'Forwards (L)', 'Files (F)', 'Connect (Enter)'])
 })
+
+// --- D14: a host that is not watched
+
+test('a card has its own switch, on until it is turned off; off, it keeps what was last heard and says that watching stopped', async () => {
+  const user = userEvent.setup()
+  const onwatch = vi.fn()
+  const { rerender } = render(HostCard, { host: web01, info: { ms: 12, peek }, onwatch })
+  const el = screen.getByRole('article', { name: 'web-01' })
+  const watch = within(el).getByRole('switch', { name: 'Watch' })
+  expect(watch).toBeChecked()
+  expect(el).not.toHaveTextContent('watching stopped')
+  await user.click(watch)
+  // Asked for, not done: the window says it to the shell first.
+  expect(onwatch).toHaveBeenCalledExactlyOnceWith(false)
+  expect(watch).toBeChecked()
+
+  await rerender({ host: { ...web01, meta: { ...web01.meta, paused: true } }, info: { ms: 12, peek }, onwatch })
+  expect(watch).not.toBeChecked()
+  // The figures of the last round stay; where the latency was, the card says nobody is asking.
+  expect(el).toHaveTextContent('watching stopped')
+  expect(el).not.toHaveTextContent('12 ms')
+  expect(meter('CPU')).toHaveAttribute('aria-valuenow', '23')
+  expect(el).toHaveAttribute('data-state', 'ok')
+  await user.click(watch)
+  expect(onwatch).toHaveBeenLastCalledWith(true)
+})
+
+test('a host that was never asked and is not watched is not "asking": it offers the quick peek; when no host is watched its own switch stays as it is', () => {
+  const onpeek = vi.fn()
+  render(HostCard, { host: { ...bare, meta: { ...bare.meta, paused: true } }, onwatch: vi.fn(), onpeek })
+  const el = screen.getByRole('article', { name: 'bare' })
+  expect(el).toHaveAttribute('data-state', 'unchecked')
+  expect(el).not.toHaveTextContent('Asking bare')
+  expect(within(el).getByRole('button', { name: 'Quick peek' })).toBeInTheDocument()
+
+  // Every host at once: the card says so, and its own switch is still on for when the watching is back.
+  render(HostCard, { host: web01, info: { ms: 12, peek }, onwatch: vi.fn(), paused: true })
+  const all = screen.getByRole('article', { name: 'web-01' })
+  expect(all).toHaveTextContent('watching stopped')
+  expect(within(all).getByRole('switch', { name: 'Watch' })).toBeChecked()
+
+  // Without a way to switch there is no switch.
+  render(HostCard, { host: hosts[1] as Host, info: { ms: 12, peek } })
+  expect(within(screen.getByRole('article', { name: 'web-02' })).queryByRole('switch')).toBeNull()
+})
+
+test('in Vietnamese the switch and what it says are Vietnamese', () => {
+  setLang('vi')
+  render(HostCard, { host: { ...web01, meta: { ...web01.meta, paused: true } }, info: { ms: 12, peek }, onwatch: vi.fn() })
+  const el = screen.getByRole('article', { name: 'web-01' })
+  expect(within(el).getByRole('switch', { name: 'Theo dõi' })).not.toBeChecked()
+  expect(el).toHaveTextContent('đã ngừng theo dõi')
+})

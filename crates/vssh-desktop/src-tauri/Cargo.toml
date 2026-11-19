@@ -18,6 +18,11 @@ tokio.workspace = true
 zeroize.workspace = true
 tauri-plugin-clipboard-manager = "2"
 
+# The file dialog (`pick.rs`): the toolkit the window is drawn with, in the
+# version Tauri links.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
 

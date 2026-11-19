@@ -279,6 +279,11 @@ impl Transport for Fake {
         let line = format!("trust {host} {fingerprint} forever={forever}");
         self.asked.lock().unwrap().push(line);
     }
+
+    fn forget(&self, alias: Option<&str>) {
+        let line = format!("forget {}", alias.unwrap_or("every host"));
+        self.asked.lock().unwrap().push(line);
+    }
 }
 
 /// A failure the connect path tagged, as a command answers with it.
@@ -389,6 +394,7 @@ fn list_hosts_reads_the_ssh_config_and_the_database() {
 
     let empty = json!({
         "grp": "", "tags": "", "notes": "", "pinned": false, "last_connected": 0, "connects": 0,
+        "paused": false,
     });
     assert_eq!(
         call(&window, "list_hosts", json!({})),
@@ -397,7 +403,7 @@ fn list_hosts_reads_the_ssh_config_and_the_database() {
                 "alias": "web-01", "hostname": "10.0.0.5", "user": "deploy", "port": 2222,
                 "meta": {
                     "grp": "prod", "tags": "web eu", "notes": "", "pinned": true,
-                    "last_connected": 0, "connects": 0,
+                    "last_connected": 0, "connects": 0, "paused": false,
                 },
             },
             // A host with nothing but a name, and no row in the database yet.
@@ -536,6 +542,84 @@ fn a_passive_get_host_stats_leaves_hosts_alone_that_asking_would_commit_to() {
     );
     // What is not a host is refused either way.
     assert!(stats(&met, "nope", true).is_err());
+}
+
+/// D14: a host that is not watched is asked for nothing on the dashboard's
+/// own, and no connection is kept for it; the same for every host at once.
+/// Both are in the database, so they are as they were when the app is back.
+#[test]
+fn a_host_that_is_not_watched_is_left_alone_until_a_person_asks() {
+    let home = home("watch");
+    let net = Fake::silent();
+    let (_app, up) = window(&home, net.clone());
+    let stats = |alias: &str, passive: bool| {
+        let args = json!({ "alias": alias, "passive": passive });
+        call(&up, "get_host_stats", args).map(|peek| !peek.is_null())
+    };
+    let watch = |alias: Value, paused: bool| {
+        call(
+            &up,
+            "watch_set",
+            json!({ "alias": alias, "paused": paused }),
+        )
+    };
+    let paused = |alias: &str| {
+        let metas = db(&home).metas().unwrap();
+        metas.get(alias).is_some_and(|meta| meta.paused)
+    };
+
+    assert_eq!(call(&up, "watch_paused", json!({})), Ok(json!(false)));
+    assert_eq!(stats("web-01", true), Ok(true));
+    // One host: its connection is let go of, and the dashboard's round gets nothing.
+    assert_eq!(watch(json!("web-01"), true), Ok(Value::Null));
+    assert!(paused("web-01") && !paused("bare"));
+    assert_eq!(stats("web-01", true), Ok(false));
+    assert_eq!(stats("bare", true), Ok(true));
+    // A person asking is answered, once: nothing is kept for a next round.
+    assert_eq!(stats("web-01", false), Ok(true));
+    let me = std::env::var("USER").unwrap_or_else(|_| "root".into());
+    assert_eq!(
+        net.asked(),
+        [
+            "web-01 = deploy@10.0.0.5:2222".to_string(),
+            "forget web-01".to_string(),
+            format!("bare = {me}@bare:22"),
+            "web-01 = deploy@10.0.0.5:2222".to_string(),
+            "forget web-01".to_string(),
+        ]
+    );
+    // The list says so, which is where a card has it from.
+    let hosts = call(&up, "list_hosts", json!({})).unwrap();
+    assert_eq!(hosts[0]["meta"]["paused"], true);
+    assert_eq!(hosts[1]["meta"]["paused"], false);
+    // No host that the config does not have.
+    assert_eq!(
+        watch(json!("nowhere"), true),
+        Err(other("no host named \"nowhere\""))
+    );
+
+    // Every host: the one switch over them all, which leaves each its own.
+    net.asked.lock().unwrap().clear();
+    assert_eq!(watch(Value::Null, true), Ok(Value::Null));
+    assert_eq!(call(&up, "watch_paused", json!({})), Ok(json!(true)));
+    assert_eq!(stats("bare", true), Ok(false));
+    assert_eq!(net.asked(), ["forget every host"]);
+    assert!(!paused("bare"));
+
+    // The app comes back as it was left.
+    drop(up);
+    let (_app, again) = window(&home, Fake::silent());
+    assert_eq!(call(&again, "watch_paused", json!({})), Ok(json!(true)));
+    let resume = json!({ "alias": null, "paused": false });
+    assert_eq!(call(&again, "watch_set", resume), Ok(Value::Null));
+    let passive = |alias: &str| json!({ "alias": alias, "passive": true });
+    let asked = |alias: &str| call(&again, "get_host_stats", passive(alias)).map(|p| !p.is_null());
+    assert_eq!(asked("bare"), Ok(true));
+    // web-01 is still its own: watched again only when it is said so.
+    assert_eq!(asked("web-01"), Ok(false));
+    let own = json!({ "alias": "web-01", "paused": false });
+    assert_eq!(call(&again, "watch_set", own), Ok(Value::Null));
+    assert_eq!(asked("web-01"), Ok(true));
 }
 
 #[test]

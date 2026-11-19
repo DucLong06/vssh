@@ -65,7 +65,7 @@ fn hosts_carry_the_config_and_the_metadata() {
             "alias": "web-01", "hostname": "10.0.0.5", "user": "deploy", "port": 2222,
             "meta": {
                 "grp": "prod", "tags": "web eu", "notes": "", "pinned": true,
-                "last_connected": 0, "connects": 3,
+                "last_connected": 0, "connects": 3, "paused": false,
             },
         })
     );

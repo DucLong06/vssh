@@ -40,6 +40,9 @@
     /** The cheatsheet; and focus mode: the rail goes, and the tabs have the way back. Both from the settings. */
     onshortcuts?: () => void
     onzen?: () => void
+    /** No host is watched, and the switch for it, a row of the settings. */
+    paused?: boolean
+    onpause?: (paused: boolean) => void
   }
   let {
     hosts,
@@ -58,6 +61,8 @@
     onpalette,
     onshortcuts,
     onzen,
+    paused = false,
+    onpause,
   }: Props = $props()
 
   /** The settings' menu, and where: over the button that opens it. */
@@ -68,6 +73,7 @@
     { label: t('language'), note: i18n.lang.toUpperCase(), run: () => setLang(i18n.lang === 'en' ? 'vi' : 'en') },
     { label: t('theme'), note: theme.name === 'night' ? t('theme_night') : t('theme_day'), run: () => setTheme(theme.name === 'night' ? 'day' : 'night') },
     { label: t('streamer_mode'), note: streamer.on ? '✓' : undefined, run: () => setStreamer(!streamer.on) },
+    ...(onpause ? [{ label: t('watch_pause'), note: paused ? '✓' : undefined, run: () => onpause(!paused) }] : []),
     ...(onzen || onshortcuts ? [null] : []),
     ...(onzen ? [{ label: t('focus_mode'), keys: KEY.focus[0], run: onzen }] : []),
     ...(onshortcuts ? [{ label: t('shortcuts'), keys: KEY.shortcuts[0], run: onshortcuts }] : []),

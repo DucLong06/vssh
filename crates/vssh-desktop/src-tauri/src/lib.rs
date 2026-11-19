@@ -10,6 +10,7 @@ mod files;
 mod forwards;
 mod hosts;
 mod key_setup;
+mod pick;
 mod session;
 mod snippets;
 mod vault;
@@ -37,6 +38,9 @@ use vssh_core::store::{self, Host};
 use vssh_core::task::{self, Event, Peeks, Receiver, Shell};
 use vssh_core::vault::Vault;
 use zeroize::Zeroizing;
+
+/// The database's flag for "no host is watched".
+const WATCH_PAUSED: &str = "watch_paused";
 
 /// What a command answers: its value, or a failure the window can show.
 type Reply<T> = Result<T, ConnError>;
@@ -107,6 +111,9 @@ pub trait Transport: Send + Sync + 'static {
     /// A person's yes to a host key that does not match the one on record,
     /// for the next connection to the target.
     fn trust(&self, target: &Target, fingerprint: &str, forever: bool);
+    /// Lets go of what `peek` keeps for a host, or for every host: one that
+    /// is not watched is not held on to.
+    fn forget(&self, alias: Option<&str>);
 }
 
 /// The real network: `vssh_core::task`, on Tauri's own tokio runtime. It
@@ -193,6 +200,10 @@ impl Transport for Core {
     fn trust(&self, target: &Target, fingerprint: &str, forever: bool) {
         ssh::trust_host_key(&target.host, target.port, fingerprint, forever);
     }
+
+    fn forget(&self, alias: Option<&str>) {
+        self.0.forget(alias);
+    }
 }
 
 /// What the commands work on: where the user's hosts are, and the network.
@@ -276,9 +287,18 @@ impl Backend {
             .with_context(|| format!("cannot write {}", self.ssh_config.display()))
     }
 
-    /// A host of the config, resolved the way `ssh alias` would.
+    /// A host of the config, resolved the way `ssh alias` would; its jump
+    /// hosts with the keys the form gave them, which the database keeps.
     fn target(&self, alias: &str) -> Result<Target> {
-        Target::from_config(&self.config_of(alias)?, alias)
+        let sshc = self.config_of(alias)?;
+        Target::with_jump_auth(&sshc, alias, &self.db()?.jump_auth()?)
+    }
+
+    /// Nobody watches the host: it is paused itself, or every host is.
+    fn unwatched(&self, alias: &str) -> Result<bool> {
+        let db = self.db()?;
+        let own = db.metas()?.get(alias).is_some_and(|meta| meta.paused);
+        Ok(own || db.flag(WATCH_PAUSED)?)
     }
 
     /// How to log in to a host of the config: where it is, and its password
@@ -308,10 +328,45 @@ async fn get_host_stats(
 ) -> Reply<Option<Peek>> {
     let (target, password) = backend.login(&alias)?;
     let committing = target.via != Via::Direct || !backend.net.known(&target);
-    if passive == Some(true) && committing {
+    let unwatched = backend.unwatched(&alias)?;
+    if passive == Some(true) && (committing || unwatched) {
         return Ok(None);
     }
-    backend.net.peek(alias, target, password).await.map(Some)
+    let peek = backend.net.peek(alias.clone(), target, password).await;
+    if unwatched {
+        // A person asked, once: the connection is not kept for a next time.
+        backend.net.forget(Some(&alias));
+    }
+    peek.map(Some)
+}
+
+/// Whether the watching of every host is paused.
+#[tauri::command(async)]
+fn watch_paused(backend: State<'_, Backend>) -> Reply<bool> {
+    let paused = || anyhow::Ok(backend.db()?.flag(WATCH_PAUSED)?);
+    Ok(paused()?)
+}
+
+fn watch(backend: &Backend, alias: Option<&str>, paused: bool) -> Result<()> {
+    match alias {
+        Some(alias) => {
+            backend.config_of(alias)?;
+            backend.db()?.set_paused(alias, paused)?;
+        }
+        None => backend.db()?.set_flag(WATCH_PAUSED, paused)?,
+    }
+    if paused {
+        backend.net.forget(alias);
+    }
+    Ok(())
+}
+
+/// Stops the watching of a host, or of every host (no alias), or starts it
+/// again; kept in the database. What is stopped is asked for nothing on the
+/// dashboard's own, and the connection kept for it is closed.
+#[tauri::command(async)]
+fn watch_set(alias: Option<String>, paused: bool, backend: State<'_, Backend>) -> Reply<()> {
+    Ok(watch(&backend, alias.as_deref(), paused)?)
 }
 
 /// How long a TCP connect to the host takes, in ms; `None` if it is down.
@@ -377,6 +432,9 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             list_hosts,
             get_host_stats,
             ping_host,
+            watch_paused,
+            watch_set,
+            pick::pick_file,
             session::session_open,
             session::quick_connect,
             session::session_start,

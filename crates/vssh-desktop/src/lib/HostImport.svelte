@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { api, explain, type Host, type Shown } from './api'
   import { i18n, t } from './i18n.svelte'
+  import Icon from './Icon.svelte'
   import { addr } from './streamer.svelte'
 
   type Props = {
@@ -36,6 +37,15 @@
       ticked = found.map((host) => host.alias)
     })
 
+  /** Another config, chosen in the desktop's dialog, and read at once. */
+  const choose = () =>
+    attempt(async () => {
+      const chosen = await api.pickFile(t('choose_ssh_config'))
+      if (!chosen) return
+      path = chosen
+      await preview()
+    })
+
   const take = () => attempt(async () => onimported(await api.hostsImport(path.trim() || null, ticked)))
 
   onMount(() => {
@@ -49,7 +59,7 @@
 <div class="grid gap-4 p-6 text-[13px] text-white">
   <p class="text-base font-semibold text-ink">{t('import_ssh_config')}</p>
   <form
-    class="grid grid-cols-[1fr_auto] items-end gap-2"
+    class="grid grid-cols-[1fr_auto_auto] items-end gap-2"
     onsubmit={(e) => {
       e.preventDefault()
       void preview()
@@ -67,6 +77,15 @@
         class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-[13px] text-fg placeholder:text-dim"
       />
     </label>
+    <button
+      type="button"
+      aria-label={t('choose_ssh_config')}
+      title={t('choose_ssh_config')}
+      onclick={choose}
+      class="grid size-[38px] cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg"
+    >
+      <Icon name="folder" />
+    </button>
     <button type="submit" class="{button} text-fg">{t('preview')}</button>
   </form>
 

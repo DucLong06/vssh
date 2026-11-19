@@ -9,7 +9,7 @@ use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use vssh_core::config::{home, ssh_config_path};
-use vssh_core::ssh::Target;
+use vssh_core::ssh::{HopAuth, Target};
 use vssh_core::store::ssh_config::SshConfig;
 use vssh_core::store::{self, Host};
 use zeroize::Zeroizing;
@@ -33,10 +33,30 @@ pub struct Form {
     tags: String,
     notes: String,
     pinned: Option<bool>,
+    /// The jump hosts that are logged in to with a key of their own on the
+    /// way to this host. App data: the config's `ProxyJump` names the hops
+    /// and nothing else.
+    jump_auth: Option<Vec<Hop>>,
     /// For the vault, which must be unlocked, and nowhere else; an empty
     /// one takes the stored one out. Never read back.
     #[serde(skip_serializing)]
     password: Option<String>,
+}
+
+/// A hop of the host's `ProxyJump`, as it is written there, and the key it
+/// was given; a user too, if not the jump host's own.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Hop {
+    hop: String,
+    key: String,
+    #[serde(default)]
+    user: String,
+}
+
+/// The hops of a `ProxyJump` value, as written.
+fn hops(jump: &str) -> impl Iterator<Item = &str> {
+    jump.split(',').map(str::trim).filter(|hop| !hop.is_empty())
 }
 
 /// The form of a host as it stands: what its own block says, not what a
@@ -44,14 +64,27 @@ pub struct Form {
 fn form(backend: &Backend, alias: &str) -> Result<Form> {
     let sshc = backend.config_of(alias)?;
     let own = |key| sshc.own(alias, key).to_string();
-    let meta = backend.db()?.metas()?.remove(alias).unwrap_or_default();
+    let db = backend.db()?;
+    let meta = db.metas()?.remove(alias).unwrap_or_default();
+    // In the order of the road.
+    let mut given = db.jump_auth()?;
+    let jump = own("ProxyJump");
+    let given = hops(&jump).filter_map(|hop| {
+        let auth = given.remove(&(alias.to_string(), hop.to_string()))?;
+        Some(Hop {
+            hop: hop.to_string(),
+            key: auth.key,
+            user: auth.user,
+        })
+    });
     Ok(Form {
         alias: alias.to_string(),
         hostname: own("HostName"),
         user: own("User"),
         port: own("Port").parse().ok(),
         identity_file: own("IdentityFile"),
-        proxy_jump: Some(own("ProxyJump")),
+        jump_auth: Some(given.collect()),
+        proxy_jump: Some(jump),
         grp: meta.grp,
         tags: meta.tags,
         notes: meta.notes,
@@ -107,7 +140,9 @@ fn save(backend: &Backend, old: Option<&str>, mut form: Form) -> Result<Host> {
         sshc.set(alias, key, value.trim());
     }
     if let Some(jump) = &form.proxy_jump {
-        sshc.set(alias, "ProxyJump", jump.trim());
+        // One line, as ssh writes it: `a,b`.
+        let road: Vec<&str> = hops(jump).collect();
+        sshc.set(alias, "ProxyJump", &road.join(","));
     }
     backend.save(&sshc)?;
 
@@ -123,6 +158,19 @@ fn save(backend: &Backend, old: Option<&str>, mut form: Form) -> Result<Host> {
     (meta.grp, meta.tags, meta.notes) = (text(&form.grp), text(&form.tags), text(&form.notes));
     meta.pinned = form.pinned.unwrap_or(meta.pinned);
     db.set_meta(alias, &meta)?;
+    if let Some(given) = form.jump_auth {
+        // A key for a hop the road does not have is a key for nothing.
+        let road = sshc.own(alias, "ProxyJump").to_string();
+        let kept = given.into_iter().filter_map(|hop| {
+            let auth = HopAuth {
+                key: hop.key.trim().to_string(),
+                user: hop.user.trim().to_string(),
+            };
+            let on_road = hops(&road).any(|name| name == hop.hop) && !auth.key.is_empty();
+            on_road.then_some((hop.hop, auth))
+        });
+        db.set_jump_auth(alias, &kept.collect::<Vec<_>>())?;
+    }
 
     if let Some(vault) = backend.vault.lock().unwrap().as_mut() {
         // Its password is the host's, whatever the host is called.

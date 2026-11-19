@@ -17,6 +17,8 @@ export type Meta = {
   /** Unix seconds; 0 = never. */
   last_connected: number
   connects: number
+  /** Not watched: the dashboard asks it for nothing on its own. */
+  paused: boolean
 }
 
 /** A host of `~/.ssh/config`. What the config does not say is `null`. */
@@ -38,16 +40,21 @@ export type HostForm = {
   user: string
   port: number | null
   identity_file: string
-  /** The alias of the host it is reached through. */
+  /** The hosts it is reached through, in order: `a,b`, each an alias or `user@host[:port]`. */
   proxy_jump: string
   grp: string
   /** Space separated. */
   tags: string
   notes: string
   pinned: boolean
+  /** The hops of `proxy_jump` that are logged in to with a key of their own; left out, what there is stays. */
+  jump_auth?: Hop[]
   /** Only ever sent: for the unlocked vault. Empty takes the stored one out; left out, it stays. */
   password?: string
 }
+
+/** A hop as `proxy_jump` writes it, the key file it is given, and a user if not the jump host's own. */
+export type Hop = { hop: string; key: string; user: string }
 
 /** A host of a hosts file, as much of its form as is shown; `taken`: the app has a host of that name. */
 export type Offered = Pick<HostForm, 'alias' | 'hostname' | 'user' | 'port'> & { taken: boolean }
@@ -157,6 +164,15 @@ export const api = {
   getHostStats: (alias: string, passive = false) => invoke<Peek | null>('get_host_stats', { alias, passive }),
   /** TCP connect time in ms, `null` if down; rejects for a host behind a jump host. */
   pingHost: (alias: string) => invoke<number | null>('ping_host', { alias }),
+  /** Whether the watching of every host is paused. */
+  watchPaused: () => invoke<boolean>('watch_paused'),
+  /** Stops the watching of a host, or of every host (`null`), or starts it again; kept by the database. */
+  watchSet: (alias: string | null, paused: boolean) => invoke<void>('watch_set', { alias, paused }),
+  /**
+   * A file of this machine, chosen in the desktop's own dialog: its path, `~` for the home, or `null` if none was.
+   * `keys`: it is an SSH key, and these are the names of the dialog's two filters, keys and all files.
+   */
+  pickFile: (title: string, keys?: [keys: string, all: string]) => invoke<string | null>('pick_file', { title, keys }),
   /** Resolves to the id of a new session, which connects when it is started. */
   sessionOpen: (alias: string) => invoke<number>('session_open', { alias }),
   /** `[user@]host[:port]`; resolves to the id of a new session. */

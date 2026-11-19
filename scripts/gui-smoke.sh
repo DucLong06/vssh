@@ -83,6 +83,20 @@
 #   Sessions            its row brings the open session's terminal to the front
 #   the first row       the dashboard again, with its keys
 #
+# Then the files chosen in the desktop's dialog, the road through jump hosts,
+# and the watching that can be stopped (D14):
+#
+#   gate-x              web-01's sshd again, a jump host whose own block names
+#                       a key that does not open it
+#   deep-x              shell-01's sshd behind it: refused at the jump host,
+#                       until the form gives that hop a key of its own, chosen
+#                       in the real GTK file dialog; then a shell through two
+#                       hops. The config says ProxyJump a,b; the key is in the
+#                       database
+#   web-01              its card's Watch switch: the connection kept for it is
+#                       closed and nobody logs in until it is on again; then
+#                       the settings' Pause watching, for every host at once
+#
 # Then what D7 added, in the app as it was started last, in Vietnamese:
 #
 #   the bar             over the cards: with cards marked it is still two rows
@@ -99,7 +113,8 @@
 # (.vi.png: the Vietnamese UI; d3-fail: a connection that fails, d3-closed:
 # one that drops; d4-sftp: the file view with transfers under way; d5-batch:
 # what four hosts answered to one command; d6-vault: the vault's manager,
-# d6-host: the host form; d7-day: the Day theme, d7-streamer: streamer mode;
+# d6-host: the host form, as D14 leaves it: a key file and its folder button,
+# a road of two hops; d7-day: the Day theme, d7-streamer: streamer mode;
 # d9-rail: the rail with every row in use; d10-shortcuts: the cheatsheet,
 # d10-split: two shells side by side, d10-focus: the same with no rail;
 # d11-compact: the rail as icons; d12-broadcast: two panes with broadcast on);
@@ -348,7 +363,7 @@ top() { xdotool mousemove --window "$win" 672 420 click --repeat 40 --delay 10 4
 aside() { xdotool mousemove --window "$win" 700 690; sleep 0.5; }
 # The settings, at the rail's foot: a menu whose first row has the keys. Down to
 # the row asked for, and Enter: 1 the language, 2 the theme, 3 streamer mode,
-# 4 focus mode, 5 the cheatsheet. RAIL: the middle of the rail, which may be narrow.
+# 4 pause watching, 5 focus mode, 6 the cheatsheet. RAIL: the middle of the rail, which may be narrow.
 RAIL=120
 setting() {
     xdotool mousemove --window "$win" "$RAIL" 636 click 1
@@ -1004,7 +1019,7 @@ key Tab
 typed staging
 key Tab space Tab
 typed 'added by the smoke run'
-shot docs/img/desktop-d6-host.png
+shot target/smoke/host-new.png
 # Import, Cancel, Save.
 key Tab Tab Tab Return
 sleep 2
@@ -1061,8 +1076,8 @@ shot target/smoke/import-none.png
 typed '~/their_config'
 key Return
 sleep 2
-# Preview, bastion-x, inner-x (unticked), Cancel, Import.
-key Tab Tab Tab space
+# The folder button, Preview, bastion-x, inner-x (unticked), Cancel, Import.
+key Tab Tab Tab Tab space
 shot target/smoke/import-preview.png
 key Tab Tab Return
 sleep 2
@@ -1075,7 +1090,7 @@ language
 action web-01
 key e
 sleep 1
-shot docs/img/desktop-d6-host.vi.png
+shot target/smoke/host-edit.vi.png
 key Escape
 language
 
@@ -1155,6 +1170,178 @@ top
 shot docs/img/desktop-d9-rail.vi.png
 language
 
+# --- D14: a key chosen as a file, the road through jump hosts, the watching ---
+# What the database has, as rows of |-separated fields.
+rows() {
+    python3 - "$home/.local/share/vssh/vssh.db" "$1" <<'PY'
+import sqlite3, sys
+for row in sqlite3.connect(sys.argv[1], timeout=10).execute(sys.argv[2]):
+    print("|".join(map(str, row)))
+PY
+}
+# The desktop's own file dialog: a window of its own, which nobody gives the
+# keys on a display without a window manager. Ctrl-L is its field for a path.
+choose() {
+    dlg=$(timeout 10 xdotool search --sync --onlyvisible --name '^Choose a key file$' | head -n 1)
+    [ -n "$dlg" ] || fail "the folder button opened no file dialog"
+    xdotool windowfocus "$dlg"
+    sleep 0.5
+    xdotool key --window "$dlg" ctrl+l
+    sleep 0.5
+    xdotool type --window "$dlg" --delay 20 "$1"
+    sleep 0.5
+    shot target/smoke/pick-key.png
+    xdotool key --window "$dlg" Return
+    sleep 2
+    xdotool search --onlyvisible --name '^Choose a key file$' >/dev/null && fail "the file dialog did not take the path typed in it"
+    xdotool windowfocus "$win"
+    sleep 0.5
+}
+# gate-x is web-01's sshd under a name whose block has a key that sshd does
+# not know; deep-x is shell-01's.
+ssh-keygen -q -t ed25519 -N '' -f "$home/.ssh/not_it"
+cat >>"$config" <<EOF
+Host gate-x
+    HostName 127.0.0.1
+    Port 2201
+    IdentityFile ~/.ssh/not_it
+Host deep-x
+    HostName 127.0.0.1
+    Port 2204
+EOF
+sleep 7
+
+# The road, one hop long, and nothing said of a key: alias, host, user, port,
+# how it is signed in to, and the road's one stop, which adds a row to type in.
+action deep-x
+key e
+sleep 1
+key Tab Tab Tab Tab Tab Return
+typed gate-x
+key Return
+sleep 2
+block=$(grep -A3 '^Host deep-x$' "$config" | tr -s ' \n' ' ')
+[ "$block" = "Host deep-x HostName 127.0.0.1 Port 2204 ProxyJump gate-x " ] || fail "the road typed in the form is in the config as '$block'"
+[ -z "$(rows "SELECT * FROM jump_auth")" ] || fail "a hop was given a key nobody chose"
+# The jump host is logged in to with what its own block says, which does not
+# open it: nobody gets in, and the tab says where it stopped.
+sleep 6
+logins=$(accepted)
+open_tab deep-x
+shot target/smoke/hop-refused.png
+[ "$(accepted)" -eq "$logins" ] || fail "the jump host let its own key in: $(accepted) logins, $logins before"
+key Escape
+key ctrl+shift+w
+step "a road typed in the form is ProxyJump in the config; the jump host's own key did not open it"
+
+# The form again. Signed in to with a key: the folder button by the field, and
+# in the dialog the public half, which stands for the key. Then the hop's own
+# key by the hop's own button, and a second hop: past the hop's user and its
+# x, the road's stop again.
+action deep-x
+key e
+sleep 1
+key Tab Tab Tab Tab Left
+key Tab Tab Return
+choose "$home/.ssh/id_ed25519.pub"
+key Tab Tab Tab Return
+choose "$home/.ssh/id_ed25519"
+key Tab Tab Tab Return
+typed shell-02
+shot target/smoke/hops-form.png
+key Return
+sleep 2
+block=$(grep -A4 '^Host deep-x$' "$config" | tr -s ' \n' ' ')
+[ "$block" = "Host deep-x HostName 127.0.0.1 Port 2204 ProxyJump gate-x,shell-02 IdentityFile ~/.ssh/id_ed25519 " ] || fail "the key chosen and the road of two hops are in the config as '$block'"
+[ "$(grep -c 'id_ed25519' "$config")" -eq 1 ] || fail "the hop's own key is in the ssh config, which has no word for it"
+[ "$(rows "SELECT host, hop, key, user FROM jump_auth")" = "deep-x|gate-x|~/.ssh/id_ed25519|" ] || fail "the hop's own key is in the database as '$(rows "SELECT host, hop, key, user FROM jump_auth")'"
+step "the file dialog's path is in the form with ~ for the home, the public half as its key; the hop's key is in the database only"
+
+# Now the jump host opens to the key it was given here, the second hop to the
+# default one, and behind them is a shell: three logins, and what is typed
+# runs in shell-01's directory.
+sleep 6
+logins=$(accepted)
+open_tab deep-x
+run 'touch through-hops'
+there 2204/through-hops "the tab through two jump hosts is not a shell on the host behind them"
+shot target/smoke/hops-through.png
+[ "$(accepted)" -eq $((logins + 3)) ] || fail "$(($(accepted) - logins)) logins for a road of two hops and its host, not 3"
+key ctrl+shift+w
+step "the key given to the hop opened it where its own did not: a shell through two jump hosts, three logins"
+
+# The form as it stands, for the README: the key's folder button, the road as
+# a picture, each hop and what it is logged in to with. In both languages.
+action deep-x
+key e
+sleep 1
+aside
+shot docs/img/desktop-d6-host.png
+key Escape
+language
+action deep-x
+key e
+sleep 1
+aside
+shot docs/img/desktop-d6-host.vi.png
+key Escape
+language
+
+# A card's own switch is its first stop. Off: the database says so, the
+# connection the dashboard kept is closed, and two rounds later nobody has
+# logged in. On again: the next round logs in anew.
+closed() { grep -c 'Connection closed by 127' "$home/sshd/log" || true; }
+sleep 6
+logins=$(accepted)
+shut=$(closed)
+action web-01
+key Tab space
+sleep 3
+aside
+shot target/smoke/watch-off.png
+[ "$(rows "SELECT alias FROM hosts WHERE paused")" = web-01 ] || fail "the card's switch left the database with '$(rows "SELECT alias FROM hosts WHERE paused")' unwatched, not web-01"
+[ "$(closed)" -eq $((shut + 1)) ] || fail "the connection kept for a host that is not watched any more was not closed ($(closed) closed, $shut before)"
+sleep 11
+[ "$(accepted)" -eq "$logins" ] || fail "a host that is not watched was logged in to: $(accepted) logins, $logins before"
+key space
+sleep 7
+[ -z "$(rows "SELECT alias FROM hosts WHERE paused")" ] || fail "the card's switch, on again, left the host unwatched in the database"
+[ "$(accepted)" -eq $((logins + 1)) ] || fail "the host that is watched again was not asked again: $(accepted) logins, $logins before"
+step "a card's switch stopped the watching of its host: its connection closed, no login for two rounds; on again, one login"
+
+# The same for every host at once, a row of the settings: every kept
+# connection goes, and the dashboard says so at its top.
+logins=$(accepted)
+shut=$(closed)
+setting 4
+sleep 3
+top
+shot target/smoke/watch-paused.png
+[ "$(rows "SELECT name FROM flags")" = watch_paused ] || fail "Pause watching is not in the database"
+[ "$(closed)" -gt "$shut" ] || fail "Pause watching closed no connection"
+sleep 11
+[ "$(accepted)" -eq "$logins" ] || fail "with the watching paused somebody was logged in to: $(accepted) logins, $logins before"
+setting 4
+sleep 7
+[ -z "$(rows "SELECT name FROM flags")" ] || fail "the watching, on again, is still paused in the database"
+[ "$(accepted)" -gt "$logins" ] || fail "the watching, on again, asked nobody"
+step "Pause watching stopped every round and closed what was kept; on again, the hosts are asked again"
+
+# The two hosts go as they came; the hop's key goes with the host whose road
+# it was on. shell-02 is the selected one again, as D9 left it.
+action deep-x
+key d Tab Return
+sleep 2
+[ -z "$(rows "SELECT * FROM jump_auth")" ] || fail "a deleted host left its hop's key in the database"
+action gate-x
+key d Tab Return
+sleep 2
+grep -qE '^Host (deep|gate)-x$' "$config" && fail "the hosts of the road are still in the config"
+action shell-02
+top
+kill -0 "$app" 2>/dev/null || fail "the app died"
+step "the app is still running after the file dialog, the road and the switches"
+
 # --- D10: the cheatsheet, and the desktop's keys ------------------------------
 # How many colours a strip of a screenshot has, one pixel high: x, y, width.
 colours() { ffmpeg -loglevel error -i "$1" -vf "crop=$4:1:$2:$3" -f rawvideo -pix_fmt rgb24 - | od -An -v -tx1 -w3 | sort -u | wc -l; }
@@ -1179,7 +1366,7 @@ key Escape
 shot target/smoke/shortcuts-shut.png
 sheet target/smoke/shortcuts-shut.png && fail "Esc did not close the cheatsheet"
 # The settings' last row; then Ctrl-/.
-setting 5
+setting 6
 shot target/smoke/shortcuts-button.png
 sheet target/smoke/shortcuts-button.png || fail "the settings' row did not open the cheatsheet"
 key Escape

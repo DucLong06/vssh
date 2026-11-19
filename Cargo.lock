@@ -6238,6 +6238,7 @@ name = "vssh-desktop"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "gtk",
  "serde",
  "serde_json",
  "tauri",
