@@ -6,6 +6,7 @@
   import Icon from './Icon.svelte'
   import Keys from './Keys.svelte'
   import Modal from './Modal.svelte'
+  import { scale, setScale, zoom } from './scale.svelte'
   import { KEY } from './keymap'
   import { addr, streamer, target } from './streamer.svelte'
 
@@ -69,6 +70,10 @@
           ]
         : []),
       ...(onzen ? [{ key: 'focus', label: t('focus_mode'), detail: '', keys: KEY.focus, en: 'focus mode', run: onzen }] : []),
+      // The window's size: the palette stays, with the size it is now beside each, for another step.
+      { key: 'zoom-in', label: t('zoom_in'), detail: `${scale.percent}%`, keys: KEY.zoomIn, en: 'zoom in ui', run: () => zoom(1) },
+      { key: 'zoom-out', label: t('zoom_out'), detail: `${scale.percent}%`, keys: KEY.zoomOut, en: 'zoom out ui', run: () => zoom(-1) },
+      { key: 'zoom-reset', label: t('zoom_reset'), detail: `${scale.percent}%`, keys: KEY.zoomReset, en: 'reset ui zoom', run: () => setScale(100) },
     ].map(({ en, ...item }): { item: Item; en: string } => ({ item: { ...item, action: true }, en }))
     const rows = hosts.map((host) => {
       // Found by its real address, shown at the one the window may show.

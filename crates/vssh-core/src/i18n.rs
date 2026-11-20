@@ -576,6 +576,11 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "No host is asked for its figures, and no connection is kept open.",
         "Không hỏi số liệu máy nào, và không giữ kết nối nào.",
     ),
+    // The window's own size (D16): the settings' row, and what its two buttons, the keys and the palette do.
+    ("ui_scale", "UI size", "Cỡ giao diện"),
+    ("zoom_in", "Zoom in UI", "Phóng to giao diện"),
+    ("zoom_out", "Zoom out UI", "Thu nhỏ giao diện"),
+    ("zoom_reset", "Reset UI zoom", "Đặt lại cỡ giao diện"),
 ];
 
 /// The text under `key` in this language; `None` for a key nobody defined.

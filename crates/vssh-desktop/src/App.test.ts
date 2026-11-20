@@ -12,9 +12,10 @@ import hosts from './lib/fixtures/hosts.json'
 import peek from './lib/fixtures/peek.json'
 import refused from './lib/fixtures/refused.json'
 import shown from './lib/fixtures/shown.json'
-import { terminals } from './lib/fixtures/xterm'
+import { FitAddon, terminals } from './lib/fixtures/xterm'
 import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
+import { scale } from './lib/scale.svelte'
 import { capital, sheet } from './lib/keymap'
 import { tunnels } from './lib/tunnels.svelte'
 import { forget as unheard } from './lib/update.svelte'
@@ -2882,4 +2883,42 @@ test('with no answer about a newer version the window says nothing of it', async
   await vi.advanceTimersByTimeAsync(6000)
   expect(within(status()).queryByRole('status')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('Ctrl+= and Ctrl++ draw the window a step bigger, Ctrl+- a step smaller, Ctrl+0 as it was made: in a terminal and over a dialog too, and no shell is sent them', async () => {
+  const user = shell()
+  await user.click(within(await card('web-01')).getByRole('button', { name: 'Connect' }))
+  await tab(/web-01/)
+  await vi.waitFor(() => expect(asked('session_start')).toHaveLength(1))
+  const fit = vi.spyOn(FitAddon.prototype, 'fit')
+  // What a terminal would hear: a listener under the window's own.
+  const heard = vi.fn()
+  document.body.addEventListener('keydown', heard)
+  /** A key with Ctrl; `false`: it was the window's, and nobody else's. */
+  const press = (key: string, more: object = {}) => fireEvent.keyDown(document.body, { key, ctrlKey: true, ...more })
+  const sizes: number[] = []
+  for (const [key, more] of [['='], ['+', { shiftKey: true }], ['-'], ['-'], ['-'], ['0'], ['+'], ['0', { metaKey: true, ctrlKey: false }]] as const) {
+    expect(await press(key, more), key).toBe(false)
+    sizes.push(scale.percent)
+  }
+  expect(sizes).toEqual([110, 125, 110, 100, 90, 100, 110, 100])
+  expect(heard).not.toHaveBeenCalled()
+  expect(asked('session_write')).toEqual([])
+  expect(localStorage.getItem('vssh.ui_scale')).toBe('100')
+  // The terminal's letters are its own: its room changed, and it was fitted to it each time.
+  expect(fit.mock.calls.length).toBeGreaterThanOrEqual(8)
+  expect(terminals[0].options).toMatchObject({ fontSize: 13 })
+  // A shell's undo is another key, and the shell's; so is a 0 with Alt.
+  expect(await press('_', { shiftKey: true })).toBe(true)
+  expect(await press('0', { altKey: true })).toBe(true)
+  expect(heard).toHaveBeenCalledTimes(2)
+  expect(scale.percent).toBe(100)
+  // Over a dialog: the palette, which has the three as actions.
+  await user.keyboard(ctrlK)
+  expect(await press('=')).toBe(false)
+  expect(scale.percent).toBe(110)
+  expect(document.documentElement.style.fontSize).toBe('110%')
+  expect(within(screen.getByRole('dialog')).getByRole('option', { name: /Zoom in UI/ })).toHaveTextContent('110%')
+  document.body.removeEventListener('keydown', heard)
+  fit.mockRestore()
 })

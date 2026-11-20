@@ -10,6 +10,7 @@
   import Icon from './Icon.svelte'
   import { KEY, tip } from './keymap'
   import Menu, { pointed, type MenuItem } from './Menu.svelte'
+  import { scale } from './scale.svelte'
   import { FONT, lastOutput, osc52, THEME } from './term'
 
   type Props = {
@@ -84,8 +85,10 @@
     }
   })
 
-  // A tab that comes to the front takes the keyboard, at the size it now has.
+  // A tab that comes to the front takes the keyboard, at the size it now has. So when the window is
+  // drawn bigger or smaller: the letters here are as they were, and their room is not.
   $effect(() => {
+    void scale.percent
     if (!active) return
     fit.fit()
     if (front) term.focus()

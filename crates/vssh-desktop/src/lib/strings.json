@@ -238,6 +238,7 @@
     "trust": "Trust",
     "try_again": "try again",
     "try_port": "Try port {n}",
+    "ui_scale": "UI size",
     "unlock": "Unlock",
     "unreachable": "unreachable",
     "unsplit": "Unsplit: this pane back to a tab of its own",
@@ -265,7 +266,10 @@
     "watch_stopped": "watching stopped",
     "which_host": "which host?",
     "wrong_attempts": "{n} wrong attempts. The vault does not lock you out, but a forgotten passphrase cannot be recovered.",
-    "wrong_passphrase": "Wrong vault passphrase, or the vault file is damaged"
+    "wrong_passphrase": "Wrong vault passphrase, or the vault file is damaged",
+    "zoom_in": "Zoom in UI",
+    "zoom_out": "Zoom out UI",
+    "zoom_reset": "Reset UI zoom"
   },
   "vi": {
     "accept_once": "Chấp nhận một lần",
@@ -506,6 +510,7 @@
     "trust": "Tin cậy",
     "try_again": "thử lại",
     "try_port": "Thử cổng {n}",
+    "ui_scale": "Cỡ giao diện",
     "unlock": "Mở kho",
     "unreachable": "không kết nối được",
     "unsplit": "Bỏ chia: đưa ô này về tab riêng",
@@ -533,6 +538,9 @@
     "watch_stopped": "đã ngừng theo dõi",
     "which_host": "của máy nào?",
     "wrong_attempts": "Đã sai {n} lần. Kho không khoá bạn lại, nhưng mật khẩu đã quên thì không lấy lại được.",
-    "wrong_passphrase": "Sai mật khẩu kho, hoặc tệp kho bị hỏng"
+    "wrong_passphrase": "Sai mật khẩu kho, hoặc tệp kho bị hỏng",
+    "zoom_in": "Phóng to giao diện",
+    "zoom_out": "Thu nhỏ giao diện",
+    "zoom_reset": "Đặt lại cỡ giao diện"
   }
 }

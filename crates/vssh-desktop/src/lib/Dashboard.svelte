@@ -338,7 +338,7 @@
 
 <svelte:window onkeydown={onwindowkey} />
 
-<section {hidden} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
+<section {hidden} aria-label={t('hosts')} class="@container min-h-0 flex-1 overflow-y-auto px-8 pb-8">
   {#if error}
     <p role="alert" class="mt-5 rounded-xl border border-dashed border-red/40 bg-bg px-4 py-3 break-words text-red">
       <strong>{error.label}</strong>
@@ -570,10 +570,10 @@
             <span class="text-md font-normal text-dim">({list.length})</span>
           </h2>
         {/if}
-        <!-- One column, two past 800 px of window, three past 1200. -->
+        <!-- One column, two past 31 rem of room, three past 56: 800 and 1200 px of window, with the rail, at the size the window was made at. In rem, and of the room, not the window: drawn bigger, the cards need it sooner. -->
         <ul
           aria-label={name || t('no_tags')}
-          class="grid grid-cols-1 gap-3 pb-5 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
+          class="grid grid-cols-1 gap-3 pb-5 @min-[31rem]:grid-cols-2 @min-[56rem]:grid-cols-3"
         >
           {#each list as host, at (host.alias)}
             <!-- Resting on a card shows what is known. It does not ask: a host

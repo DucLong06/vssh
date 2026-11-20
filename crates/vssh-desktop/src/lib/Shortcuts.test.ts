@@ -30,6 +30,9 @@ test('the cheatsheet: a dialog with the keys in groups, each key a key cap', () 
     ['Split right', ['Ctrl+Shift+D']],
     ['Split down', ['Ctrl+Shift+E']],
     ['Focus mode: hide the sidebar', ['Ctrl+Shift+B', 'Ctrl+B']],
+    ['Zoom in UI', ['Ctrl+=', 'Ctrl++']],
+    ['Zoom out UI', ['Ctrl+-']],
+    ['Reset UI zoom', ['Ctrl+0']],
     ['Paste into the session in front', ['Ctrl+Shift+V']],
     ['close', ['Esc']],
   ])

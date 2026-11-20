@@ -7,6 +7,7 @@
   import SessionDot from './SessionDot.svelte'
   import { KEY, tip } from './keymap'
   import Menu, { tall, type MenuItem } from './Menu.svelte'
+  import { scale, setScale, STEPS, zoom } from './scale.svelte'
   import { setStreamer, streamer } from './streamer.svelte'
   import type { Tab } from './Tabs.svelte'
   import { setTheme, theme } from './theme.svelte'
@@ -72,6 +73,15 @@
   const settings = $derived.by((): MenuItem[] => [
     { label: t('language'), note: i18n.lang.toUpperCase(), run: () => setLang(i18n.lang === 'en' ? 'vi' : 'en') },
     { label: t('theme'), note: theme.name === 'night' ? t('theme_night') : t('theme_day'), run: () => setTheme(theme.name === 'night' ? 'day' : 'night') },
+    // A- 100% A+: a step smaller, as it was made, a step bigger. Each says its key.
+    {
+      label: t('ui_scale'),
+      parts: [
+        { text: 'A-', label: t('zoom_out'), title: tip(t('zoom_out'), KEY.zoomOut), off: scale.percent === STEPS[0], run: () => zoom(-1) },
+        { text: `${scale.percent}%`, label: t('zoom_reset'), title: tip(t('zoom_reset'), KEY.zoomReset), run: () => setScale(100) },
+        { text: 'A+', label: t('zoom_in'), title: tip(t('zoom_in'), KEY.zoomIn), off: scale.percent === STEPS.at(-1), run: () => zoom(1) },
+      ],
+    },
     { label: t('streamer_mode'), note: streamer.on ? '✓' : undefined, run: () => setStreamer(!streamer.on) },
     ...(onpause ? [{ label: t('watch_pause'), note: paused ? '✓' : undefined, run: () => onpause(!paused) }] : []),
     ...(onzen || onshortcuts ? [null] : []),
