@@ -11,7 +11,9 @@
    `panel` for cards and dialogs; `selection` for what is chosen or pointed at.
 
    The scales are Tailwind's own, said here so that they are one place:
-   spacing 4/8/12/16/24 px is 1/2/3/4/6, the radii 8/12/16 px are lg/xl/2xl. */
+   spacing 4/8/12/16/24 px is 1/2/3/4/6, the radii 8/10/12/16 px are
+   lg/ctl/xl/2xl. Every length is a rem: the px said here are what it is while
+   the root's letter is 16 px. */
 @theme static {
   --color-*: initial;
   --color-bg: #1a1b26;
@@ -43,9 +45,22 @@
      copied letter by letter: addresses, paths, ports, commands, output. */
   --font-sans: Inter, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Maple Mono NF", "Maple Mono", "JetBrains Mono", ui-monospace, monospace;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
+  --radius-lg: 0.5rem;
+  /* A control's: a button, a row of the rail, a tab. */
+  --radius-ctl: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  /* The letters, smallest first: 11 a badge's, 12 a label's and a key's,
+     13 what is beside the text (meta, the status bar), 14 the text of a
+     dialog and of a list, 15 the body's (md), 17 a heading's, 19 and 26 above
+     it. Each is one more than it was until D16. */
+  --text-3xs: 0.6875rem;
+  --text-2xs: 0.75rem;
+  --text-xs: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-base: 1.0625rem;
+  --text-lg: 1.1875rem;
+  --text-2xl: 1.625rem;
   /* Flat: what stands on the page is told from it by its ground and a line.
      A shadow is for what floats over the page and goes again: a dialog, a
      menu, a popover. Nothing else has one. */
@@ -106,7 +121,7 @@ body {
   background: var(--color-page);
   color: var(--color-fg);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -123,17 +138,17 @@ body {
      frame and no monospace: that is how a terminal writes a key. */
   kbd {
     display: inline-flex;
-    gap: 3px;
+    gap: 0.1875rem;
     vertical-align: middle;
-    font: 500 11px/1 var(--font-sans);
+    font: 500 var(--text-2xs) / 1 var(--font-sans);
   }
   kbd > span:not(.sr-only) {
     display: inline-grid;
     place-items: center;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 5px;
-    border-radius: 5px;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    padding: 0 0.3125rem;
+    border-radius: 0.3125rem;
     background: var(--color-bar);
     color: var(--color-white);
     border-bottom: 1px solid rgb(0 0 0 / 0.28);

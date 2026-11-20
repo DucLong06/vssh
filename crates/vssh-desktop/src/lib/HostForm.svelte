@@ -211,13 +211,13 @@
 
   const field =
     'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim disabled:opacity-60 aria-invalid:border-red'
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
   const choice =
     'cursor-pointer rounded-md px-2.5 py-1 text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue'
   const plain = { autocomplete: 'off', autocapitalize: 'off', spellcheck: false } as const
-  const small = 'w-full rounded-lg border border-edge bg-bg px-2.5 py-1 font-mono text-xs text-fg placeholder:font-sans placeholder:text-dim disabled:opacity-40 aria-invalid:border-red'
+  const small = 'w-full rounded-lg border border-edge bg-bg min-h-9 px-2.5 py-1 font-mono text-xs text-fg placeholder:font-sans placeholder:text-dim disabled:opacity-40 aria-invalid:border-red'
   const tool = 'grid shrink-0 cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent'
-  const offer = 'cursor-pointer rounded-full border border-edge px-2 py-0.5 hover:border-blue hover:text-blue'
+  const offer = 'cursor-pointer rounded-full border border-edge px-2.5 py-1 hover:border-blue hover:text-blue'
 </script>
 
 <!-- After the field's label, not in it: it is no part of the field's name. -->
@@ -232,7 +232,7 @@
   {#if importing}
     <HostImport {onimported} oncancel={() => (importing = false)} />
   {:else}
-    <form bind:this={root} novalidate onsubmit={save} class="grid max-h-[84vh] gap-4 overflow-y-auto px-6 pt-6 text-[13px] text-white">
+    <form bind:this={root} novalidate onsubmit={save} class="grid max-h-[84vh] gap-4 overflow-y-auto px-7 pt-7 text-sm text-white">
       <p class="text-base font-semibold text-ink">{title}</p>
       <div class="grid grid-cols-[1fr_1.5fr_1fr_6rem] gap-2">
         <div>
@@ -259,7 +259,7 @@
               {...plain}
               aria-invalid={wrong.hostname ? 'true' : undefined}
               aria-describedby="host-form-hostname"
-              class="{field} font-mono text-[13px]"
+              class="{field} font-mono text-sm"
             />
           </label>
           {@render problem('host-form-hostname', wrong.hostname)}
@@ -279,7 +279,7 @@
               {...plain}
               aria-invalid={wrong.port ? 'true' : undefined}
               aria-describedby="host-form-port"
-              class="{field} font-mono text-[13px]"
+              class="{field} font-mono text-sm"
             />
           </label>
           {@render problem('host-form-port', wrong.port)}
@@ -324,14 +324,14 @@
           <div class="flex items-end gap-1.5">
             <label class="min-w-0 flex-1">
               {t('key_file')}
-              <input bind:value={form.identity_file} placeholder="~/.ssh/id_ed25519" {...plain} class="{field} font-mono text-[13px]" />
+              <input bind:value={form.identity_file} placeholder="~/.ssh/id_ed25519" {...plain} class="{field} font-mono text-sm" />
             </label>
             <button
               type="button"
               aria-label={t('choose_key')}
               title={t('choose_key')}
               onclick={() => choose((path) => (form.identity_file = path))}
-              class="{tool} size-[38px]"
+              class="{tool} size-10"
             >
               <Icon name="folder" />
             </button>
@@ -385,7 +385,7 @@
                   aria-label="{t('choose_key')} · {nth(at)}"
                   title={t('choose_key')}
                   onclick={() => choose((path) => (hop.key = path))}
-                  class="{tool} size-[26px]"
+                  class="{tool} size-9"
                 >
                   <Icon name="folder" class="size-4" />
                 </button>
@@ -405,7 +405,7 @@
                     title={t('move_up')}
                     disabled={at === 0}
                     onclick={() => road.splice(at - 1, 2, road[at], road[at - 1])}
-                    class="{tool} size-[26px]">↑</button
+                    class="{tool} size-9">↑</button
                   >
                   <button
                     type="button"
@@ -413,14 +413,14 @@
                     title={t('move_down')}
                     disabled={at === road.length - 1}
                     onclick={() => road.splice(at, 2, road[at + 1], road[at])}
-                    class="{tool} size-[26px]">↓</button
+                    class="{tool} size-9">↓</button
                   >
                   <button
                     type="button"
                     aria-label="{t('delete')} · {nth(at)}"
                     title={t('delete')}
                     onclick={() => road.splice(at, 1)}
-                    class="{tool} size-[26px] hover:text-red">×</button
+                    class="{tool} size-9 hover:text-red">×</button
                   >
                 </span>
                 {#if hop.hop.trim()}
@@ -492,7 +492,7 @@
         </p>
       {/if}
       <!-- A long road makes the form taller than a low window: it scrolls, and what saves it stays in view. -->
-      <div class="sticky bottom-0 -mx-6 -mt-4 flex flex-wrap gap-2 bg-panel px-6 pt-4 pb-6">
+      <div class="sticky bottom-0 -mx-7 -mt-4 flex flex-wrap gap-2 bg-panel px-7 pt-4 pb-7">
         {#if alias}
           <button type="button" onclick={() => ondelete(alias)} class="{button} border-red text-red">
             {t('delete')}

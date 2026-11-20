@@ -21,19 +21,19 @@
     const fail = error.fail?.kind === 'jump' ? error.fail.cause : error.fail
     return fail?.kind === 'host_key' ? fail : null
   })
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection first-letter:uppercase'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium hover:bg-selection first-letter:uppercase'
 </script>
 
 <Modal label="{why.label}: {title}" {onclose}>
-  <div class="grid gap-4 p-6">
+  <div class="grid gap-4 p-7">
     <p><strong class="text-red">✗ {why.label}</strong> <span class="text-base font-semibold text-ink">{title}</span></p>
     <p role="alert" class="break-words">{why.message}</p>
     {#if key}
-      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg bg-bg px-3 py-2 text-[13px] text-white">
+      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg bg-bg px-3 py-2 text-sm text-white">
         <dt>{t('fingerprint')}</dt>
-        <dd class="font-mono text-[13px] break-all text-fg">{key.fingerprint}</dd>
+        <dd class="font-mono text-sm break-all text-fg">{key.fingerprint}</dd>
         <dt>{t('on_record')}</dt>
-        <dd class="font-mono text-[13px] break-all text-fg">{key.file}:{key.line}</dd>
+        <dd class="font-mono text-sm break-all text-fg">{key.file}:{key.line}</dd>
       </dl>
       <p class="text-yellow">{t('host_key_warning')}</p>
     {:else if why.chain !== why.message}

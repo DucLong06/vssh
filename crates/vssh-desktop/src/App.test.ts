@@ -2480,14 +2480,14 @@ async function again(over: Record<string, (args: Args) => unknown> = {}) {
   calls = []
   return shell(over)
 }
-const columns = () => screen.getByRole('main').parentElement!.className.match(/grid-cols-\[(\d+px)/)?.[1]
+const columns = () => screen.getByRole('main').parentElement!.className.match(/grid-cols-\[([\d.]+rem)/)?.[1]
 
 test('the rail narrow: its corner\'s button leaves the icons, 56 pixels of them, and the next time the app opens it is as it was left', async () => {
   const user = shell()
   await card('web-01')
-  expect(columns()).toBe('244px')
+  expect(columns()).toBe('15.25rem')
   await user.click(rail('Compact sidebar: icons only'))
-  expect(columns()).toBe('56px')
+  expect(columns()).toBe('3.5rem')
   expect(localStorage.getItem('vssh.rail')).toBe('compact')
   // Its rows are there by name, and go where they went; the hosts are the dashboard's.
   expect(within(screen.getAllByRole('navigation')[0]).queryByRole('list')).toBeNull()
@@ -2499,13 +2499,13 @@ test('the rail narrow: its corner\'s button leaves the icons, 56 pixels of them,
   expect(await tab(/1 web-01/)).toHaveAttribute('aria-selected', 'true')
   // Focus mode takes even that, and gives it back as it was.
   await user.keyboard(`${chord('B')}${chord('B')}`)
-  expect(columns()).toBe('56px')
+  expect(columns()).toBe('3.5rem')
 
   await again()
   await card('web-01')
-  expect(columns()).toBe('56px')
+  expect(columns()).toBe('3.5rem')
   await user.click(rail('Expand the sidebar'))
-  expect(columns()).toBe('244px')
+  expect(columns()).toBe('15.25rem')
   expect(localStorage.getItem('vssh.rail')).toBe('full')
   expect(within(screen.getAllByRole('navigation')[0]).getByRole('list', { name: 'Tags' })).toBeInTheDocument()
 })

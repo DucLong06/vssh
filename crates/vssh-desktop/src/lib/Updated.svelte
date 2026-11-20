@@ -11,11 +11,11 @@
   // One word to the shell, whatever is in the path.
   const command = $derived(`sudo apt install '${update.file.replaceAll("'", "'\\''")}'`)
 
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium hover:bg-selection'
 </script>
 
 <Modal label={t('update_now')} onclose={close}>
-  <div class="grid gap-4 p-6">
+  <div class="grid gap-4 p-7">
     {#if update.phase === 'installed'}
       <p>{named(t('update_installed'))}</p>
       <!-- Later comes first and has the focus: Enter does not end the open sessions. -->

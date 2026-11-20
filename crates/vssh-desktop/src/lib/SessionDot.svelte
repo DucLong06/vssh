@@ -11,6 +11,6 @@
   const live = $derived(session.broadcast && session.state === 'up')
 </script>
 
-<span role="img" aria-label={live ? t('broadcast') : said[session.state]} class="text-[10px] {live ? 'text-yellow' : tone[session.state]}">
+<span role="img" aria-label={live ? t('broadcast') : said[session.state]} class="text-3xs {live ? 'text-yellow' : tone[session.state]}">
   {session.state === 'connecting' ? '○' : '●'}
 </span>

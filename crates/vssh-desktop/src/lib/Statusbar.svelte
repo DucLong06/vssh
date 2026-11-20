@@ -35,7 +35,7 @@
 </script>
 
 <!-- One line of figures. No keys: a button says its own in its tooltip, and the cheatsheet has them all. -->
-<footer class="col-span-2 flex h-9 items-center gap-4 border-t border-edge bg-black px-5 text-[12.5px] whitespace-nowrap text-white">
+<footer class="col-span-2 flex h-9 items-center gap-4 border-t border-edge bg-black px-5 text-xs whitespace-nowrap text-white">
   <span class="shrink-0">{t('hosts')} <span class="font-semibold text-ink">{hosts}</span></span>
   <!-- The way to them for the pointer; `s` on the dashboard is the key. -->
   <button type="button" onclick={onsnippets} aria-keyshortcuts="s" class="{button} -mx-1.5 shrink-0">

@@ -284,6 +284,6 @@ test('the settings at the rail\'s foot: the language, the theme and streamer mod
 
 test('the tags of the rail are small, and three whole rows of them at most', () => {
   render(Sidebar, props())
-  expect(screen.getByRole('list', { name: 'Tags' })).toHaveClass('max-h-[70px]')
-  expect(screen.getByRole('button', { name: '#db 1' })).toHaveClass('text-[10.5px]')
+  expect(screen.getByRole('list', { name: 'Tags' })).toHaveClass('max-h-19')
+  expect(screen.getByRole('button', { name: '#db 1' })).toHaveClass('text-3xs')
 })

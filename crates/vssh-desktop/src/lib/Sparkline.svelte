@@ -8,7 +8,7 @@
 </script>
 
 <!-- A picture of what the figure beside it was a moment ago: the figure itself is said there. -->
-<svg viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true" class="block h-[34px] {extra}">
+<svg viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true" class="block h-8.5 {extra}">
   {#if path.area}
     <path d={path.area} fill="currentColor" opacity=".14" />
   {/if}

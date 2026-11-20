@@ -158,7 +158,7 @@
         aria-selected={i === at}
         onclick={item.run}
         onpointermove={() => (at = i)}
-        class="flex cursor-pointer items-baseline gap-3 rounded-[10px] px-3 py-2 aria-selected:bg-selection aria-selected:inset-ring aria-selected:inset-ring-edge"
+        class="flex cursor-pointer items-baseline gap-3 rounded-ctl px-3 py-2 aria-selected:bg-selection aria-selected:inset-ring aria-selected:inset-ring-edge"
       >
         <span class="font-medium {item.action ? 'text-magenta' : 'text-ink'}">{item.label}</span>
         <span class="truncate font-mono text-xs text-dim">{item.detail}</span>
@@ -176,7 +176,7 @@
   {#if refusal}
     <p role="alert" class="border-t border-edge px-5 py-3 text-red"><strong>{refusal.label}</strong> {refusal.message}</p>
   {/if}
-  <footer class="flex gap-4 border-t border-edge px-5 py-3 text-[13px] text-white">
+  <footer class="flex gap-4 border-t border-edge px-5 py-3 text-sm text-white">
     <span><Keys keys="↑" /> <Keys keys="↓" /> <Keys keys="Enter" /> {t('select')}</span>
     <span><Keys keys="Esc" /> {t('close')}</span>
   </footer>

@@ -43,13 +43,13 @@
   </label>
   <!-- The scroll is the outer box's: columns with a height of their own would overflow sideways. -->
   <div class="max-h-[62vh] overflow-y-auto border-t border-edge">
-  <div class="columns-2 gap-10 px-6 pt-5 pb-2">
+  <div class="columns-2 gap-10 px-7 pt-5 pb-2">
     {#each groups as group (group.name)}
       <section aria-label={group.name} class="mb-5 break-inside-avoid">
-        <h3 class="pb-1 text-[11px] font-semibold tracking-widest text-dim uppercase">{group.name}</h3>
+        <h3 class="pb-1 text-2xs font-semibold tracking-widest text-dim uppercase">{group.name}</h3>
         <dl>
           {#each group.rows as [keys, label] (label)}
-            <div class="flex items-center justify-between gap-4 border-b border-edge/50 py-1 last:border-0">
+            <div class="flex items-center justify-between gap-4 border-b border-edge/50 py-1.5 last:border-0">
               <dt class="min-w-0 text-fg first-letter:uppercase">{label}</dt>
               <dd class="flex shrink-0 items-center gap-1.5">
                 <!-- The first is the key; the others do the same, and say so: Tab / N is not Tab then N. -->

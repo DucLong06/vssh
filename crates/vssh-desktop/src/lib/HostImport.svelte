@@ -53,10 +53,10 @@
     void preview()
   })
 
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
 </script>
 
-<div class="grid gap-4 p-6 text-[13px] text-white">
+<div class="grid gap-4 p-7 text-sm text-white">
   <p class="text-base font-semibold text-ink">{t('import_ssh_config')}</p>
   <form
     class="grid grid-cols-[1fr_auto_auto] items-end gap-2"
@@ -74,7 +74,7 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-[13px] text-fg placeholder:text-dim"
+        class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-sm text-fg placeholder:text-dim"
       />
     </label>
     <button
@@ -82,7 +82,7 @@
       aria-label={t('choose_ssh_config')}
       title={t('choose_ssh_config')}
       onclick={choose}
-      class="grid size-[38px] cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg"
+      class="grid size-10 cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg"
     >
       <Icon name="folder" />
     </button>

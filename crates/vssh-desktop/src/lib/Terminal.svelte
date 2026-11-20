@@ -161,16 +161,16 @@
         onbroadcast?.()
         term.focus()
       }}
-      class="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-edge bg-panel px-2 text-xs font-medium text-dim line-through hover:text-fg aria-pressed:border-yellow aria-pressed:text-yellow aria-pressed:no-underline"
+      class="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-edge bg-panel px-2 text-xs font-medium text-dim line-through hover:text-fg aria-pressed:border-yellow aria-pressed:text-yellow aria-pressed:no-underline"
     >
-      <Icon name="cast" class="size-3.5!" />
+      <Icon name="cast" class="size-4!" />
       <span class="first-letter:uppercase">{t('broadcast')}</span>
     </button>
   {/if}
   {#if closed}
     <p
       role="status"
-      class="flex min-w-0 items-center gap-3 rounded-xl border border-red bg-panel py-1.5 pr-1.5 pl-3 text-[13px]"
+      class="flex min-w-0 items-center gap-3 rounded-xl border border-red bg-panel py-1.5 pr-1.5 pl-3 text-sm"
     >
       <span class="shrink-0 text-red">● {t('disconnected')}</span>
       {#if why}
@@ -179,7 +179,7 @@
       <button
         type="button"
         onclick={onreconnect}
-        class="shrink-0 cursor-pointer rounded-lg border border-edge px-3 py-0.5 font-medium text-fg hover:bg-selection"
+        class="shrink-0 cursor-pointer rounded-lg border border-edge px-3 py-1 font-medium text-fg hover:bg-selection"
       >
         {t('reconnect')}
       </button>

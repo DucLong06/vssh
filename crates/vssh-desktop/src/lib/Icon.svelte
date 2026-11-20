@@ -40,7 +40,7 @@
   stroke-width="1.5"
   stroke-linecap="round"
   stroke-linejoin="round"
-  class="size-[18px] shrink-0 fill-none stroke-current {extra}"
+  class="size-4.5 shrink-0 fill-none stroke-current {extra}"
 >
   <!-- Constants of this file, nothing a person typed. -->
   {@html ICONS[name]}

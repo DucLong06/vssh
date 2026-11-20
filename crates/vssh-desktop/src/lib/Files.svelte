@@ -338,8 +338,8 @@
     ]
   })
 
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
-  const arrow = 'cursor-pointer rounded-[10px] border border-edge bg-panel px-2.5 py-1.5 text-blue hover:border-dim/50 hover:bg-selection'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium hover:bg-selection'
+  const arrow = 'cursor-pointer rounded-ctl border border-edge bg-panel min-h-9 min-w-9 px-2.5 py-1.5 text-blue hover:border-dim/50 hover:bg-selection'
 </script>
 
 {#snippet pane(side: Side)}
@@ -375,7 +375,7 @@
   />
 {/snippet}
 
-<div bind:this={root} data-files role="tabpanel" aria-label="{t('files')} {host}" hidden={!active} class="min-h-0 flex-1 bg-bg p-3 text-[13px]">
+<div bind:this={root} data-files role="tabpanel" aria-label="{t('files')} {host}" hidden={!active} class="min-h-0 flex-1 bg-bg p-3 text-sm">
   <div class="flex h-full flex-col gap-3">
     <div class="flex min-h-0 flex-1 gap-3">
       {@render pane('local')}
@@ -506,14 +506,14 @@
   {@const q = ask}
   <Modal label={verb ?? ''} onclose={() => (ask = null)}>
     <form
-      class="grid gap-4 p-6"
+      class="grid gap-4 p-7"
       onsubmit={(e) => {
         e.preventDefault()
         void answer()
       }}
     >
       {#if q.kind === 'mkdir' || q.kind === 'rename'}
-        <label class="text-[13px] text-white">
+        <label class="text-sm text-white">
           {t('sort_name')}
           <input
             bind:this={field}
