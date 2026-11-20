@@ -115,6 +115,8 @@ test('a tab can be picked up: the app is told which, and when it is let go', asy
   expect(tab(/1 web-01/)).not.toHaveAttribute('draggable')
   expect(tab(/Files web-01/).parentElement).toHaveAttribute('draggable', 'true')
   expect(tab(/Hosts/).parentElement).not.toHaveAttribute('draggable')
+  // More tabs than there is room for: the strip scrolls with no bar over them, which would take the press.
+  expect(screen.getByRole('tablist')).toHaveClass('overflow-x-auto', '[scrollbar-width:none]')
   await fireEvent.dragStart(tab(/2 web-02/))
   expect(on.ondrag).toHaveBeenLastCalledWith(2)
   await fireEvent.dragEnd(tab(/2 web-02/))

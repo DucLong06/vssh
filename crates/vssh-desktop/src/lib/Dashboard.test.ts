@@ -339,7 +339,7 @@ test('the bar over the cards is two rows from one margin: the search with the ne
   expect(inside(second)).toEqual(['Tags', 'Group by tag', 'Connect 1', 'Run 1', 'Sort'])
   expect(second.nextElementSibling).toBeNull()
   // The bar stays over the cards; its second row breaks only where even that is too narrow.
-  expect(first.parentElement).toHaveClass('grid', 'sticky', 'bg-bg')
+  expect(first.parentElement).toHaveClass('grid', 'grid-cols-1', 'sticky', 'bg-bg')
   expect(second).toHaveClass('flex', 'flex-wrap')
 })
 

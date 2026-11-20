@@ -213,7 +213,9 @@
       <Icon name="rail" />
     </button>
   {/if}
-  <div bind:this={list} role="tablist" aria-label={t('sessions')} class="flex min-w-0 items-center gap-1 overflow-x-auto">
+  <!-- No scrollbar: a web view lays it over the tabs' lower half, where a press is then the bar's and picks up no tab.
+       The tab in front is brought into view; the others by it, or the wheel. -->
+  <div bind:this={list} role="tablist" aria-label={t('sessions')} class="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
     <span class={pill}>
       <button type="button" role="tab" aria-selected={active === null} title={chord(t('hosts'), 0)} onclick={() => onpick(null)} class="{tab} pr-3">
         <span class={digit}>0</span>

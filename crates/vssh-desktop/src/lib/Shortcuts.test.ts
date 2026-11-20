@@ -95,3 +95,8 @@ test('keys that do the same are said as that: a stroke between them, the first o
   // One key: no stroke.
   expect(within(screen.getByRole('region', { name: 'Anywhere' })).getByText('New tab: quick connect').nextElementSibling!.textContent).not.toContain('/')
 })
+
+test('a dialog is never taller than the window: the cheatsheet is a wide one, by the old word for it', () => {
+  open()
+  expect(screen.getByRole('dialog')).toHaveClass('w-[56rem]', 'max-w-[92vw]', 'mt-[12vh]', 'max-h-[82vh]', 'overflow-y-auto', 'portrait:w-[94vw]')
+})

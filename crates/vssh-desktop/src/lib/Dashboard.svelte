@@ -398,8 +398,9 @@
     {/if}
   {:else}
     <!-- Two rows, from one margin: the search as wide as the view, with what it connects to and the new host;
-         under it the tags, one row of them however many there are, and how the cards are laid out. -->
-    <div class="sticky top-0 z-20 -mx-8 grid gap-2.5 border-b border-edge bg-bg px-8 pt-4 pb-4">
+         under it the tags, one row of them however many there are, and how the cards are laid out.
+         `grid-cols-1`: its column is the room there is; left to itself it is as wide as every tag in a row, past the window. -->
+    <div class="sticky top-0 z-20 -mx-8 grid grid-cols-1 gap-2.5 border-b border-edge bg-bg px-8 pt-4 pb-4">
       <!-- It wraps in a window too narrow for it, as the row under it does. -->
       <div class="flex flex-wrap items-center gap-2.5">
         <input
