@@ -48,7 +48,7 @@ Section: utils
 Priority: optional
 Architecture: $arch
 Maintainer: Hoang Duc Long <hoangduclongg@gmail.com>
-Depends: libwebkit2gtk-4.1-0, libgtk-3-0
+Depends: libwebkit2gtk-4.1-0, libgtk-3-0, wget
 Description: Desktop SSH connection manager
  Host dashboard with live stats, terminal tabs with broadcast typing, SFTP
  dual-pane, snippets, batch runs, port forwards and an encrypted vault.

@@ -44,6 +44,8 @@ mod real;
 mod session;
 #[path = "commands/snippets.rs"]
 mod snippets;
+#[path = "commands/update.rs"]
+mod update;
 #[path = "commands/vault.rs"]
 mod vault;
 

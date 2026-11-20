@@ -17,6 +17,7 @@ import { setLang } from './lib/i18n.svelte'
 import { forget } from './lib/live.svelte'
 import { capital, sheet } from './lib/keymap'
 import { tunnels } from './lib/tunnels.svelte'
+import { forget as unheard } from './lib/update.svelte'
 import { fake, setStreamer } from './lib/streamer.svelte'
 import strings from './lib/strings.json'
 
@@ -106,6 +107,7 @@ afterEach(async () => {
   clearMocks()
   localStorage.clear()
   forget()
+  unheard()
   tunnels.clear()
   calls = []
   put = []
@@ -2842,6 +2844,32 @@ test('five seconds after it starts the app asks once whether a newer version is 
     // Not asked again while the app runs.
     await vi.advanceTimersByTimeAsync(120_000)
     expect(fetched).toHaveBeenCalledOnce()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+test('Update in the status bar installs the newer version; the app says so in a dialog of its own, over which no key of the window acts', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const deb = { name: 'vssh-desktop_99.0.0_amd64.deb', size: 5038776 }
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ tag_name: 'v99.0.0', assets: [deb] }) }) as Response))
+  try {
+    const user = shell({ 'plugin:app|version': () => '0.2.0', update_possible: () => true, update_download: () => null, update_install: () => null, update_restart: () => null })
+    await card('web-01')
+    await vi.advanceTimersByTimeAsync(5100)
+    // Nothing is fetched until it is asked for.
+    const update = await within(status()).findByRole('button', { name: 'Update' })
+    expect(asked('update_download')).toHaveLength(0)
+    await user.click(update)
+    const dialog = await screen.findByRole('dialog', { name: 'Update' })
+    expect(asked('update_download')).toEqual([{ tag: 'v99.0.0' }])
+    expect(asked('update_install')).toEqual([{ tag: 'v99.0.0' }])
+    expect(within(dialog).getByText('Installed v99.0.0 — restart to use it')).toBeInTheDocument()
+    // The palette's key is not the window's while the dialog is open.
+    await user.keyboard('{Control>}k{/Control}')
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    await user.click(within(dialog).getByRole('button', { name: 'Restart' }))
+    expect(asked('update_restart')).toHaveLength(1)
   } finally {
     vi.unstubAllGlobals()
   }

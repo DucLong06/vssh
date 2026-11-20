@@ -36,7 +36,8 @@
   import Tabs, { type Tab } from './lib/Tabs.svelte'
   import Terminal from './lib/Terminal.svelte'
   import Topbar from './lib/Topbar.svelte'
-  import { check } from './lib/update.svelte'
+  import { check, update } from './lib/update.svelte'
+  import Updated from './lib/Updated.svelte'
   import { heard as forwarded, sync as forwarding_of, tunnels } from './lib/tunnels.svelte'
   import Vault from './lib/Vault.svelte'
 
@@ -351,7 +352,7 @@
   // Before the terminal sees the key: these never reach the shell.
   function onkeydown(e: KeyboardEvent) {
     // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
-    if (modal !== null || failure !== null || closing !== null) return
+    if (modal !== null || failure !== null || closing !== null || update.dialog) return
     const ctrl = e.ctrlKey || e.metaKey
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     const mine = () => {
@@ -833,6 +834,10 @@
     onretry={() => reconnect(session)}
     onclose={() => (failure = null)}
   />
+{/if}
+
+{#if update.dialog}
+  <Updated />
 {/if}
 
 {#if closing !== null}

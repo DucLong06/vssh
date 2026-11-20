@@ -485,6 +485,41 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "Có bản mới {name} — xem trên GitHub",
     ),
     ("dismiss", "Dismiss", "Tắt thông báo"),
+    // D15: the newer version is fetched and installed from the line that says it is out.
+    ("update_now", "Update", "Cập nhật"),
+    (
+        "update_downloading",
+        "Downloading {name} — {n}",
+        "Đang tải {name} — {n}",
+    ),
+    (
+        "update_installing",
+        "Installing {name} — the system asks for your password",
+        "Đang cài {name} — hệ thống hỏi mật khẩu của bạn",
+    ),
+    (
+        "update_download_failed",
+        "Could not download {name}",
+        "Không tải được {name}",
+    ),
+    (
+        "update_install_failed",
+        "Could not install {name}",
+        "Không cài được {name}",
+    ),
+    ("retry", "Retry", "Thử lại"),
+    (
+        "update_installed",
+        "Installed {name} — restart to use it",
+        "Đã cài {name} — khởi động lại để dùng",
+    ),
+    ("update_restart", "Restart", "Khởi động lại"),
+    ("later", "Later", "Để sau"),
+    (
+        "update_by_hand",
+        "{name} is downloaded, but the password could not be asked for here, so nothing was installed. The folder it is in has been opened. To install it, in a terminal:",
+        "Đã tải {name}, nhưng ở đây không hỏi được mật khẩu nên chưa cài gì. Thư mục chứa tệp đã được mở. Để cài, chạy trong terminal:",
+    ),
     // D14: a file chosen in the desktop's dialog; the road through jump hosts; a host left unwatched.
     ("choose_file", "Choose a file", "Chọn tệp"),
     ("choose_key", "Choose a key file", "Chọn tệp khoá"),

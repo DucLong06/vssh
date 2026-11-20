@@ -106,6 +106,19 @@
 #                       config and on the wire; both switches are kept by the
 #                       web view and are as they were when the app comes back
 #
+# And last the update (D15), in a build of this source that calls itself
+# 0.0.1, over a HOME of its own:
+#
+#   the line            says the release GitHub has is out, with Update;
+#                       nothing is fetched before the click
+#   Update              with no network: an error and Retry. Then the real
+#                       .deb from GitHub, read by dpkg-deb; dpkg's refusal,
+#                       nobody to ask for the password, and installed: Restart
+#                       ends the app and starts it again. pkexec, dpkg-query
+#                       and xdg-open are stand-ins, so nothing is installed on
+#                       this machine. Skipped, and said so, where GitHub does
+#                       not answer
+#
 # Screenshots land in docs/img/desktop-d1*.png, desktop-d2*.png, desktop-d3*.png,
 # desktop-d4*.png, desktop-d5*.png, desktop-d6*.png, desktop-d7*.png,
 # desktop-d9-rail*.png, desktop-d10-{shortcuts,split,focus}*.png,
@@ -148,6 +161,10 @@ c['build'].pop('beforeDevCommand', None)
 json.dump(c, open(p, 'w'), indent=2)
 PY
     (cd crates/vssh-desktop && npm run build && cd ../.. && cargo build --release -p vssh-desktop)
+    # The same source once more, as a version long past, for the update (D15):
+    # tauri merges TAURI_CONFIG over the config. A target directory of its own,
+    # so that the build above is never the one that calls itself 0.0.1.
+    TAURI_CONFIG='{"version":"0.0.1"}' cargo build --release -p vssh-desktop --target-dir target/smoke-old
     mv "$conf.smoke-bak" "$conf"; trap - EXIT
     exec env VSSH_SMOKE_DISPLAY=1 xvfb-run -a -s "-screen 0 ${SIZE}x24" "$0"
 fi
@@ -1794,4 +1811,146 @@ step "streamer mode is still on when the app comes back"
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
 step "the app is still running after the Day theme and streamer mode"
+
+# --- D15: the update, from the line that says a newer version is out ----------
+# An older build of this source (the first block made it, as 0.0.1), over a
+# HOME of its own: to it the release GitHub has is news. What is real: the
+# question to GitHub, the download with wget, dpkg-deb's reading of the file,
+# the app ending and starting again. What is not: pkexec, dpkg-query and
+# xdg-open are stand-ins on the PATH of this one app, so nothing is installed
+# on this machine and no folder opens on a display nobody looks at; and wget
+# is held to 1.5 MiB a second, so that the download can be looked at.
+kill "$app"
+wait "$app" 2>/dev/null || true
+latest=$(wget -q -T 20 -O - https://api.github.com/repos/DucLong06/vssh/releases/latest | python3 -c '
+import json, sys
+release = json.load(sys.stdin)
+ver = release["tag_name"].lstrip("v")
+print(ver, next(a["size"] for a in release["assets"] if a["name"] == f"vssh-desktop_{ver}_amd64.deb"))') || latest=
+if [ -z "$latest" ]; then
+    echo "SKIP: GitHub does not answer from here, or its latest release has no .deb: the update was not tried"
+    echo "gui smoke: ok, but for the update (now look at the screenshots)"
+    exit 0
+fi
+ver=${latest% *}
+bytes=${latest#* }
+up="$home/update"
+deb="$up/home/.local/share/vssh/update/vssh-desktop_${ver}_amd64.deb"
+mkdir -p "$up/bin" "$up/home"
+[ -d "$HOME/.local/share/fonts" ] && mkdir -p "$up/home/.local/share" && ln -s "$HOME/.local/share/fonts" "$up/home/.local/share/fonts"
+# Whose the app's binary is: the package's, says this one.
+cat >"$up/bin/dpkg-query" <<EOF
+#!/bin/sh
+echo "\$*" >>"$up/dpkg-query.log"
+echo "vssh-desktop: \$2"
+EOF
+cat >"$up/bin/wget" <<EOF
+#!/bin/sh
+echo "\$*" >>"$up/wget.log"
+[ -e "$up/offline" ] && { echo "wget: unable to resolve host address 'github.com'" >&2; exit 4; }
+exec $(command -v wget) --limit-rate=1500k "\$@"
+EOF
+# What it was asked to run, and then: dpkg's refusal, nobody to ask for the
+# password, or done.
+cat >"$up/bin/pkexec" <<EOF
+#!/bin/sh
+echo "\$*" >>"$up/pkexec.log"
+case \$(cat "$up/pkexec") in
+dpkg) echo "dpkg: error: dpkg frontend lock was locked by another process with pid 4242" >&2; exit 2 ;;
+nobody) exit 127 ;;
+esac
+EOF
+cat >"$up/bin/xdg-open" <<EOF
+#!/bin/sh
+echo "\$*" >>"$up/opened"
+EOF
+chmod +x "$up"/bin/*
+lines() { [ ! -e "$1" ] && echo 0 || wc -l <"$1"; }
+# Waits until a stand-in was run that many times.
+ran() {
+    tries=0
+    until [ "$(lines "$up/$1.log")" -ge "$2" ]; do
+        tries=$((tries + 1))
+        [ "$tries" -le 120 ] || fail "$3"
+        sleep 0.5
+    done
+}
+# The button right of the line: Update, or Retry after a failure.
+update() { xdotool mousemove --window "$win" 1040 682 click 1; }
+
+# The web view is given no desktop to ask for a proxy: it reads the
+# environment's, as wget does.
+env -u SSH_AUTH_SOCK -u XDG_CURRENT_DESKTOP HOME="$up/home" PATH="$up/bin:$PATH" WEBKIT_DISABLE_DMABUF_RENDERER=1 target/smoke-old/release/vssh-desktop &
+app=$!
+win=$(timeout 60 xdotool search --sync --onlyvisible --name '^vssh$' | head -n 1)
+[ -n "$win" ] || fail "no window of the older build"
+xdotool windowfocus "$win"
+ran dpkg-query 1 "the older build never heard of v$ver: the web view got no answer from GitHub"
+aside
+shot target/smoke/update-offered.png
+[ ! -e "$up/wget.log" ] && [ ! -e "${deb%/*}" ] || fail "something was fetched before Update was clicked"
+step "an older build says v$ver is out, has a button for it, and has fetched nothing"
+
+# No network: a short error and Retry. Nothing is installed.
+touch "$up/offline"
+update
+ran wget 1 "Update did not start a download"
+aside
+shot target/smoke/update-download-failed.png
+[ "$(cat "$up/wget.log")" = "-nv --tries=2 --timeout=30 -O $deb https://github.com/DucLong06/vssh/releases/download/v$ver/vssh-desktop_${ver}_amd64.deb" ] || fail "the download was asked for as: $(cat "$up/wget.log")"
+[ ! -e "$up/pkexec.log" ] || fail "a download that failed was installed"
+step "a download that fails is an error with Retry, and nothing is installed"
+
+# Retry, with the network back: the real .deb from GitHub, whole, and read by
+# dpkg-deb. dpkg then refuses: an error again, and the file is kept.
+rm "$up/offline"
+echo dpkg >"$up/pkexec"
+update
+sleep 1.5
+shot target/smoke/update-downloading.png
+ran pkexec 1 "the .deb was fetched but its install was never asked for"
+aside
+shot target/smoke/update-install-failed.png
+[ "$(size "$deb")" = "$bytes" ] || fail "the .deb is $(size "$deb") bytes, the release says $bytes"
+[ "$(dpkg-deb -f "$deb" Package Version | tr '\n' ' ')" = "Package: vssh-desktop Version: $ver " ] || fail "what was fetched is not vssh-desktop $ver"
+[ "$(cat "$up/pkexec.log")" = "env DEBIAN_FRONTEND=noninteractive dpkg -i $deb" ] || fail "the install was asked for as: $(cat "$up/pkexec.log")"
+step "Retry fetched vssh-desktop_${ver}_amd64.deb from GitHub, $bytes bytes, and asked pkexec for dpkg -i; dpkg's refusal is an error with Retry"
+
+# Nobody to ask for the password: the folder is opened, and the dialog has the
+# line that installs it by hand.
+echo nobody >"$up/pkexec"
+update
+ran pkexec 2 "Retry after dpkg's refusal did not ask again"
+sleep 1
+shot target/smoke/update-by-hand.png
+[ "$(cat "$up/opened")" = "${deb%/*}" ] || fail "the folder opened is '$(cat "$up/opened" 2>/dev/null)', not the .deb's"
+[ "$(size "$deb")" = "$bytes" ] || fail "the .deb to install by hand is not there"
+key Escape
+step "with nobody to ask for the password the .deb's folder is opened and nothing is installed"
+
+# Installed: the dialog offers to restart, and the app that comes back is
+# another process, which asks GitHub again.
+echo ok >"$up/pkexec"
+update
+ran pkexec 3 "Update after the dialog did not ask again"
+sleep 1
+shot target/smoke/update-installed.png
+[ ! -e "$deb" ] || fail "the .deb is still there after it was installed"
+# Later has the focus; Restart is the next.
+key Tab Return
+tries=0
+while kill -0 "$app" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -le 40 ] || fail "Restart did not end the app"
+    sleep 0.5
+done
+was=$app
+win=$(timeout 60 xdotool search --sync --onlyvisible --name '^vssh$' | head -n 1)
+[ -n "$win" ] || fail "no window after Restart"
+app=$(xdotool getwindowpid "$win")
+[ "$app" != "$was" ] || fail "the window after Restart is the old process's"
+ran dpkg-query 2 "the app that came back did not ask GitHub again"
+aside
+shot target/smoke/update-restarted.png
+step "Restart ended the app and started it again: pid $was went, pid $app has the window"
 echo "gui smoke: ok (now look at the screenshots)"

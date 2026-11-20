@@ -13,6 +13,7 @@ mod key_setup;
 mod pick;
 mod session;
 mod snippets;
+mod update;
 mod vault;
 
 use std::collections::HashMap;
@@ -481,6 +482,10 @@ pub fn builder<R: tauri::Runtime>(backend: Backend) -> tauri::Builder<R> {
             hosts::import_hosts_json_preview,
             hosts::import_hosts_json,
             open_releases,
+            update::update_possible,
+            update::update_download,
+            update::update_install,
+            update::update_restart,
             key_setup::ssh_key_setup
         ])
 }

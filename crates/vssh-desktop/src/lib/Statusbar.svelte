@@ -3,8 +3,9 @@
   import { t } from './i18n.svelte'
   import Keys from './Keys.svelte'
   import { KEY } from './keymap'
+  import { human } from './paths'
   import { addr } from './streamer.svelte'
-  import { update } from './update.svelte'
+  import { forget, install, update } from './update.svelte'
 
   type Props = {
     hosts: number
@@ -55,12 +56,28 @@
     </span>
   {/if}
   {#if update.tag}
-    <!-- A newer version is out: one line, where it covers nothing. It opens the releases in the browser and fetches nothing itself; the × is for as long as the app runs. -->
+    {@const named = (words: string) => words.replace('{name}', update.tag ?? '')}
+    <!-- A newer version is out: one line, where it covers nothing. It opens the releases in the browser; "Update" fetches and installs it, and nothing is fetched before that click. The × is for as long as the app runs. -->
     <span role="status" class="ml-auto flex shrink-0 items-center text-cyan">
-      <button type="button" onclick={() => void api.openReleases().catch(() => {})} class={button}>
-        {t('update_available').replace('{name}', update.tag)}
-      </button>
-      <button type="button" aria-label={t('dismiss')} title={t('dismiss')} onclick={() => (update.tag = null)} class={button}>×</button>
+      {#if update.phase === 'downloading'}
+        <span class="px-1.5">{named(t('update_downloading')).replace('{n}', human(update.done) + (update.deb ? ` / ${human(update.deb)}` : ''))}</span>
+      {:else if update.phase === 'installing'}
+        <span class="px-1.5">{named(t('update_installing'))}</span>
+      {:else if update.phase === 'installed'}
+        <span class="px-1.5">{named(t('update_installed'))}</span>
+        <button type="button" onclick={() => void api.updateRestart().catch(() => {})} class="{button} font-semibold">{t('update_restart')}</button>
+      {:else}
+        {#if update.phase === 'download-failed' || update.phase === 'install-failed'}
+          <span role="alert" title={update.why} class="px-1.5 text-red">{named(update.phase === 'download-failed' ? t('update_download_failed') : t('update_install_failed'))}</span>
+          <button type="button" onclick={() => void install()} class="{button} font-semibold">{t('retry')}</button>
+        {:else}
+          <button type="button" onclick={() => void api.openReleases().catch(() => {})} class={button}>{named(t('update_available'))}</button>
+          {#if update.deb !== null}
+            <button type="button" onclick={() => void install()} class="{button} font-semibold">{t('update_now')}</button>
+          {/if}
+        {/if}
+        <button type="button" aria-label={t('dismiss')} title={t('dismiss')} onclick={forget} class={button}>×</button>
+      {/if}
     </span>
   {/if}
   {#if onsave}
