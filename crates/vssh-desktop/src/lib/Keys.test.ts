@@ -13,6 +13,9 @@ test('a key is one cap; a chord is a cap for each of its keys, and reads as it i
   expect(caps('Ctrl+K')).toEqual({ text: 'Ctrl+K', caps: ['Ctrl', 'K'] })
   expect(caps('Ctrl+Shift+Tab')).toEqual({ text: 'Ctrl+Shift+Tab', caps: ['Ctrl', 'Shift', 'Tab'] })
   expect(caps('Ctrl+/')).toEqual({ text: 'Ctrl+/', caps: ['Ctrl', '/'] })
+  // A + at the end is a key.
+  expect(caps('Ctrl++')).toEqual({ text: 'Ctrl++', caps: ['Ctrl', '+'] })
+  expect(caps('Ctrl+-')).toEqual({ text: 'Ctrl+-', caps: ['Ctrl', '-'] })
   // What is not a chord is one cap, whatever is in it.
   expect(caps('0–9')).toEqual({ text: '0–9', caps: ['0–9'] })
   expect(caps('?')).toEqual({ text: '?', caps: ['?'] })

@@ -211,13 +211,13 @@
 
   const field =
     'mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim disabled:opacity-60 aria-invalid:border-red'
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
   const choice =
     'cursor-pointer rounded-md px-2.5 py-1 text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue'
   const plain = { autocomplete: 'off', autocapitalize: 'off', spellcheck: false } as const
-  const small = 'w-full rounded-lg border border-edge bg-bg px-2.5 py-1 font-mono text-xs text-fg placeholder:font-sans placeholder:text-dim disabled:opacity-40 aria-invalid:border-red'
+  const small = 'w-full rounded-lg border border-edge bg-bg min-h-9 px-2.5 py-1 font-mono text-xs text-fg placeholder:font-sans placeholder:text-dim disabled:opacity-40 aria-invalid:border-red'
   const tool = 'grid shrink-0 cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent'
-  const offer = 'cursor-pointer rounded-full border border-edge px-2 py-0.5 hover:border-blue hover:text-blue'
+  const offer = 'cursor-pointer rounded-full border border-edge px-2.5 py-1 hover:border-blue hover:text-blue'
 </script>
 
 <!-- After the field's label, not in it: it is no part of the field's name. -->
@@ -227,15 +227,20 @@
   {/if}
 {/snippet}
 
-<!-- Wide, with four fields to a row: all of it is in view in a window 700 px high. -->
-<Modal label={importing ? t('import_ssh_config') : title} wide {onclose}>
+<!-- The widest dialog: who the host is on the left, the road to it and the rest on the right; one column
+     in a window taller than wide. The order of the Tab key is the old one: down the left, then the right. -->
+<Modal label={importing ? t('import_ssh_config') : title} size="xl" {onclose}>
   {#if importing}
     <HostImport {onimported} oncancel={() => (importing = false)} />
   {:else}
-    <form bind:this={root} novalidate onsubmit={save} class="grid max-h-[84vh] gap-4 overflow-y-auto px-6 pt-6 text-[13px] text-white">
-      <p class="text-base font-semibold text-ink">{title}</p>
-      <div class="grid grid-cols-[1fr_1.5fr_1fr_6rem] gap-2">
-        <div>
+    <!-- The title and what saves the form stay; between them the fields scroll, however long the road.
+         Who the host is needs 18 rem and no more: the rest is the road's, whose rows are one line from 50 rem. -->
+    <form bind:this={root} novalidate onsubmit={save} class="flex min-h-0 flex-col text-sm text-white">
+      <p class="px-7 pt-7 pb-4 text-base font-semibold text-ink">{title}</p>
+      <div class="grid min-h-0 flex-1 content-start gap-x-8 gap-y-4 overflow-y-auto px-7 pb-1 landscape:grid-cols-[18rem_minmax(0,1fr)]">
+      <div class="grid content-start gap-4">
+      <div class="grid grid-cols-[1fr_6rem] gap-2">
+        <div class="col-span-2">
           <label>
             {t('alias')}
             <input
@@ -249,7 +254,7 @@
           </label>
           {@render problem('host-form-alias', wrong.alias)}
         </div>
-        <div>
+        <div class="col-span-2">
           <label>
             {t('host')}
             <input
@@ -259,7 +264,7 @@
               {...plain}
               aria-invalid={wrong.hostname ? 'true' : undefined}
               aria-describedby="host-form-hostname"
-              class="{field} font-mono text-[13px]"
+              class="{field} font-mono text-sm"
             />
           </label>
           {@render problem('host-form-hostname', wrong.hostname)}
@@ -279,14 +284,14 @@
               {...plain}
               aria-invalid={wrong.port ? 'true' : undefined}
               aria-describedby="host-form-port"
-              class="{field} font-mono text-[13px]"
+              class="{field} font-mono text-sm"
             />
           </label>
           {@render problem('host-form-port', wrong.port)}
         </div>
       </div>
 
-      <div class="grid grid-cols-[auto_1fr] items-end gap-2">
+      <div class="grid gap-2">
         <div>
           <span id="host-form-method">{t('sign_in_with')}</span>
           <!-- Radio buttons, drawn as one control: as the dashboard's sort. Named: nameless, the webview takes
@@ -294,7 +299,7 @@
           <div
             role="radiogroup"
             aria-labelledby="host-form-method"
-            class="mt-1 flex rounded-lg border border-edge bg-page p-1"
+            class="mt-1 flex w-fit max-w-full flex-wrap rounded-lg border border-edge bg-page p-1"
           >
             {#each methods as [value, label] (value)}
               <label class={choice}>
@@ -318,27 +323,29 @@
             />
           </label>
           {#if vault !== 'unlocked'}
-            <p id="host-form-vault" class="col-span-2 text-yellow">{t('vault_needed')}</p>
+            <p id="host-form-vault" class="text-yellow">{t('vault_needed')}</p>
           {/if}
         {:else if method === 'key'}
           <div class="flex items-end gap-1.5">
             <label class="min-w-0 flex-1">
               {t('key_file')}
-              <input bind:value={form.identity_file} placeholder="~/.ssh/id_ed25519" {...plain} class="{field} font-mono text-[13px]" />
+              <input bind:value={form.identity_file} placeholder="~/.ssh/id_ed25519" {...plain} class="{field} font-mono text-sm" />
             </label>
             <button
               type="button"
               aria-label={t('choose_key')}
               title={t('choose_key')}
               onclick={() => choose((path) => (form.identity_file = path))}
-              class="{tool} size-[38px]"
+              class="{tool} size-10"
             >
               <Icon name="folder" />
             </button>
           </div>
         {/if}
       </div>
+      </div>
 
+      <div class="grid min-w-0 content-start gap-4">
       <div role="group" aria-labelledby="host-form-jump" aria-describedby="host-form-hops" class="grid gap-1.5">
         <p><span id="host-form-jump">{t('jump_host')}</span> <span class="text-dim">· {t('jump_note')}</span></p>
         {#if road.length}
@@ -348,20 +355,24 @@
             {#each road.filter((hop) => hop.hop.trim()) as hop, at (at)}
               <li title={via(hop)} class="flex items-center gap-1.5 text-fg">
                 <span aria-hidden="true" class="text-dim">→</span>
-                <Icon name="server" class="size-4 {hop.key.trim() ? 'text-yellow' : 'text-cyan'}" />
-                {named(hop.hop)}
+                <Icon name="server" class="size-4 shrink-0 {hop.key.trim() ? 'text-yellow' : 'text-cyan'}" />
+                <span title={named(hop.hop)} class="max-w-[14rem] truncate">{named(hop.hop)}</span>
               </li>
             {/each}
             <li class="flex items-center gap-1.5 font-medium text-ink">
               <span aria-hidden="true" class="text-dim">→</span>
-              <Icon name="server" class="size-4 text-blue" />
-              {form.alias.trim() || t('target')}
+              <Icon name="server" class="size-4 shrink-0 text-blue" />
+              <span title={form.alias.trim() || t('target')} class="max-w-[14rem] truncate">{form.alias.trim() || t('target')}</span>
             </li>
           </ol>
-          <!-- A hop to a row: who, a key of its own, a user to go with it; earlier, later, off the road. -->
-          <ol data-road aria-label={t('jump_host')} class="grid gap-1.5">
+          <!-- A hop to a row: which, who, a user for its own key, that key and its file, earlier, later, off the
+               road. In a row too narrow for all of it the key and what follows are a second line.
+               `order`: the Tab key goes from the hop to its key and then to the user, who is nobody without one.
+               The user has 11 rem, not 8: its hint in Vietnamese is cut short in less. -->
+          <ol data-road aria-label={t('jump_host')} class="@container grid gap-2">
             {#each road as hop, at (at)}
-              <li class="grid grid-cols-[1.1fr_1.5fr_auto_0.9fr_auto] items-center gap-1.5">
+              <li class="flex flex-wrap items-center gap-1.5">
+                <span aria-hidden="true" class="w-5 shrink-0 text-center text-xs text-dim tabular-nums">{at + 1}</span>
                 <input
                   bind:value={hop.hop}
                   type={streamer.on && !mine(host(hop.hop)) ? 'password' : 'text'}
@@ -370,7 +381,7 @@
                   aria-invalid={wrong.hops && hop.hop.trim() && !passable(hop.hop) ? 'true' : undefined}
                   placeholder={t('hop_hint')}
                   {...plain}
-                  class={small}
+                  class="{small} order-1 min-w-64 flex-1"
                 />
                 <input
                   bind:value={hop.key}
@@ -378,14 +389,14 @@
                   title={t('hop_key')}
                   placeholder={t('hop_key')}
                   {...plain}
-                  class={small}
+                  class="{small} order-3 ml-6.5 min-w-40 flex-1 @min-[50rem]:ml-0"
                 />
                 <button
                   type="button"
                   aria-label="{t('choose_key')} · {nth(at)}"
                   title={t('choose_key')}
                   onclick={() => choose((path) => (hop.key = path))}
-                  class="{tool} size-[26px]"
+                  class="{tool} order-4 size-9"
                 >
                   <Icon name="folder" class="size-4" />
                 </button>
@@ -396,16 +407,17 @@
                   aria-label={t('hop_user_of').replace('{n}', String(at + 1))}
                   placeholder={t('hop_user')}
                   {...plain}
-                  class={small}
+                  class="{small} order-2 w-44!"
                 />
-                <span class="flex gap-1">
+                <span aria-hidden="true" class="order-2 basis-full @min-[50rem]:hidden"></span>
+                <span class="order-5 flex gap-1">
                   <button
                     type="button"
                     aria-label="{t('move_up')} · {nth(at)}"
                     title={t('move_up')}
                     disabled={at === 0}
                     onclick={() => road.splice(at - 1, 2, road[at], road[at - 1])}
-                    class="{tool} size-[26px]">↑</button
+                    class="{tool} size-9">↑</button
                   >
                   <button
                     type="button"
@@ -413,25 +425,25 @@
                     title={t('move_down')}
                     disabled={at === road.length - 1}
                     onclick={() => road.splice(at, 2, road[at + 1], road[at])}
-                    class="{tool} size-[26px]">↓</button
+                    class="{tool} size-9">↓</button
                   >
                   <button
                     type="button"
                     aria-label="{t('delete')} · {nth(at)}"
                     title={t('delete')}
                     onclick={() => road.splice(at, 1)}
-                    class="{tool} size-[26px] hover:text-red">×</button
+                    class="{tool} size-9 hover:text-red">×</button
                   >
                 </span>
                 {#if hop.hop.trim()}
-                  <p class="col-span-full -mt-0.5 truncate pl-1 text-xs text-dim">{via(hop)}</p>
+                  <p class="order-6 -mt-0.5 basis-full pl-6.5 text-xs break-words text-dim">{via(hop)}</p>
                 {/if}
               </li>
             {/each}
           </ol>
         {/if}
         <!-- One stop for the keys, which type the hop into its row; the hosts there are, for the pointer. -->
-        <div class="flex max-h-14 flex-wrap items-center gap-1 overflow-y-auto">
+        <div class="flex max-h-18 flex-wrap items-center gap-1 overflow-y-auto">
           <button type="button" onclick={() => addHop()} class="{offer} border-dashed text-fg">+ {t('add_hop')}</button>
           {#each offered as name (name)}
             <button type="button" tabindex="-1" aria-label="{t('add_hop')}: {name}" onclick={() => addHop(name)} class={offer}>{name}</button>
@@ -440,7 +452,7 @@
         {@render problem('host-form-hops', wrong.hops)}
       </div>
 
-      <div class="grid grid-cols-[1fr_12rem_auto] items-end gap-3">
+      <div class="grid grid-cols-[minmax(0,1fr)_12rem_auto] items-end gap-3">
         <div>
           <span>{t('tags')}</span>
           <div class="mt-1 flex flex-wrap items-center gap-1 rounded-lg border border-edge bg-bg px-2 py-1">
@@ -485,14 +497,17 @@
         <textarea bind:value={form.notes} rows="2" class="{field} resize-none"></textarea>
       </label>
 
+      </div>
+      </div>
+
+      <!-- Under the fields, where it is seen however far they are scrolled. -->
       {#if failed}
-        <p role="alert" title={failed.chain} class="break-words">
+        <p role="alert" title={failed.chain} class="px-7 pt-3 break-words">
           <strong class="text-red">✗ {failed.label}</strong>
           <span>{failed.message}</span>
         </p>
       {/if}
-      <!-- A long road makes the form taller than a low window: it scrolls, and what saves it stays in view. -->
-      <div class="sticky bottom-0 -mx-6 -mt-4 flex flex-wrap gap-2 bg-panel px-6 pt-4 pb-6">
+      <div class="flex flex-wrap gap-2 px-7 pt-4 pb-7">
         {#if alias}
           <button type="button" onclick={() => ondelete(alias)} class="{button} border-red text-red">
             {t('delete')}

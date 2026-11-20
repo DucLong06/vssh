@@ -26,6 +26,7 @@
   import { down, live, poll, relabel, up } from './lib/live.svelte'
   import Modal from './lib/Modal.svelte'
   import Palette from './lib/Palette.svelte'
+  import { setScale, zoom } from './lib/scale.svelte'
   import { bars, half, ids, none, place, mapped, rects, resize, shift, without, zone, type Bar, type Layout, type Rect, type Zone } from './lib/panes'
   import Shortcuts from './lib/Shortcuts.svelte'
   import Sidebar, { type Nav } from './lib/Sidebar.svelte'
@@ -349,16 +350,27 @@
     }
   }
 
+  /** The keys of the window's size, with Ctrl: a step bigger, a step smaller, or (0) as it was made. */
+  const SIZES = new Map<string, 1 | -1 | 0>([['=', 1], ['+', 1], ['-', -1], ['0', 0]])
+
   // Before the terminal sees the key: these never reach the shell.
   function onkeydown(e: KeyboardEvent) {
-    // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
-    if (modal !== null || failure !== null || closing !== null || update.dialog) return
     const ctrl = e.ctrlKey || e.metaKey
-    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     const mine = () => {
       e.preventDefault()
       e.stopPropagation()
     }
+    // The window's size, over a dialog and in a terminal too: no shell is sent these. (Ctrl-_, a shell's undo, is another key.)
+    const size = ctrl && !e.altKey ? SIZES.get(e.key) : undefined
+    if (size !== undefined) {
+      mine()
+      if (size) zoom(size)
+      else setScale(100)
+      return
+    }
+    // Not over an open dialog, nor in a field: there Ctrl-A selects the text.
+    if (modal !== null || failure !== null || closing !== null || update.dialog) return
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
     if (leader) {
       // A modifier going down is not the key yet.
       if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
@@ -603,7 +615,7 @@
     }
   }
 
-  const answer = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
+  const answer = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium hover:bg-selection'
 
   function reconnect(session: Session) {
     failure = null
@@ -635,8 +647,8 @@
   class="grid h-full grid-rows-[minmax(0,1fr)_auto] transition-[grid-template-columns] duration-200 motion-reduce:transition-none {zen
     ? 'grid-cols-[minmax(0,1fr)]'
     : compact
-      ? 'grid-cols-[56px_minmax(0,1fr)]'
-      : 'grid-cols-[244px_minmax(0,1fr)]'}"
+      ? 'grid-cols-[3.5rem_minmax(0,1fr)]'
+      : 'grid-cols-[15.25rem_minmax(0,1fr)]'}"
 >
   {#if !zen}
   <Sidebar
@@ -798,8 +810,8 @@
             onpointercancel={(e) => size(e, bar)}
             onkeydown={(e) => nudge(e, bar)}
             class="absolute z-10 touch-none outline-none before:absolute before:bg-edge hover:before:bg-blue focus-visible:before:bg-blue active:before:bg-blue {bar.upright
-              ? '-ml-1 min-w-2 cursor-col-resize before:inset-y-0 before:left-[3.5px] before:w-px hover:before:w-0.5 active:before:w-0.5'
-              : '-mt-1 min-h-2 cursor-row-resize before:inset-x-0 before:top-[3.5px] before:h-px hover:before:h-0.5 active:before:h-0.5'}"
+              ? '-ml-1 min-w-2 cursor-col-resize before:inset-y-0 before:left-[calc(50%-0.5px)] before:w-px hover:before:w-0.5 active:before:w-0.5'
+              : '-mt-1 min-h-2 cursor-row-resize before:inset-x-0 before:top-[calc(50%-0.5px)] before:h-px hover:before:h-0.5 active:before:h-0.5'}"
           ></div>
         {/each}
       {/if}
@@ -844,7 +856,7 @@
   {@const session = sessions.find((session) => session.id === closing)}
   <Modal label={t('close_tab')} onclose={() => (closing = null)}>
     <form
-      class="grid gap-4 p-6"
+      class="grid gap-4 p-7"
       onsubmit={(e) => {
         e.preventDefault()
         const id = closing

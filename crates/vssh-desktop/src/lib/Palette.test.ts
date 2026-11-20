@@ -6,6 +6,7 @@ import fixture from './fixtures/hosts.json'
 import { setLang } from './i18n.svelte'
 import { setStreamer } from './streamer.svelte'
 import Palette from './Palette.svelte'
+import { scale } from './scale.svelte'
 
 const hosts: Host[] = fixture
 
@@ -16,12 +17,14 @@ function open<Over extends object>(over = {} as Over) {
 }
 /** The label of every option: the alias, or the action's name. */
 const options = () => screen.getAllByRole('option').map((o) => o.firstElementChild?.textContent)
+/** The window's size, which every palette has. */
+const ZOOM = ['Zoom in UI', 'Zoom out UI', 'Reset UI zoom']
 const chosen = () => screen.getByRole('option', { selected: true })
 
 test('with nothing typed: the actions, then every host', () => {
   open()
   expect(screen.getByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
-  expect(options()).toEqual(['Snippets', 'web-01', 'web-02', 'db-primary', 'bare'])
+  expect(options()).toEqual(['Snippets', ...ZOOM, 'web-01', 'web-02', 'db-primary', 'bare'])
   expect(chosen()).toHaveTextContent('Snippets')
 })
 
@@ -142,7 +145,7 @@ test('nothing matches, and words are no address: it says so, and enter does noth
 
 test('with no hosts at all the actions are still there', () => {
   open({ hosts: [] })
-  expect(options()).toEqual(['Snippets'])
+  expect(options()).toEqual(['Snippets', ...ZOOM])
 })
 
 test('closing the dialog tells the app', () => {
@@ -236,4 +239,27 @@ test('asked whose: the question is its name, the hosts are all it offers, in the
   await user.clear(input)
   await user.type(input, 'bare{Enter}')
   expect(onhost).toHaveBeenCalledExactlyOnceWith('bare')
+})
+
+test('the window\'s size is three actions, in either language; the palette stays open and says the size it is now', async () => {
+  const { user, input, onclose } = open()
+  await user.type(input, 'zoom in')
+  expect(options()).toEqual(['Zoom in UI'])
+  expect(chosen()).toHaveTextContent('Zoom in UI 100% Ctrl+= Ctrl++')
+  await user.keyboard('{Enter}{Enter}')
+  expect(scale.percent).toBe(125)
+  expect(chosen()).toHaveTextContent('125%')
+  await user.clear(input)
+  await user.type(input, 'zoom out')
+  await user.click(screen.getByRole('option', { name: /Zoom out UI/ }))
+  expect(scale.percent).toBe(110)
+  await user.clear(input)
+  await user.type(input, 'reset')
+  await user.keyboard('{Enter}')
+  expect(scale.percent).toBe(100)
+  expect(onclose).not.toHaveBeenCalled()
+  setLang('vi')
+  await user.clear(input)
+  await user.type(input, 'giao dien')
+  expect(options().sort()).toEqual(['Phóng to giao diện', 'Thu nhỏ giao diện', 'Đặt lại cỡ giao diện'].sort())
 })

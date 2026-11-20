@@ -35,9 +35,11 @@ Các máy chủ của bạn trong một cửa sổ: bảng điều khiển gồm
 | **Tệp: máy mình và máy chủ** | **Một lệnh trên bốn máy** |
 | ![Trình duyệt tệp hai khung với hai lượt tải lên đang chạy: phần trăm, tốc độ, thời gian còn lại](docs/img/desktop-d4-sftp.vi.png) | ![Một lượt chạy hàng loạt: hai máy trả lời, hai máy lỗi và nêu lý do](docs/img/desktop-d5-batch.vi.png) |
 | **Biểu mẫu máy chủ** | **Kho mật khẩu** |
-| ![Biểu mẫu thêm máy chủ: địa chỉ, cách đăng nhập, máy trung gian, thẻ, nhóm, ghi chú](docs/img/desktop-d6-host.vi.png) | ![Kho đã mở: đổi mật khẩu kho, xuất bản sao lưu](docs/img/desktop-d6-vault.vi.png) |
+| ![Biểu mẫu của một máy chủ: bên trái là thông tin máy, bên phải là đường đi qua ba máy trung gian, mỗi máy kèm cách đăng nhập](docs/img/desktop-d6-host.vi.png) | ![Kho đã mở: đổi mật khẩu kho, xuất bản sao lưu](docs/img/desktop-d6-vault.vi.png) |
 | **Giao diện Sáng** | **Chế độ phát trực tiếp** |
 | ![Bảng điều khiển ở giao diện Sáng](docs/img/desktop-d7-day.vi.png) | ![Bảng điều khiển ở chế độ phát trực tiếp: mọi địa chỉ đều là địa chỉ giả](docs/img/desktop-d7-streamer.vi.png) |
+| **Cửa sổ ở mức 125 phần trăm** | |
+| ![Bảng điều khiển phóng to hai nấc: thanh điều hướng, các thẻ máy chủ và chữ đều ở mức 125 phần trăm](docs/img/desktop-d16-zoom.vi.png) | |
 
 Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-smoke.sh`](scripts/gui-smoke.sh), bằng ngôn ngữ giao diện tiếng Việt; các máy chủ trong hình là một `sshd` tạm chạy ngay trên máy.
 
@@ -61,6 +63,7 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 - **Kho mật khẩu.** Mật khẩu các máy chủ của bạn, mã hoá bằng Argon2id + XChaCha20-Poly1305 dưới một mật khẩu kho. Kho đang khoá sẽ hỏi mật khẩu khi ứng dụng khởi động và ở trạng thái mở cho tới khi đóng ứng dụng. Hộp thoại này cũng tạo kho, đổi mật khẩu kho và xuất một bản sao lưu đã mã hoá. Quên mật khẩu kho thì không lấy lại được.
 - **Chế độ phát trực tiếp.** Trong phần cài đặt (bánh răng ở chân thanh điều hướng): mọi địa chỉ cửa sổ hiển thị trở thành địa chỉ giả thuộc các dải dành cho tài liệu (`203.0.113.x`, `198.51.100.x`), cùng một máy thì luôn cùng một địa chỉ. Chỉ phần hiển thị thay đổi: file cấu hình, cơ sở dữ liệu và những gì gửi tới máy chủ vẫn dùng địa chỉ thật. Tên gọi của máy chủ và những gì shell in ra được giữ nguyên.
 - **Giao diện.** TokyoNight Tối (mặc định) và Sáng, đổi trong phần cài đặt. Riêng terminal luôn giữ màu Tối.
+- **Cỡ giao diện tuỳ bạn.** Phần cài đặt có bộ nút `A-` `100%` `A+`: cả cửa sổ, kể cả hộp thoại và trình đơn, ở mức 80, 90, 100, 110, 125 hoặc 150 phần trăm. `Ctrl-=` và `Ctrl--` làm việc đó từ bàn phím, `Ctrl-0` đưa về 100, trong terminal cũng vậy. Chữ của terminal giữ nguyên cỡ; terminal chỉ có ít cột hơn hoặc nhiều cột hơn.
 - **Tiếng Anh và tiếng Việt.** Phần cài đặt đổi ngôn ngữ của cửa sổ; lỗi kết nối cũng được diễn đạt bằng ngôn ngữ đó.
 - **Bảng lệnh.** `Ctrl-K` (trong terminal là `Ctrl-Shift-K`, vì phím trần là của shell), hoặc ô tìm kiếm ở đầu thanh điều hướng: mọi máy chủ và mọi lệnh, tìm kiếm mờ. `Ctrl-T` mở bảng lệnh để mở tab mới.
 
@@ -72,6 +75,9 @@ Mọi hình ảnh được chụp từ chính ứng dụng bằng [`scripts/gui-
 | | `Ctrl-Shift-B` (`Ctrl-B` trần khi không có terminal trước mặt) | chế độ tập trung: thanh bên ẩn, terminal chiếm cả cửa sổ; `Esc` để trở lại |
 | | `Ctrl-T` | mở tab mới, từ bảng lệnh |
 | | `?`; trong terminal là `Ctrl-A` `?` | bảng phím tắt: mọi phím, tìm kiếm được |
+| | `Ctrl-=` hoặc `Ctrl-+` | phóng to cả giao diện một nấc, tối đa 150 phần trăm; cả khi đang ở terminal hay trên một hộp thoại |
+| | `Ctrl--` | thu nhỏ cả giao diện một nấc, tối thiểu 80 phần trăm |
+| | `Ctrl-0` | đặt lại cỡ giao diện về 100 phần trăm |
 | Bảng điều khiển | `/` | tìm máy chủ, `#thẻ` để lọc theo thẻ; `Enter` hoặc `↓` tới thẻ đầu tiên; gõ `user@host` rồi `Enter` để kết nối |
 | | `a` | thêm máy chủ |
 | | `s` | đoạn lệnh |
@@ -134,7 +140,7 @@ sudo apt install ./target/deb/vssh-desktop_0.2.0_*.deb
 
 - **`~/.ssh/config`** vẫn là file mà chính `ssh` dùng được. Trước lần sửa đầu tiên, vssh lưu một bản sao tại `~/.ssh/config.vssh.bak`. Ứng dụng desktop đọc lại danh sách máy chủ mỗi 5 giây, nên máy chủ thêm bằng tay hoặc thêm trong ứng dụng terminal sẽ hiện ra mà không cần khởi động lại.
 - **`~/.config/vssh/config.toml`** chủ yếu là của ứng dụng terminal: phím, màu và thanh trạng thái của nó ([xem đầy đủ](README-terminal.vi.md#file-và-cấu-hình)). Ứng dụng desktop đọc một thiết lập trong đó, `batch_max_parallel`: số máy chạy lệnh cùng lúc trong một lượt chạy hàng loạt (mặc định 8; các máy còn lại chờ tới lượt).
-- **Những gì bạn chọn trong cửa sổ** — ngôn ngữ, giao diện, chế độ phát trực tiếp, thứ tự các thẻ máy chủ — do chính cửa sổ lưu, không nằm trong `config.toml`.
+- **Những gì bạn chọn trong cửa sổ** — ngôn ngữ, giao diện, cỡ giao diện, chế độ phát trực tiếp, thứ tự các thẻ máy chủ — do chính cửa sổ lưu, không nằm trong `config.toml`.
 - **Bảo mật** thuộc về lõi, nên giống nhau ở cả hai: khoá của máy chủ chưa biết được ghi lại ở lần kết nối đầu, máy chủ đã biết phải đưa ra đúng khoá đã ghi. Chi tiết, cùng một cảnh báo đã biết, nằm trong [README-terminal.vi.md](README-terminal.vi.md#bảo-mật).
 
 ## Xử lý sự cố

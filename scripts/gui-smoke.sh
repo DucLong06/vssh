@@ -127,7 +127,7 @@
 # one that drops; d4-sftp: the file view with transfers under way; d5-batch:
 # what four hosts answered to one command; d6-vault: the vault's manager,
 # d6-host: the host form, as D14 leaves it: a key file and its folder button,
-# a road of two hops; d7-day: the Day theme, d7-streamer: streamer mode;
+# a road of three hops (D16), d16-zoom: the dashboard at 125 percent; d7-day: the Day theme, d7-streamer: streamer mode;
 # d9-rail: the rail with every row in use; d10-shortcuts: the cheatsheet,
 # d10-split: two shells side by side, d10-focus: the same with no rail;
 # d11-compact: the rail as icons; d12-broadcast: two panes with broadcast on);
@@ -379,8 +379,9 @@ top() { xdotool mousemove --window "$win" 672 420 click --repeat 40 --delay 10 4
 # no status bar, that is the foot of a terminal.)
 aside() { xdotool mousemove --window "$win" 700 690; sleep 0.5; }
 # The settings, at the rail's foot: a menu whose first row has the keys. Down to
-# the row asked for, and Enter: 1 the language, 2 the theme, 3 streamer mode,
-# 4 pause watching, 5 focus mode, 6 the cheatsheet. RAIL: the middle of the rail, which may be narrow.
+# the row asked for, and Enter: 1 the language, 2 the theme, 3 to 5 the window's
+# size (smaller, as it was made, bigger), 6 streamer mode, 7 pause watching,
+# 8 focus mode, 9 the cheatsheet. RAIL: the middle of the rail, which may be narrow.
 RAIL=120
 setting() {
     xdotool mousemove --window "$win" "$RAIL" 636 click 1
@@ -674,9 +675,10 @@ language
 terminal
 shot docs/img/desktop-d3-closed.vi.png
 language
-# The banner's red border, top right of the terminal.
-red=$(pixel docs/img/desktop-d3-closed.png 992 61)
-[ "$red" = f7768e ] || { echo "FAIL: no red banner on the closed tab (#$red)"; exit 1; }
+# The banner's red border, top right of the terminal: the line a column of
+# the picture crosses on its way down to the banner's middle, left of its button.
+red=$(ffmpeg -loglevel error -i docs/img/desktop-d3-closed.png -vf "crop=1:28:975:54" -f rawvideo -pix_fmt rgb24 - | od -An -v -tx1 -w3 | tr -d ' ' | grep -c f7768e || true)
+[ "$red" -ge 1 ] || { echo "FAIL: no red banner on the closed tab: no #f7768e over its middle"; exit 1; }
 step "a session that ended leaves a red banner on its tab"
 
 kill -0 "$app" 2>/dev/null || { echo "FAIL: the app died"; exit 1; }
@@ -712,8 +714,8 @@ open_files() {
     key f
     sleep 4
 }
-# The rows of the two panes: 23 px each, the middle of the first at y 133.
-row() { echo $((133 + 23 * $1)); }
+# The rows of the two panes: 28 px each, the middle of the first at y 154.
+row() { echo $((154 + 28 * $1)); }
 LOCAL=420 REMOTE=860
 click_row() { xdotool mousemove --window "$win" "$1" "$(row "$2")" click "${3:-1}"; sleep 0.5; }
 # A row dragged from one pane into the other.
@@ -797,7 +799,7 @@ done
 step "two transfers at once, each with its line ($(size "$files/backup.sql") and $(size "$files/site.tar.gz") bytes so far)"
 
 # Cancel on the first line stops that one where it is; the other goes on.
-xdotool mousemove --window "$win" 1057 595 click 1
+xdotool mousemove --window "$win" 1045 594 click 1
 sleep 2
 stopped=$(size "$files/backup.sql")
 going=$(size "$files/site.tar.gz")
@@ -1148,13 +1150,13 @@ key Escape
 # brings it to the front, and what is typed then is typed in its shell.
 for name in shell-01 cache-01 legacy shell-02; do mark "$name"; done
 rail() { xdotool mousemove --window "$win" 120 "$1" click 1; sleep 1; }
-rail 198
+rail 206
 run 'touch rail'
 there 2205/rail "the rail's Sessions row did not bring shell-02's terminal to the front"
 step "the rail's Sessions row brought the open session to the front"
 # Its first row is the dashboard again: there x is a key, and asks for a
 # command for the selected host.
-rail 129
+rail 130
 key x
 xdotool type --window "$win" --delay 20 'touch rail-back'
 key Return
@@ -1166,12 +1168,12 @@ step "the rail's first row brought the dashboard back, with its keys"
 # whose. Left unanswered nobody is asked; answered with files-01, that host is
 # asked for its SFTP. Ctrl-W closes the files' tab.
 before=$(sftps)
-rail 282
+rail 302
 shot target/smoke/whose-files.png
 key Escape
 sleep 2
 [ "$(sftps)" -eq "$before" ] || fail "the rail's Files row opened somebody's files before it was said whose"
-rail 282
+rail 302
 typed files-01
 key Return
 sleep 5
@@ -1289,20 +1291,35 @@ step "the key given to the hop opened it where its own did not: a shell through 
 
 # The form as it stands, for the README: the key's folder button, the road as
 # a picture, each hop and what it is logged in to with. In both languages.
-action deep-x
-key e
-sleep 1
-aside
-shot docs/img/desktop-d6-host.png
-key Escape
+# With a third hop typed and not saved (D16): past the host's fields, its key
+# and folder, and the two hops' rows, the road's stop again.
+long_road() {
+    action deep-x
+    key e
+    sleep 1
+    key Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Tab Return
+    typed web-02
+    aside
+    shot "$1"
+    key Escape
+}
+# D16: the dashboard two steps bigger, by the keys, which is 125 percent and is
+# kept; Ctrl-0 is the size the window was made at.
+bigger() {
+    key ctrl+equal ctrl+equal
+    [ "$(kept vssh.ui_scale)" = 125 ] || fail "Ctrl-= twice left the window's size at $(kept vssh.ui_scale), not 125"
+    top
+    shot "$1"
+    key ctrl+0
+    [ "$(kept vssh.ui_scale)" = 100 ] || fail "Ctrl-0 left the window's size at $(kept vssh.ui_scale), not 100"
+}
+long_road docs/img/desktop-d6-host.png
+bigger docs/img/desktop-d16-zoom.png
 language
-action deep-x
-key e
-sleep 1
-aside
-shot docs/img/desktop-d6-host.vi.png
-key Escape
+long_road docs/img/desktop-d6-host.vi.png
+bigger docs/img/desktop-d16-zoom.vi.png
 language
+step "the form with a road of three hops, and the dashboard at 125 percent by Ctrl-=, back at 100 by Ctrl-0"
 
 # A card's own switch is its first stop. Off: the database says so, the
 # connection the dashboard kept is closed, and two rounds later nobody has
@@ -1330,7 +1347,7 @@ step "a card's switch stopped the watching of its host: its connection closed, n
 # connection goes, and the dashboard says so at its top.
 logins=$(accepted)
 shut=$(closed)
-setting 4
+setting 7
 sleep 3
 top
 shot target/smoke/watch-paused.png
@@ -1338,7 +1355,7 @@ shot target/smoke/watch-paused.png
 [ "$(closed)" -gt "$shut" ] || fail "Pause watching closed no connection"
 sleep 11
 [ "$(accepted)" -eq "$logins" ] || fail "with the watching paused somebody was logged in to: $(accepted) logins, $logins before"
-setting 4
+setting 7
 sleep 7
 [ -z "$(rows "SELECT name FROM flags")" ] || fail "the watching, on again, is still paused in the database"
 [ "$(accepted)" -gt "$logins" ] || fail "the watching, on again, asked nobody"
@@ -1383,7 +1400,7 @@ key Escape
 shot target/smoke/shortcuts-shut.png
 sheet target/smoke/shortcuts-shut.png && fail "Esc did not close the cheatsheet"
 # The settings' last row; then Ctrl-/.
-setting 6
+setting 9
 shot target/smoke/shortcuts-button.png
 sheet target/smoke/shortcuts-button.png || fail "the settings' row did not open the cheatsheet"
 key Escape
@@ -1463,6 +1480,20 @@ pane() { xdotool mousemove --window "$win" "$1" 420 click 1; sleep 0.5; }
 open_tab shell-01
 whole=$(cols whole)
 first=$(tty_of first-tty)
+# D16: the window's size by its keys, in a terminal. The shell is sent none of
+# them (a = or a 0 before the next command would be no command, and no answer);
+# the terminal's letters are as they were and its room is not: fewer columns
+# in a bigger window, more in a smaller one, and the same again at Ctrl-0.
+key ctrl+equal
+big=$(cols big)
+key ctrl+minus ctrl+minus
+small=$(cols small)
+[ "$(kept vssh.ui_scale)" = 90 ] || fail "Ctrl-= and Ctrl-- twice, in a terminal, left the window's size at $(kept vssh.ui_scale), not 90"
+key ctrl+0
+again=$(cols again)
+[ "$big" -lt "$whole" ] && [ "$small" -gt "$whole" ] && [ "$again" -eq "$whole" ] ||
+    fail "the terminal has $whole columns, $big at 110 percent, $small at 90 and $again at 100 again: it was not fitted to its room"
+step "Ctrl-= Ctrl-- Ctrl-0 in a terminal are the window's: $whole columns, $big at 110 percent, $small at 90, $again again"
 # The tab in front, the third, let go on the left half of the first: it stands
 # before it now, and the digits follow the strip. By Ctrl-A 2 and back by
 # Ctrl-A 1, the shell that was the third tab is the first.
@@ -1726,7 +1757,7 @@ step "the app is still running after the vault, the host form and the key setup"
 # --- D7: the bar's two rows, the Day theme, streamer mode ---------------------
 # The app is in Vietnamese.
 # The two switches, rows of the settings.
-streamer() { setting 3; }
+streamer() { setting 6; }
 theme() { setting 2; }
 pixels() { file=$1; shift; while [ $# -ge 2 ]; do printf '%s ' "$(pixel "$file" "$1" "$2")"; shift 2; done; }
 
@@ -1740,9 +1771,10 @@ pixels() { file=$1; shift; while [ $# -ge 2 ]; do printf '%s ' "$(pixel "$file" 
 for name in shell-01 shell-02; do mark "$name"; done
 aside
 shot target/smoke/toolbar-wrap.vi.png
-rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 85 275 135 500 164 500 171)
+# (D16: the rows' middles are at y 89 and 139, and the band ends with its line at y 175.)
+rows=$(pixels target/smoke/toolbar-wrap.vi.png 275 89 275 139 500 168 500 175)
 [ "$rows" = "1a1b26 1a1b26 1a1b26 2a2f45 " ] || fail "the bar over the cards is not two rows from one margin, or it took a third: $rows"
-case "$(pixels target/smoke/toolbar-wrap.vi.png 276 85 276 135)" in
+case "$(pixels target/smoke/toolbar-wrap.vi.png 276 89 276 139)" in
 *1a1b26*) fail "the bar's two rows do not both start at x 276" ;;
 esac
 step "with cards marked, the Vietnamese bar is two rows from one margin, and no third"

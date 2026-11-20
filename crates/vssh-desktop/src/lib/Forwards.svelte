@@ -119,7 +119,7 @@
 </script>
 
 <Modal label="{t('forwards')} {host}" {onclose}>
-  <div bind:this={root} class="grid gap-4 p-6">
+  <div bind:this={root} class="grid gap-4 p-7">
     <p>
       <span class="text-base font-semibold text-ink">{t('forwards')}</span>
       <strong>{host}</strong>
@@ -128,20 +128,20 @@
       <table class="w-full border-collapse text-left">
         <thead class="text-xs whitespace-nowrap text-dim">
           <tr>
-            <th scope="col" class="w-20 py-1 font-normal">{t('kind')}</th>
-            <th scope="col" class="w-28 py-1 font-normal">{t('local_port')}</th>
-            <th scope="col" class="py-1 font-normal">{t('remote')}</th>
-            <th scope="col" class="w-32 py-1 font-normal">{t('status')}</th>
-            <th scope="col" class="w-8 py-1"><span class="sr-only">{t('delete')}</span></th>
+            <th scope="col" class="w-20 py-1.5 font-normal">{t('kind')}</th>
+            <th scope="col" class="w-28 py-1.5 font-normal">{t('local_port')}</th>
+            <th scope="col" class="py-1.5 font-normal">{t('remote')}</th>
+            <th scope="col" class="w-32 py-1.5 font-normal">{t('status')}</th>
+            <th scope="col" class="w-8 py-1.5"><span class="sr-only">{t('delete')}</span></th>
           </tr>
         </thead>
         <tbody>
           {#each rows as row (row.kind + row.value)}
             <tr data-state={row.state} class="border-t border-edge">
-              <td class="py-1 text-[13px] text-white">{kindly[row.kind]}</td>
-              <td class="py-1.5 font-mono text-[13px]">{row.port}</td>
-              <td class="truncate py-1.5 font-mono text-[13px] {row.kind === 'D' ? 'text-white' : ''}">{leads(row) || '—'}</td>
-              <td class="py-1">
+              <td class="py-2 text-sm text-white">{kindly[row.kind]}</td>
+              <td class="py-2 font-mono text-sm">{row.port}</td>
+              <td class="truncate py-2 font-mono text-sm {row.kind === 'D' ? 'text-white' : ''}">{leads(row) || '—'}</td>
+              <td class="py-1.5">
                 <!-- What it is, and the way to change it. -->
                 <button
                   type="button"
@@ -149,13 +149,13 @@
                   aria-checked={row.state !== 'off'}
                   aria-label="{row.kind} {name(row)}"
                   onclick={() => toggle(row)}
-                  class="cursor-pointer rounded-full border border-edge px-3 text-[13px] font-medium whitespace-nowrap hover:bg-selection {tone[row.state]}"
+                  class="cursor-pointer rounded-full border border-edge px-3 py-0.5 text-sm font-medium whitespace-nowrap hover:bg-selection {tone[row.state]}"
                 >
                   {mark[row.state]}
                   {word[row.state]}
                 </button>
               </td>
-              <td class="py-1 text-right">
+              <td class="py-1.5 text-right">
                 <button
                   type="button"
                   aria-label="{t('delete')} {row.kind} {name(row)}"
@@ -194,7 +194,7 @@
         </div>
         <label>
           {t('local_port')}
-          <input bind:this={portField} bind:value={port} type="number" min="1" max="65535" required placeholder="8080" class="{field} font-mono text-[13px]" />
+          <input bind:this={portField} bind:value={port} type="number" min="1" max="65535" required placeholder="8080" class="{field} font-mono text-sm" />
         </label>
         <label>
           {t('remote')}
@@ -206,12 +206,12 @@
             autocapitalize="off"
             spellcheck="false"
             placeholder={kind === 'D' ? 'SOCKS' : 'localhost:80'}
-            class="{field} font-mono text-[13px]"
+            class="{field} font-mono text-sm"
           />
         </label>
         <button
           type="submit"
-          class="cursor-pointer rounded-[10px] border border-blue bg-blue! px-3.5 py-1.5 font-semibold text-page hover:brightness-110"
+          class="cursor-pointer rounded-ctl border border-blue bg-blue! min-h-9 px-3.5 py-1.5 font-semibold text-page hover:brightness-110"
         >
           {t('add')}
         </button>

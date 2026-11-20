@@ -116,16 +116,16 @@
   }
 
   const field = 'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-fg placeholder:text-dim'
-  const action = 'cursor-pointer rounded-lg border border-edge px-3 py-0.5 font-medium text-fg hover:bg-selection'
+  const action = 'cursor-pointer rounded-lg border border-edge px-3 py-1 font-medium text-fg hover:bg-selection'
 </script>
 
 <Modal label={title} wide {onclose}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="grid gap-4 p-6" {onkeydown}>
+  <div class="grid gap-4 p-7" {onkeydown}>
     <p class="flex items-baseline gap-2">
       <span class="text-base font-semibold text-ink">{title}</span>
       {#if batch !== null}
-        <span class="ml-auto rounded-full bg-bg px-2.5 text-[13px] text-white">{done}/{hosts.length}</span>
+        <span class="ml-auto rounded-full bg-bg px-2.5 text-sm text-white">{done}/{hosts.length}</span>
       {/if}
     </p>
     <form
@@ -141,7 +141,7 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        class="{field} font-mono text-[13px]"
+        class="{field} font-mono text-sm"
       />
     </form>
     {#if refusal}
@@ -195,13 +195,13 @@
             {/if}
           </p>
           {#if answer && answer.output !== null}
-            <pre class="mt-2 rounded-lg bg-page px-3 py-2 font-mono text-[13px] break-words whitespace-pre-wrap text-fg">{answer.output.trimEnd() || t('no_output')}</pre>
+            <pre class="mt-2 rounded-lg bg-page px-3 py-2 font-mono text-sm break-words whitespace-pre-wrap text-fg">{answer.output.trimEnd() || t('no_output')}</pre>
           {/if}
         </li>
       {/each}
     </ul>
   </div>
-  <footer class="flex items-center gap-4 border-t border-edge px-6 py-3 text-[13px] text-white">
+  <footer class="flex items-center gap-4 border-t border-edge px-7 py-3 text-sm text-white">
     <button
       type="button"
       aria-pressed={filtering || filter !== ''}

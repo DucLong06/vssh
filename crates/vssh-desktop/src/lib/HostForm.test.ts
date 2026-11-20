@@ -536,3 +536,49 @@ test('in Vietnamese: the form, what is wrong in it, and the import', async () =>
   expect(button('Xem trước')).toBeInTheDocument()
   expect(button('Chọn tệp ssh config')).toBeInTheDocument()
 })
+
+test('the widest dialog: the title and the buttons stay and the fields scroll between them, in two columns; a road of four hops is a numbered row a hop, and its picture cuts a long name short with the whole of it in a title', async () => {
+  const { user } = open()
+  const dialog = screen.getByRole('dialog')
+  expect(dialog).toHaveClass('w-[min(78rem,94vw)]', 'mt-[6vh]', 'max-h-[88vh]', 'portrait:w-[94vw]', 'open:flex', 'flex-col')
+  const form = dialog.querySelector('form')!
+  expect(form).toHaveClass('flex', 'min-h-0', 'flex-col')
+  const [, fields, foot] = [...form.children] as HTMLElement[]
+  expect(fields).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto', 'landscape:grid-cols-[18rem_minmax(0,1fr)]')
+  expect(within(foot).getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  expect(within(fields).queryByRole('button', { name: 'Save' })).toBeNull()
+  // Who the host is on the left; the road and the rest on the right.
+  const [left, right] = [...fields.children] as HTMLElement[]
+  expect(fields.children).toHaveLength(2)
+  expect(within(left).getAllByRole('textbox')).toHaveLength(4)
+  expect(within(left).getByRole('radiogroup')).toBeInTheDocument()
+  expect(within(right).getByRole('group', { name: 'Jump host' })).toBeInTheDocument()
+  expect(within(right).getByRole('textbox', { name: 'Notes' })).toBeInTheDocument()
+
+  const long = 'ops@a-bastion-with-a-name-nobody-reads-in-one-line.example.net'
+  for (const name of ['web-01', 'web-02', 'db-primary']) await user.click(screen.getByRole('button', { name: `Add a hop: ${name}` }))
+  await user.click(screen.getByRole('button', { name: '+ Add a hop' }))
+  await user.keyboard(long)
+  const rows = within(within(right).getByRole('list', { name: 'Jump host' })).getAllByRole('listitem')
+  expect(rows).toHaveLength(4)
+  rows.forEach((row, at) => {
+    const n = at + 1
+    expect(row).toHaveClass('flex', 'flex-wrap')
+    expect(row.firstElementChild).toHaveTextContent(String(n))
+    // As it is seen: the hop, the user, the key and its folder, the three buttons. As Tab goes: the key before the user.
+    expect(within(row).getByRole('textbox', { name: `Hop ${n}` })).toHaveClass('order-1', 'min-w-64', 'flex-1', 'min-h-9')
+    expect(within(row).getByRole('textbox', { name: `User of hop ${n}` })).toHaveClass('order-2', 'w-44!')
+    expect(within(row).getByRole('textbox', { name: `Own key of hop ${n}` })).toHaveClass('order-3', 'flex-1')
+    expect(within(row).getByRole('button', { name: `Choose a key file · Hop ${n}` })).toHaveClass('order-4', 'size-9')
+    expect(within(row).getAllByRole('textbox').map((box) => box.getAttribute('aria-label'))).toEqual([`Hop ${n}`, `Own key of hop ${n}`, `User of hop ${n}`])
+    for (const name of ['Move earlier', 'Move later', 'Delete']) expect(within(row).getByRole('button', { name: `${name} · Hop ${n}` })).toHaveClass('size-9')
+    // What the hop is logged in to with, in words under it, and whole.
+    expect(row.querySelector('p')).toHaveTextContent(/^Via .* signs in with/)
+    expect(row.querySelector('p')).not.toHaveClass('truncate')
+  })
+  const picture = screen.getByRole('list', { name: 'The way there' })
+  expect(picture).toHaveClass('flex', 'flex-wrap')
+  expect(within(picture).getAllByRole('listitem')).toHaveLength(6)
+  expect(within(picture).getByTitle(long)).toHaveClass('truncate', 'max-w-[14rem]')
+  expect(within(picture).getByTitle(long)).toHaveTextContent(long)
+})

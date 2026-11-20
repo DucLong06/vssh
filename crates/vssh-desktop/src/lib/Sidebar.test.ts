@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest'
 import type { Host } from './api'
 import fixture from './fixtures/hosts.json'
 import { i18n, setLang } from './i18n.svelte'
+import { scale } from './scale.svelte'
 import { streamer } from './streamer.svelte'
 import { theme } from './theme.svelte'
 import Sidebar from './Sidebar.svelte'
@@ -256,14 +257,14 @@ test('the settings at the rail\'s foot: the language, the theme and streamer mod
   }
   await user.click(cog)
   expect(cog).toHaveAttribute('aria-expanded', 'true')
-  expect(rows()).toEqual(['Language EN', 'Theme Night', 'Streamer mode (made-up addresses)', 'Focus mode Ctrl+Shift+B', 'Keyboard shortcuts ?'])
+  expect(rows()).toEqual(['Language EN', 'Theme Night', 'A-', '100%', 'A+', 'Streamer mode (made-up addresses)', 'Focus mode Ctrl+Shift+B', 'Keyboard shortcuts ?'])
   // A second click on the cog closes it.
   await user.click(cog)
   expect(screen.queryByRole('menu')).toBeNull()
   await choose(/Language/)
   expect(i18n.lang).toBe('vi')
   await user.click(item('Cài đặt'))
-  expect(rows()).toEqual(['Ngôn ngữ VI', 'Giao diện Tối', 'Chế độ phát trực tiếp (địa chỉ giả)', 'Chế độ tập trung Ctrl+Shift+B', 'Phím tắt ?'])
+  expect(rows()).toEqual(['Ngôn ngữ VI', 'Giao diện Tối', 'A-', '100%', 'A+', 'Chế độ phát trực tiếp (địa chỉ giả)', 'Chế độ tập trung Ctrl+Shift+B', 'Phím tắt ?'])
   // The words change with the next drawing: the key after it finds the rail in English.
   setLang('en')
   await user.keyboard('{Escape}')
@@ -282,8 +283,35 @@ test('the settings at the rail\'s foot: the language, the theme and streamer mod
   expect(on.onshortcuts).toHaveBeenCalledOnce()
 })
 
+test('the settings have the window\'s size: A- 100% A+, each a step, the menu open the while; a tooltip says the key, and an end is an end', async () => {
+  const user = userEvent.setup()
+  rail()
+  await user.click(item('Settings'))
+  const menu = within(screen.getByRole('menu'))
+  const part = (name: string) => menu.getByRole('menuitem', { name })
+  expect(menu.getByText('UI size')).toBeInTheDocument()
+  expect(part('Zoom in UI')).toHaveAttribute('title', 'Zoom in UI (Ctrl+=, Ctrl++)')
+  expect(part('Zoom out UI')).toHaveAttribute('title', 'Zoom out UI (Ctrl+-)')
+  expect(part('Reset UI zoom')).toHaveAttribute('title', 'Reset UI zoom (Ctrl+0)')
+  await user.click(part('Zoom in UI'))
+  await user.click(part('Zoom in UI'))
+  expect(part('Reset UI zoom')).toHaveTextContent('125%')
+  expect(localStorage.getItem('vssh.ui_scale')).toBe('125')
+  await user.click(part('Zoom in UI'))
+  expect(part('Zoom in UI')).toHaveAttribute('aria-disabled', 'true')
+  await user.click(part('Zoom in UI'))
+  expect(scale.percent).toBe(150)
+  await user.click(part('Reset UI zoom'))
+  expect(part('Reset UI zoom')).toHaveTextContent('100%')
+  for (let i = 0; i < 3; i++) await user.click(part('Zoom out UI'))
+  expect(scale.percent).toBe(80)
+  expect(part('Zoom out UI')).toHaveAttribute('aria-disabled', 'true')
+  // Open all the while.
+  expect(screen.getByRole('menu')).toBeInTheDocument()
+})
+
 test('the tags of the rail are small, and three whole rows of them at most', () => {
   render(Sidebar, props())
-  expect(screen.getByRole('list', { name: 'Tags' })).toHaveClass('max-h-[70px]')
-  expect(screen.getByRole('button', { name: '#db 1' })).toHaveClass('text-[10.5px]')
+  expect(screen.getByRole('list', { name: 'Tags' })).toHaveClass('max-h-19')
+  expect(screen.getByRole('button', { name: '#db 1' })).toHaveClass('text-3xs')
 })

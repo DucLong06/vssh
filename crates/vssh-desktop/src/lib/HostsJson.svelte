@@ -67,11 +67,11 @@
 
   onMount(() => field?.focus())
 
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium whitespace-nowrap hover:bg-selection'
 </script>
 
 <Modal label={title} {onclose}>
-  <div class="grid gap-4 p-6 text-[13px] text-white">
+  <div class="grid gap-4 p-7 text-sm text-white">
     <p class="text-base font-semibold text-ink">{title}</p>
     {#if mode === 'export'}
       <p>{t('export_hosts_note')}</p>
@@ -98,7 +98,7 @@
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-[13px] text-fg placeholder:text-dim"
+          class="mt-1 w-full rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-sm text-fg placeholder:text-dim"
         />
       </label>
       <!-- To read a file that is there: one to write is named, and must not be there yet. -->
@@ -108,7 +108,7 @@
           aria-label={t('choose_file')}
           title={t('choose_file')}
           onclick={choose}
-          class="grid size-[38px] cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg"
+          class="grid size-10 cursor-pointer place-items-center rounded-lg border border-edge text-dim hover:bg-selection hover:text-fg"
         >
           <Icon name="folder" />
         </button>

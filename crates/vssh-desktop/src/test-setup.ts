@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
 import { setLang } from './lib/i18n.svelte'
+import { setScale } from './lib/scale.svelte'
 import { setStreamer } from './lib/streamer.svelte'
 import { setTheme } from './lib/theme.svelte'
 
@@ -28,4 +29,5 @@ afterEach(() => {
   setLang('en')
   setStreamer(false)
   setTheme('night')
+  setScale(100)
 })

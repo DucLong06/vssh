@@ -35,9 +35,11 @@ Your hosts in a window: a dashboard of host cards with live stats, terminal tabs
 | **Files: this machine and the host** | **One command on four hosts** |
 | ![The dual-pane file view with two uploads under way: per cent, speed, time left](docs/img/desktop-d4-sftp.png) | ![A batch run: two hosts answered, two failed and say why](docs/img/desktop-d5-batch.png) |
 | **The host form** | **The vault** |
-| ![The form of a new host: address, sign-in, jump host, tags, group, notes](docs/img/desktop-d6-host.png) | ![The vault, unlocked: change the passphrase, export a backup](docs/img/desktop-d6-vault.png) |
+| ![The form of a host: who it is on the left, on the right the road to it through three jump hosts, each with what it is logged in to with](docs/img/desktop-d6-host.png) | ![The vault, unlocked: change the passphrase, export a backup](docs/img/desktop-d6-vault.png) |
 | **Day theme** | **Streamer mode** |
 | ![The dashboard in the Day theme](docs/img/desktop-d7-day.png) | ![The dashboard in streamer mode: every address is a made-up one](docs/img/desktop-d7-streamer.png) |
+| **The window at 125 percent** | |
+| ![The dashboard two steps bigger: the rail, the cards and their text all at 125 percent](docs/img/desktop-d16-zoom.png) | |
 
 All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui-smoke.sh), in this interface language; the hosts in them are a throwaway `sshd` on the local machine.
 
@@ -61,6 +63,7 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 - **Vault.** Passwords of your hosts, encrypted with Argon2id + XChaCha20-Poly1305 under one passphrase. A locked vault asks for it as the app starts and stays unlocked until the app is closed. The dialog also creates a vault, changes the passphrase and exports an encrypted backup. A forgotten passphrase cannot be recovered.
 - **Streamer mode.** In the settings (the cog at the foot of the rail): every address the window shows becomes a made-up one from the documentation ranges (`203.0.113.x`, `198.51.100.x`), the same for the same host every time. Only what is shown changes: the config, the database and what is sent to a host keep the real ones. Host aliases and what a shell prints are left as they are.
 - **Themes.** TokyoNight Night (the default) and Day, switched in the settings. The terminal itself stays Night in both.
+- **A size of your own.** The settings have an `A-` `100%` `A+` stepper: the whole window, its dialogs and menus with it, at 80, 90, 100, 110, 125 or 150 percent. `Ctrl-=` and `Ctrl--` do the same from the keyboard and `Ctrl-0` is 100 again, in a terminal too. The terminal's own letters stay as they are; it gets fewer or more columns.
 - **English and Vietnamese.** The settings switch the window's language; a connection failure is worded in it too.
 - **Command palette.** `Ctrl-K` (`Ctrl-Shift-K` in a terminal, where the plain key is the shell's), or the search at the top of the rail: every host and every action, by fuzzy search. `Ctrl-T` opens it for a new tab.
 
@@ -72,6 +75,9 @@ All pictures are taken from the real app by [`scripts/gui-smoke.sh`](scripts/gui
 | | `Ctrl-Shift-B` (plain `Ctrl-B` when no terminal is in front) | focus mode: the rail hides, the terminal takes the window; `Esc` brings it back |
 | | `Ctrl-T` | new tab, from the palette |
 | | `?`; in a terminal `Ctrl-A` `?` | the cheatsheet: every key, searched |
+| | `Ctrl-=` or `Ctrl-+` | the whole window one step bigger, up to 150 percent; in a terminal and over a dialog too |
+| | `Ctrl--` | the whole window one step smaller, down to 80 percent |
+| | `Ctrl-0` | the window's size as it was made: 100 percent |
 | Dashboard | `/` | search hosts, `#tag` for a tag; `Enter` or `↓` to the first card; `user@host` and `Enter` connects |
 | | `a` | add a host |
 | | `s` | snippets |
@@ -134,7 +140,7 @@ The desktop app has no store of its own: it is the same data as the terminal app
 
 - **`~/.ssh/config`** stays a file `ssh` itself can use. Before its first change vssh saves a copy as `~/.ssh/config.vssh.bak`. The desktop app reads the hosts again every 5 seconds, so a host added by hand or in the terminal app appears without a restart.
 - **`~/.config/vssh/config.toml`** is mostly the terminal app's: its keys, colours and status bar ([all of them](README-terminal.md#files-and-configuration)). The desktop app reads one setting from it, `batch_max_parallel`: how many hosts of a batch run a command at once (8 by default; the rest wait their turn).
-- **What you choose in the window** — language, theme, streamer mode, the order of your cards — is kept by the window itself, not in `config.toml`.
+- **What you choose in the window** — language, theme, the window's size, streamer mode, the order of your cards — is kept by the window itself, not in `config.toml`.
 - **Security** is the core's, so it is the same in both: an unknown host's key is recorded on first contact, a known host must present the recorded key. More, with the one known advisory, in [README-terminal.md](README-terminal.md#security).
 
 ## Troubleshooting

@@ -70,10 +70,10 @@
   bind:this={box}
   role="dialog"
   aria-label="{t('quick_peek')}: {host.alias}"
-  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-[13px] shadow-float before:absolute before:inset-x-0 before:-top-2 before:h-2 motion-reduce:animate-none"
+  class="absolute top-full right-0 left-0 z-10 mt-2 animate-slide cursor-default rounded-2xl border border-blue/40 bg-panel p-4 text-sm shadow-float before:absolute before:inset-x-0 before:-top-2 before:h-2 motion-reduce:animate-none"
 >
   <p class="flex items-center gap-2">
-    <strong class="truncate text-sm font-semibold text-ink">{t('quick_peek')}: {host.alias}</strong>
+    <strong class="truncate text-md font-semibold text-ink">{t('quick_peek')}: {host.alias}</strong>
     <span class="ml-auto shrink-0 text-xs text-dim">{age}</span>
     {#if onrefresh}
       <button
@@ -81,7 +81,7 @@
         onclick={onrefresh}
         aria-keyshortcuts="r"
         title={tip(capital(info?.shown ? t('try_again') : t('refresh')), KEY.refresh)}
-        class="shrink-0 cursor-pointer rounded-lg border border-edge px-2 py-0.5 text-xs font-medium text-fg first-letter:uppercase hover:bg-selection"
+        class="shrink-0 cursor-pointer rounded-lg border border-edge px-2.5 py-1 text-xs font-medium text-fg first-letter:uppercase hover:bg-selection"
       >
         {info?.shown ? t('try_again') : t('refresh')}
       </button>
@@ -89,11 +89,11 @@
   </p>
 
   <div class="mt-3 rounded-xl bg-bg px-3 py-2">
-    <h4 class="text-[11px] font-semibold tracking-widest text-dim">{t('connection')}</h4>
+    <h4 class="text-2xs font-semibold tracking-widest text-dim">{t('connection')}</h4>
     {#if addr(host)}
       <p class="truncate font-mono text-xs">{addr(host)}</p>
     {/if}
-    <p class={reach.tone}><span aria-hidden="true" class="text-[10px]">{reach.dot}</span> {reach.text}</p>
+    <p class={reach.tone}><span aria-hidden="true" class="text-3xs">{reach.dot}</span> {reach.text}</p>
   </div>
 
   {#if info?.shown}

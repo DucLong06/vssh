@@ -63,12 +63,12 @@
     { id: 'disable', name: t('key_step_disable'), note: t('key_step_disable_note') },
   ])
   const tone = { pending: 'text-dim', running: 'text-yellow', done: 'text-green', failed: 'text-red' }
-  const button = 'cursor-pointer rounded-[10px] border border-edge px-3.5 py-1.5 font-medium hover:bg-selection disabled:opacity-60 first-letter:uppercase'
+  const button = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium hover:bg-selection disabled:opacity-60 first-letter:uppercase'
 </script>
 
 <!-- While it runs the shell goes on whatever the window does, to the end or to the restore: it stays to say which. -->
 <Modal label="{t('key_setup')} {host}" locked={phase === 'running'} {onclose}>
-  <div class="grid gap-4 p-6">
+  <div class="grid gap-4 p-7">
     <p>
       <span class="text-base font-semibold text-ink">{t('key_setup')}</span>
       <strong>{host}</strong>
@@ -89,7 +89,7 @@
             {/if}
           </span>
           <strong class={now === 'pending' ? 'font-normal' : tone[now]}>{step.name}</strong>
-          <span class="text-[13px] text-white">{step.note}</span>
+          <span class="text-sm text-white">{step.note}</span>
         </li>
       {/each}
     </ol>
@@ -106,7 +106,7 @@
     {:else if phase === 'done'}
       <p role="status" class="break-words">
         <span class="text-green">{t('key_setup_done').replace('{name}', host)}</span>
-        <span class="font-mono text-[13px] text-white">{key}</span>
+        <span class="font-mono text-sm text-white">{key}</span>
       </p>
     {:else if phase === 'ready'}
       <p class="text-yellow">{t('key_setup_note')}</p>

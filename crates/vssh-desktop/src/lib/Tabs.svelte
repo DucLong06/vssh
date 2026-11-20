@@ -102,13 +102,14 @@
   // broadcast takes the colours, so the tab in front is also bold, and only it has the full border.
   // In hand it fades; where it would land is a blue line before or after the tab under it.
   const pill =
-    "group relative flex h-8 shrink-0 items-center rounded-[9px] border border-transparent text-[13px] text-dim before:pointer-events-none before:absolute before:inset-y-1 before:w-0.5 before:rounded-full hover:bg-bg/60 hover:text-fg has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-semibold has-[[aria-selected=true]]:text-ink data-[dragging]:opacity-40 data-[drop=after]:before:-right-1 data-[drop=after]:before:bg-blue data-[drop=before]:before:-left-1 data-[drop=before]:before:bg-blue data-[pane]:border-blue/35 data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!"
-  const tab = 'flex h-full cursor-pointer items-center gap-2 rounded-[9px] pl-3'
+    "group relative flex h-9 shrink-0 items-center rounded-ctl border border-transparent text-sm text-dim before:pointer-events-none before:absolute before:inset-y-1 before:w-0.5 before:rounded-full hover:bg-bg/60 hover:text-fg has-[[aria-selected=true]]:bg-bg has-[[aria-selected=true]]:font-semibold has-[[aria-selected=true]]:text-ink data-[dragging]:opacity-40 data-[drop=after]:before:-right-1 data-[drop=after]:before:bg-blue data-[drop=before]:before:-left-1 data-[drop=before]:before:bg-blue data-[pane]:border-blue/35 data-[broadcast]:border-yellow/40! data-[broadcast]:text-yellow! data-[broadcast]:has-[[aria-selected=true]]:border-yellow!"
+  const tab = 'flex h-full cursor-pointer items-center gap-2 rounded-ctl pl-3'
   // There for the pointer that is on the tab, for the keyboard, and on the tab in front.
+  // Drawn 24 px wide and no wider to the pointer, which would take the clicks meant for the tab's name; as tall as the tab.
   const cross =
-    'mx-1 grid size-5 cursor-pointer place-items-center rounded-md text-dim opacity-0 group-hover:opacity-100 group-has-[[aria-selected=true]]:opacity-100 hover:bg-selection hover:text-fg focus-visible:opacity-100'
-  const digit = 'font-mono text-[11px] font-normal text-dim'
-  const tool = 'grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-dim hover:bg-selection hover:text-fg'
+    'relative mx-1 grid size-6 cursor-pointer place-items-center rounded-md text-dim opacity-0 group-hover:opacity-100 group-has-[[aria-selected=true]]:opacity-100 before:absolute before:-inset-y-1.5 before:inset-x-0 hover:bg-selection hover:text-fg focus-visible:opacity-100'
+  const digit = 'font-mono text-2xs font-normal text-dim'
+  const tool = 'grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg text-dim hover:bg-selection hover:text-fg'
   /** A tab's number is its key after the leader. */
   const chord = (title: string, n: number) => (n < 10 ? tip(title, [`${KEY.leader[0]} ${n}`]) : title)
   /** Its key closes the tab in front, and no other. The one that works in a terminal too. */
@@ -212,7 +213,9 @@
       <Icon name="rail" />
     </button>
   {/if}
-  <div bind:this={list} role="tablist" aria-label={t('sessions')} class="flex min-w-0 items-center gap-1 overflow-x-auto">
+  <!-- No scrollbar: a web view lays it over the tabs' lower half, where a press is then the bar's and picks up no tab.
+       The tab in front is brought into view; the others by it, or the wheel. -->
+  <div bind:this={list} role="tablist" aria-label={t('sessions')} class="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
     <span class={pill}>
       <button type="button" role="tab" aria-selected={active === null} title={chord(t('hosts'), 0)} onclick={() => onpick(null)} class="{tab} pr-3">
         <span class={digit}>0</span>
@@ -238,7 +241,7 @@
                 if (renaming === id) onrename?.(id, e.currentTarget.value.trim())
                 renaming = null
               }}
-              class="mx-1 h-6 w-32 rounded-md border border-blue/70 bg-page px-2 font-normal text-fg outline-none"
+              class="mx-1 h-7 w-32 rounded-md border border-blue/70 bg-page px-2 font-normal text-fg outline-none"
             />
           {:else}
             <button
@@ -272,7 +275,7 @@
             onclick={() => onpick(id)}
             class="{tab} pr-0.5"
           >
-            <Icon name="folder" class="size-3.5! text-cyan" />
+            <Icon name="folder" class="size-4! text-cyan" />
             <span class={digit}>{at + 1}</span>
             <!-- Said, and drawn as the folder before it. -->
             <span class="sr-only">{t('files')}</span>
@@ -302,7 +305,7 @@
         aria-pressed={casting}
         onclick={() => onbroadcast(!casting)}
         title={tip(t('broadcast_hint'), [`${KEY.leader[0]} Shift+B`])}
-        class="mr-1 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-transparent px-2 text-[13px] font-medium text-dim hover:bg-selection hover:text-fg aria-pressed:border-yellow aria-pressed:bg-yellow/15 aria-pressed:text-yellow"
+        class="mr-1 flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-transparent px-2 text-sm font-medium text-dim hover:bg-selection hover:text-fg aria-pressed:border-yellow aria-pressed:bg-yellow/15 aria-pressed:text-yellow"
       >
         <Icon name="cast" />
         <span class="first-letter:uppercase">{t('broadcast')}</span>

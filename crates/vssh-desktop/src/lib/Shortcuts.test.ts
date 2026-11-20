@@ -30,6 +30,9 @@ test('the cheatsheet: a dialog with the keys in groups, each key a key cap', () 
     ['Split right', ['Ctrl+Shift+D']],
     ['Split down', ['Ctrl+Shift+E']],
     ['Focus mode: hide the sidebar', ['Ctrl+Shift+B', 'Ctrl+B']],
+    ['Zoom in UI', ['Ctrl+=', 'Ctrl++']],
+    ['Zoom out UI', ['Ctrl+-']],
+    ['Reset UI zoom', ['Ctrl+0']],
     ['Paste into the session in front', ['Ctrl+Shift+V']],
     ['close', ['Esc']],
   ])
@@ -91,4 +94,9 @@ test('keys that do the same are said as that: a stroke between them, the first o
   expect([...next.querySelectorAll('kbd')].map((key) => key.className.includes('opacity-60'))).toEqual([false, true])
   // One key: no stroke.
   expect(within(screen.getByRole('region', { name: 'Anywhere' })).getByText('New tab: quick connect').nextElementSibling!.textContent).not.toContain('/')
+})
+
+test('a dialog is never taller than the window: the cheatsheet is a wide one, by the old word for it', () => {
+  open()
+  expect(screen.getByRole('dialog')).toHaveClass('w-[56rem]', 'max-w-[92vw]', 'mt-[12vh]', 'max-h-[82vh]', 'overflow-y-auto', 'portrait:w-[94vw]')
 })

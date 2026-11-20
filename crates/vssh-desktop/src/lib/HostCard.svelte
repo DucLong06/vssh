@@ -73,7 +73,7 @@
   // A healthy figure is the concept's white; past a mark it takes the mark's colour.
   const tone = { ok: 'text-ink', warn: 'text-yellow', crit: 'text-red' }
   const ghost =
-    'cursor-pointer rounded-[10px] border border-edge px-3 py-1 text-[13px] font-medium whitespace-nowrap hover:border-dim/50 hover:bg-selection first-letter:uppercase'
+    'min-h-9 cursor-pointer rounded-ctl border border-edge px-3 py-1 text-sm font-medium whitespace-nowrap hover:border-dim/50 hover:bg-selection first-letter:uppercase'
   const mini = 'cursor-pointer rounded-lg px-2 py-0.5 text-xs font-medium text-cyan hover:bg-selection'
 </script>
 
@@ -99,7 +99,7 @@
   {#if tagsOf(host).length}
     <ul aria-label={t('tags')} class="flex gap-1.5 {low ? 'overflow-hidden' : 'flex-wrap'}">
       {#each tagsOf(host) as tag (tag)}
-        <li class="shrink-0 rounded-md bg-bar px-1.5 text-[11px] leading-5 text-dim">{tag}</li>
+        <li class="shrink-0 rounded-md bg-bar px-1.5 text-2xs leading-5 text-dim">{tag}</li>
       {/each}
     </ul>
   {/if}
@@ -108,7 +108,7 @@
 <!-- Over the tags of a tall card, and only when it is pointed at or has the focus: twenty of these at once would be all one sees. -->
 {#snippet tools()}
   {#if onfiles || onforwards || onedit}
-    <div class="absolute right-3 z-1 flex rounded-[10px] border border-edge bg-panel p-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+    <div class="absolute right-4.5 z-1 flex rounded-ctl border border-edge bg-panel p-0.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
       {#if onedit}
         <button type="button" onclick={onedit} aria-keyshortcuts="e" title={tip(t('edit'), KEY.edit)} class={mini}>{t('edit')}</button>
       {/if}
@@ -134,7 +134,7 @@
   data-state={kind}
   data-marked={marked || undefined}
   data-low={low || undefined}
-  class="group relative flex h-full flex-col rounded-2xl border border-edge bg-panel transition-colors {low ? 'gap-1.5 px-4 py-2.5' : 'gap-3 p-4'} select-none hover:border-dim/60 focus-visible:outline-[1.5px] focus-visible:-outline-offset-1 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 aria-[current]:outline-[1.5px] aria-[current]:-outline-offset-1 aria-[current]:outline-blue data-[marked]:border-magenta {extra}"
+  class="group relative flex h-full flex-col rounded-2xl border border-edge bg-panel transition-colors {low ? 'gap-1.5 px-4.5 py-3' : 'gap-3 p-4.5'} select-none hover:border-dim/60 focus-visible:outline-[1.5px] focus-visible:-outline-offset-1 motion-reduce:transition-none data-[state=crit]:border-red/45 data-[state=down]:border-red/30 aria-[current]:outline-[1.5px] aria-[current]:-outline-offset-1 aria-[current]:outline-blue data-[marked]:border-magenta {extra}"
 >
   <header class="flex items-center gap-2">
     <h3 class="truncate text-base font-semibold tracking-tight text-ink {low ? 'min-w-0' : 'shrink-0'}">{host.alias}</h3>
@@ -147,6 +147,7 @@
     <!-- The concept's badge, in the TUI's words: how long the host takes to answer, or that it does not. -->
     {#if onwatch}
       <!-- Its own switch, on until someone turns it off: off, the dashboard asks the host for nothing and keeps no connection to it. -->
+      <!-- Drawn 24 px; what answers the pointer is 36 (the ::before). -->
       <button
         type="button"
         role="switch"
@@ -154,7 +155,7 @@
         aria-label={t('watch')}
         title={t('watch')}
         onclick={() => onwatch(host.meta.paused)}
-        class="ml-auto grid size-6 shrink-0 cursor-pointer place-items-center rounded-md hover:bg-selection hover:text-fg {host.meta.paused ? 'text-yellow' : 'text-dim'}"
+        class="relative ml-auto grid size-6 shrink-0 cursor-pointer place-items-center rounded-md before:absolute before:-inset-1.5 hover:bg-selection hover:text-fg {host.meta.paused ? 'text-yellow' : 'text-dim'}"
       >
         <Icon name={host.meta.paused ? 'blind' : 'eye'} class="size-4" />
       </button>
@@ -174,7 +175,7 @@
     {#if low}{@render connect()}{/if}
   </header>
   {#if !low}
-    <div class="-mt-1 flex min-h-[22px] items-start">
+    <div class="-mt-1 flex min-h-6 items-start">
       {@render tags()}
       {@render tools()}
     </div>
@@ -196,7 +197,7 @@
       class="flex flex-1 flex-col justify-center gap-1 rounded-xl border border-dashed border-red/40 bg-bg px-4 py-3 break-words"
     >
       <strong class="font-semibold text-red">✗ {info.shown.label}</strong>
-      <span class="line-clamp-3 text-[13px] text-white">{info.shown.message}</span>
+      <span class="line-clamp-3 text-sm text-white">{info.shown.message}</span>
     </p>
   {:else if info?.peek && low}
     <!-- Three figures on one line, each with its bar: enough to see that nothing is wrong. -->
@@ -228,7 +229,7 @@
           <div class="overflow-hidden rounded-xl bg-bg">
             <p class="flex flex-wrap items-baseline justify-between gap-x-1 px-3 pt-2 text-xs text-dim">
               <span>{label}</span>
-              <span class="text-sm font-semibold tracking-tight {part ? tone[part.level] : 'text-dim'}">
+              <span class="text-md font-semibold tracking-tight {part ? tone[part.level] : 'text-dim'}">
                 {part?.value ?? '—'}
               </span>
             </p>
@@ -236,13 +237,13 @@
               points={past?.length ? past : part ? [part.pct] : []}
               class="mt-0.5 w-full {label === 'CPU' ? 'text-blue' : 'text-teal'}"
             />
-            {@render meter(label, part, 'h-[3px]')}
+            {@render meter(label, part, 'h-0.75')}
           </div>
         {/if}
       {/each}
     </div>
   {:else if info?.peek === null || stopped}
-    <p class="text-[13px] text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">
+    <p class="text-sm text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">
       {t('not_checked')}
       {#if onpeek}
         <button type="button" onclick={onpeek} aria-keyshortcuts="v" title={tip(t('quick_peek'), KEY.peek)} class="{mini} ml-1">
@@ -251,7 +252,7 @@
       {/if}
     </p>
   {:else}
-    <p class="text-[13px] text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">{t('asking')} {host.alias}…</p>
+    <p class="text-sm text-white {low ? 'leading-5' : 'flex-1 rounded-xl bg-bg px-3 py-2.5'}">{t('asking')} {host.alias}…</p>
   {/if}
 
   {#if !low}

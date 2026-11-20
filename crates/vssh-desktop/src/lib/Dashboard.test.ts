@@ -339,7 +339,7 @@ test('the bar over the cards is two rows from one margin: the search with the ne
   expect(inside(second)).toEqual(['Tags', 'Group by tag', 'Connect 1', 'Run 1', 'Sort'])
   expect(second.nextElementSibling).toBeNull()
   // The bar stays over the cards; its second row breaks only where even that is too narrow.
-  expect(first.parentElement).toHaveClass('grid', 'sticky', 'bg-bg')
+  expect(first.parentElement).toHaveClass('grid', 'grid-cols-1', 'sticky', 'bg-bg')
   expect(second).toHaveClass('flex', 'flex-wrap')
 })
 
@@ -369,7 +369,7 @@ test('the bar has the hosts as a JSON file, out and in, before the one filled bu
 test('the cards are in one column, two past 800 px of window, three past 1200', () => {
   render(Dashboard, props())
   for (const list of screen.getAllByRole('list').filter((list) => list.querySelector('article'))) {
-    expect(list).toHaveClass('grid', 'grid-cols-1', 'min-[801px]:grid-cols-2', 'min-[1201px]:grid-cols-3')
+    expect(list).toHaveClass('grid', 'grid-cols-1', '@min-[31rem]:grid-cols-2', '@min-[56rem]:grid-cols-3')
   }
 })
 
@@ -532,7 +532,7 @@ test('a section a group, named as "group (how many)", each a grid of its cards; 
   expect(headings()).toEqual(['prod (2)', 'db (1)', 'no tags (1)', 'staging (2)'])
   for (const [group, inside] of [['prod', ['web-01', 'web-02']], ['staging', ['cache-01', 'cache-02']], ['no tags', ['bare']]] as const) {
     const grid = screen.getByRole('list', { name: group })
-    expect(grid, group).toHaveClass('grid', 'min-[801px]:grid-cols-2', 'min-[1201px]:grid-cols-3')
+    expect(grid, group).toHaveClass('grid', '@min-[31rem]:grid-cols-2', '@min-[56rem]:grid-cols-3')
     expect(within(grid).getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(inside)
   }
   await user.keyboard('/cache')

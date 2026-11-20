@@ -95,7 +95,7 @@
   })
 
   /** The last column: there from a pane of 20rem on. */
-  const late = 'hidden px-2 py-0.5 @xs:table-cell'
+  const late = 'hidden px-2 py-1 @xs:table-cell'
 
   const move = (to: number) => (name = visible[Math.min(Math.max(to, 0), visible.length - 1)]?.name ?? '')
 
@@ -187,7 +187,7 @@
     e.preventDefault()
     ondropped()
   }}
-  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-edge bg-panel text-[13px] focus-within:border-blue/70 data-[drop]:border-blue data-[drop]:bg-blue/8"
+  class="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-edge bg-panel text-sm focus-within:border-blue/70 data-[drop]:border-blue data-[drop]:bg-blue/8"
 >
   <header class="flex items-center gap-2 border-b border-edge px-3 py-2">
     <strong class="shrink-0 font-semibold text-ink">{label}</strong>
@@ -217,6 +217,7 @@
       </div>
     </nav>
     <!-- The filter's button, for the pointer: its field is under the header only while it is used. -->
+    <!-- It and the switch beside it are drawn 28 px; 36 answer the pointer (the ::before). -->
     <button
       type="button"
       aria-label={t('filter')}
@@ -224,9 +225,9 @@
       aria-keyshortcuts="/ Control+F"
       title={tip(t('filter'), KEY.search)}
       onclick={keys['/']}
-      class="shrink-0 cursor-pointer rounded-lg border border-edge px-1 py-px text-white hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
+      class="relative grid size-7 shrink-0 cursor-pointer place-items-center rounded-lg border border-edge text-white before:absolute before:-inset-1 hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
     >
-      <Icon name="search" class="size-3.5!" />
+      <Icon name="search" class="size-4!" />
     </button>
     <button
       type="button"
@@ -235,7 +236,7 @@
       aria-keyshortcuts="."
       title={tip(t('hidden_files'), KEY.hidden)}
       onclick={() => (showHidden = !showHidden)}
-      class="shrink-0 cursor-pointer rounded-lg border border-edge px-1.5 text-white hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
+      class="relative grid size-7 shrink-0 cursor-pointer place-items-center rounded-lg border border-edge text-white before:absolute before:-inset-1 hover:bg-selection aria-pressed:bg-selection aria-pressed:text-blue"
     >
       .*
     </button>
@@ -272,8 +273,8 @@
     >
       <thead class="sticky top-0 bg-panel text-left text-xs whitespace-nowrap text-dim">
         <tr>
-          <th scope="col" class="px-3 py-1 font-normal">{t('sort_name')}</th>
-          <th scope="col" class="w-24 px-2 py-1 text-right font-normal">{t('size')}</th>
+          <th scope="col" class="px-3 py-1.5 font-normal">{t('sort_name')}</th>
+          <th scope="col" class="w-24 px-2 py-1.5 text-right font-normal">{t('size')}</th>
           <!-- A narrow pane keeps the names. -->
           <th scope="col" class="{late} w-26 font-normal">{t('modified')}</th>
         </tr>
@@ -302,7 +303,7 @@
               ondragend={() => ondragnames(null)}
               class="cursor-default select-none hover:bg-selection/50 active:cursor-grabbing aria-selected:bg-selection data-[marked]:text-magenta"
             >
-              <td role="gridcell" class="px-3 py-0.5">
+              <td role="gridcell" class="px-3 py-1">
                 <div class="flex items-center gap-2">
                   <svg
                     aria-hidden="true"
@@ -321,7 +322,7 @@
                   {/if}
                 </div>
               </td>
-              <td role="gridcell" class="px-2 py-0.5 text-right whitespace-nowrap text-white tabular-nums">
+              <td role="gridcell" class="px-2 py-1 text-right whitespace-nowrap text-white tabular-nums">
                 {entry.is_dir ? '—' : human(entry.size)}
               </td>
               <td role="gridcell" class="{late} whitespace-nowrap text-white">{when(entry.mtime)}</td>
@@ -339,7 +340,7 @@
         <button
           type="button"
           onclick={onretry}
-          class="cursor-pointer rounded-lg border border-edge px-2 py-0.5 text-blue hover:bg-selection"
+          class="cursor-pointer rounded-lg border border-edge px-2.5 py-1 text-blue hover:bg-selection"
         >
           {t('try_again')}
         </button>

@@ -330,15 +330,15 @@
     'h-10 cursor-pointer rounded-xl border border-edge px-3.5 font-medium whitespace-nowrap text-fg hover:border-dim/50 hover:bg-selection'
   // A tag of the row under the search: grey until the cards are narrowed to it.
   const pick =
-    'cursor-pointer rounded-lg bg-bar px-2 text-xs leading-6 whitespace-nowrap text-dim hover:text-fg aria-pressed:text-ink aria-pressed:inset-ring aria-pressed:inset-ring-current'
-  const tile = 'min-w-0 rounded-2xl border border-edge bg-panel px-4 pt-3'
+    'cursor-pointer rounded-lg bg-bar px-2.5 text-xs leading-7 whitespace-nowrap text-dim hover:text-fg aria-pressed:text-ink aria-pressed:inset-ring aria-pressed:inset-ring-current'
+  const tile = 'min-w-0 rounded-2xl border border-edge bg-panel px-4.5 pt-3.5'
   const figure = 'text-2xl leading-tight font-semibold tracking-tight text-ink'
   const segment = { ok: 'bg-green', crit: 'bg-red', down: 'inset-ring-[1.5px] inset-ring-red', unknown: 'bg-bar' }
 </script>
 
 <svelte:window onkeydown={onwindowkey} />
 
-<section {hidden} aria-label={t('hosts')} class="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
+<section {hidden} aria-label={t('hosts')} class="@container min-h-0 flex-1 overflow-y-auto px-8 pb-8">
   {#if error}
     <p role="alert" class="mt-5 rounded-xl border border-dashed border-red/40 bg-bg px-4 py-3 break-words text-red">
       <strong>{error.label}</strong>
@@ -398,8 +398,9 @@
     {/if}
   {:else}
     <!-- Two rows, from one margin: the search as wide as the view, with what it connects to and the new host;
-         under it the tags, one row of them however many there are, and how the cards are laid out. -->
-    <div class="sticky top-0 z-20 -mx-8 grid gap-2.5 border-b border-edge bg-bg px-8 pt-4 pb-4">
+         under it the tags, one row of them however many there are, and how the cards are laid out.
+         `grid-cols-1`: its column is the room there is; left to itself it is as wide as every tag in a row, past the window. -->
+    <div class="sticky top-0 z-20 -mx-8 grid grid-cols-1 gap-2.5 border-b border-edge bg-bg px-8 pt-4 pb-4">
       <!-- It wraps in a window too narrow for it, as the row under it does. -->
       <div class="flex flex-wrap items-center gap-2.5">
         <input
@@ -462,7 +463,7 @@
         <!-- One row: past its end the tags are scrolled to, and the cards do not start lower for them. -->
         <ul
           aria-label={t('tags')}
-          class="flex min-w-40 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)] [scrollbar-width:none]"
+          class="flex min-w-40 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none]"
         >
           {#if tags.length}
             <li class="flex shrink-0">
@@ -514,7 +515,7 @@
         <div role="radiogroup" aria-label={t('sort')} class="flex h-10 items-center rounded-xl border border-edge bg-page p-1">
           {#each sorts as [value, label] (value)}
             <label
-              class="cursor-pointer rounded-lg px-2.5 py-1 text-[13px] whitespace-nowrap text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue"
+              class="cursor-pointer rounded-lg px-2.5 py-1 text-sm whitespace-nowrap text-dim hover:text-fg has-checked:bg-selection has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-blue"
             >
               <input type="radio" bind:group={sort} {value} class="sr-only" />
               {label}
@@ -530,16 +531,16 @@
         <strong class="shrink-0 font-semibold">{t('watch_pause')}</strong>
         <span class="min-w-0 flex-1 text-white">{t('watch_pause_note')}</span>
         {#if onpause}
-          <button type="button" onclick={() => onpause(false)} class="{control} h-8 shrink-0">{t('watch')}</button>
+          <button type="button" onclick={() => onpause(false)} class="{control} shrink-0">{t('watch')}</button>
         {/if}
       </p>
     {/if}
 
     <!-- The concept's row of figures. A picture of the cards below: what it says, they say to a reader of the screen. -->
     <div aria-hidden="true" class="grid grid-cols-4 gap-4 pt-5">
-      <div class="{tile} pb-3">
-        <p class="truncate text-[13px] text-white first-letter:uppercase">{t('reachable')}</p>
-        <p class={figure}>{fleet.met}<span class="text-sm font-medium text-dim">&nbsp;/ {hosts.length}</span></p>
+      <div class="{tile} pb-3.5">
+        <p class="truncate text-sm text-white first-letter:uppercase">{t('reachable')}</p>
+        <p class={figure}>{fleet.met}<span class="text-md font-medium text-dim">&nbsp;/ {hosts.length}</span></p>
         <p class="mt-2 flex gap-1">
           {#each fleet.states as host (host.alias)}
             <i class="h-2 max-w-6 flex-1 rounded {segment[host.state]}"></i>
@@ -548,15 +549,15 @@
       </div>
       {#each [['CPU', fleet.cpu, 'text-blue'], [t('mem'), fleet.mem, 'text-teal']] as const as [label, past, colour] (label)}
         <div class="{tile} overflow-hidden">
-          <p class="text-[13px] text-white">{label}</p>
+          <p class="text-sm text-white">{label}</p>
           <p class={figure}>
-            {#if past.length}{past.at(-1)}<span class="text-sm font-medium text-dim">%</span>{:else}—{/if}
+            {#if past.length}{past.at(-1)}<span class="text-md font-medium text-dim">%</span>{:else}—{/if}
           </p>
-          <Sparkline points={[...past]} class="-mx-4 w-[calc(100%+2rem)] {colour}" />
+          <Sparkline points={[...past]} class="-mx-4.5 w-[calc(100%+2.25rem)] {colour}" />
         </div>
       {/each}
-      <div class="{tile} pb-3">
-        <p class="truncate text-[13px] text-white first-letter:uppercase">{t('down')}</p>
+      <div class="{tile} pb-3.5">
+        <p class="truncate text-sm text-white first-letter:uppercase">{t('down')}</p>
         <p class="{figure} {fleet.lost.length ? 'text-red' : ''}">{fleet.lost.length}</p>
         <p class="mt-1 truncate text-xs text-dim">{fleet.lost.join(', ')}</p>
       </div>
@@ -567,13 +568,13 @@
         {#if grouped}
           <h2 class="flex items-baseline gap-2 pt-1 pb-3 text-lg font-semibold">
             <span class="text-white">{name || t('no_tags')}</span>
-            <span class="text-sm font-normal text-dim">({list.length})</span>
+            <span class="text-md font-normal text-dim">({list.length})</span>
           </h2>
         {/if}
-        <!-- One column, two past 800 px of window, three past 1200. -->
+        <!-- One column, two past 31 rem of room, three past 56: 800 and 1200 px of window, with the rail, at the size the window was made at. In rem, and of the room, not the window: drawn bigger, the cards need it sooner. -->
         <ul
           aria-label={name || t('no_tags')}
-          class="grid grid-cols-1 gap-3 pb-5 min-[801px]:grid-cols-2 min-[1201px]:grid-cols-3"
+          class="grid grid-cols-1 gap-3 pb-5 @min-[31rem]:grid-cols-2 @min-[56rem]:grid-cols-3"
         >
           {#each list as host, at (host.alias)}
             <!-- Resting on a card shows what is known. It does not ask: a host
