@@ -15,6 +15,12 @@ Theme, keybindings and language: ~/.config/vssh/config.toml
   --lang en|vi   language of the key hints and help (also: VSSH_LANG, or
                  lang = \"vi\" in config.toml)";
 
+/// The help, with the config file where this system keeps it.
+fn help() -> String {
+    let windows = || HELP.replace("~/.config/vssh/config.toml", r"%APPDATA%\vssh\config.toml");
+    cfg!(windows).then(windows).unwrap_or_else(|| HELP.into())
+}
+
 // The only output is --help / --version, before the TUI starts.
 #[allow(clippy::print_stdout)]
 fn main() -> Result<()> {
@@ -28,13 +34,13 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             "-h" | "--help" => {
-                println!("{HELP}");
+                println!("{}", help());
                 return Ok(());
             }
             "--lang" => lang = Some(args.next().unwrap_or_default()),
             other => match other.strip_prefix("--lang=") {
                 Some(code) => lang = Some(code.to_string()),
-                None => anyhow::bail!("unknown argument {other}\n\n{HELP}"),
+                None => anyhow::bail!("unknown argument {other}\n\n{}", help()),
             },
         }
     }
