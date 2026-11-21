@@ -87,7 +87,7 @@ pub fn update_possible() -> bool {
         .stderr(Stdio::null())
         .output();
     let ours = format!("{PACKAGE}: ");
-    cfg!(target_arch = "x86_64")
+    cfg!(all(target_os = "linux", target_arch = "x86_64"))
         && owner.is_ok_and(|out| out.status.success() && out.stdout.starts_with(ours.as_bytes()))
 }
 
@@ -217,6 +217,7 @@ mod tests {
     }
 
     /// A package as `scripts/desktop-deb.sh` builds one, with nothing in it.
+    #[cfg(target_os = "linux")]
     fn package(dir: &Path, name: &str, ver: &str) -> PathBuf {
         let root = dir.join(format!("{name}-{ver}"));
         fs::create_dir_all(root.join("DEBIAN")).unwrap();
@@ -234,6 +235,8 @@ mod tests {
         file
     }
 
+    // dpkg-deb is Linux's.
+    #[cfg(target_os = "linux")]
     #[test]
     fn only_this_apps_package_in_the_version_asked_for_is_let_through() {
         let dir = std::env::temp_dir().join(format!("vssh-update-{}", std::process::id()));

@@ -342,8 +342,14 @@ fn call(window: &WebviewWindow<MockRuntime>, cmd: &str, args: Value) -> Result<V
         cmd: cmd.into(),
         callback: CallbackFn(0),
         error: CallbackFn(1),
-        // The origin of the app's own pages on Linux and macOS.
-        url: "tauri://localhost".parse().unwrap(),
+        // The origin of the app's own pages: Windows has them under http.
+        url: if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        }
+        .parse()
+        .unwrap(),
         body: InvokeBody::Json(args),
         headers: Default::default(),
         invoke_key: window.app_handle().invoke_key().to_string(),

@@ -13,6 +13,10 @@ use crate::Reply;
 fn short(path: &Path) -> String {
     let home = home();
     match path.strip_prefix(&home) {
+        // What goes into an ssh config is written with `/` on Windows too.
+        Ok(rest) if !home.as_os_str().is_empty() && cfg!(windows) => {
+            format!("~/{}", rest.display()).replace('\\', "/")
+        }
         Ok(rest) if !home.as_os_str().is_empty() => format!("~/{}", rest.display()),
         _ => path.display().to_string(),
     }
@@ -25,6 +29,7 @@ fn private(path: &str) -> &str {
 }
 
 /// What a key is called most of the time; anything else is under "all files".
+#[cfg(any(target_os = "linux", test))]
 const KEYS: &[&str] = &["id_*", "*.pub", "*.pem", "*.key"];
 
 /// Opens the dialog over the window, in `~/.ssh`, and answers once it is
@@ -68,15 +73,26 @@ fn choose<R: Runtime>(
     dialog.show();
 }
 
-// shortcut: the app is built for Linux only; where it is not, the button
-// answers nothing. Give macOS its NSOpenPanel when the app is built for it.
+/// The same on Windows and macOS, in the system's own dialog.
+// shortcut: that dialog filters by a file's ending, so `id_*` cannot be said: a key with no ending is chosen by its `.pub` (which answers the key), or under "all files".
 #[cfg(not(target_os = "linux"))]
 fn choose<R: Runtime>(
-    _: &WebviewWindow<R>,
-    _: &str,
-    _: Option<(String, String)>,
-    _: oneshot::Sender<Option<PathBuf>>,
+    window: &WebviewWindow<R>,
+    title: &str,
+    filters: Option<(String, String)>,
+    answer: oneshot::Sender<Option<PathBuf>>,
 ) {
+    use tauri_plugin_dialog::DialogExt;
+
+    let mut dialog = window.dialog().file().set_parent(window).set_title(title);
+    dialog = dialog.set_directory(home().join(".ssh"));
+    if let Some((keys, all)) = filters {
+        dialog = dialog.add_filter(keys, &["pub", "pem", "key"]);
+        dialog = dialog.add_filter(all, &["*"]);
+    }
+    dialog.pick_file(move |chosen| {
+        let _ = answer.send(chosen.and_then(|file| file.into_path().ok()));
+    });
 }
 
 /// Asks for a file in the desktop's own dialog and answers its path, `~`

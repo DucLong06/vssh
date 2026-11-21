@@ -18,7 +18,6 @@ mod vault;
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -28,7 +27,7 @@ use anyhow::{anyhow, ensure, Context, Result};
 use serde::Serialize;
 use tauri::State;
 use tokio::sync::oneshot;
-use vssh_core::config::{data_dir, ssh_config_path, Config, Lang};
+use vssh_core::config::{data_dir, private_dir, ssh_config_path, Config, Lang};
 use vssh_core::conn_err::{ConnError, Report};
 use vssh_core::sftp::{self, Entry};
 use vssh_core::ssh::{self, SessionCmd, Target, Via};
@@ -255,10 +254,7 @@ impl Backend {
     /// Where the database and the vault are, made on first use the way the
     /// TUI makes it.
     fn data_dir(&self) -> Result<&Path> {
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&self.data_dir)?;
+        private_dir(&self.data_dir)?;
         Ok(&self.data_dir)
     }
 
@@ -416,10 +412,19 @@ const RELEASES: &str = "https://github.com/DucLong06/vssh/releases/latest";
 fn open_releases() -> Reply<()> {
     let opener = if cfg!(target_os = "macos") {
         "open"
+    } else if cfg!(windows) {
+        // What a link in Explorer runs: the default browser, and no console window.
+        "rundll32"
     } else {
         "xdg-open"
     };
-    match std::process::Command::new(opener).arg(RELEASES).status() {
+    let how: &[&str] = if cfg!(windows) {
+        &["url.dll,FileProtocolHandler"]
+    } else {
+        &[]
+    };
+    let mut opened = std::process::Command::new(opener);
+    match opened.args(how).arg(RELEASES).status() {
         Ok(status) if status.success() => Ok(()),
         _ => Err(anyhow!("{opener} could not open {RELEASES}").into()),
     }
@@ -508,9 +513,11 @@ pub fn run() {
     let config: Config = Config::load().unwrap_or_default();
     let backend = Backend::new(ssh_config_path(), data_dir(), Core::default())
         .batch_max_parallel(config.batch_max_parallel);
-    builder::<tauri::Wry>(backend)
+    let app = builder::<tauri::Wry>(backend)
         // Here and not in `builder`: it wants a display, which tests have not.
-        .plugin(tauri_plugin_clipboard_manager::init())
-        .run(context)
-        .expect("vssh could not start its window");
+        .plugin(tauri_plugin_clipboard_manager::init());
+    // The file dialog of `pick.rs`, where it is not GTK's own.
+    #[cfg(not(target_os = "linux"))]
+    let app = app.plugin(tauri_plugin_dialog::init());
+    app.run(context).expect("vssh could not start its window");
 }

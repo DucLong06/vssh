@@ -26,6 +26,8 @@
   let { hosts, alias, start, vault, onsaved, ondelete, onkeys, onimported, onclose }: Props = $props()
 
   type Method = 'password' | 'key' | 'agent'
+  /** The app asks no agent on Windows: what is neither a key nor a password is the default keys there, and is called so. */
+  const WINDOWS = navigator.userAgent.includes('Windows')
   const opening = (): HostForm => ({
     alias: '',
     hostname: '',
@@ -127,7 +129,7 @@
   // No password: the core logs in to a jump host with keys only.
   function via(hop: Hop) {
     const its = known[host(hop.hop)]?.identity_file
-    const how = hop.key.trim() ? `${t('hop_own_key')} ${hop.key.trim()}` : its ? `${t('hop_its_key')} ${its}` : t('hop_agent')
+    const how = hop.key.trim() ? `${t('hop_own_key')} ${hop.key.trim()}` : its ? `${t('hop_its_key')} ${its}` : (WINDOWS ? t('hop_default_keys') : t('hop_agent'))
     return t('hop_via').replace('{name}', named(hop.hop)).replace('{method}', how)
   }
 
@@ -201,7 +203,7 @@
   const methods = $derived<[Method, string][]>([
     ['password', t('auth_password')],
     ['key', t('auth_key')],
-    ['agent', t('auth_agent')],
+    ['agent', WINDOWS ? t('auth_default_keys') : t('auth_agent')],
   ])
   /** Every other host that is not on the road yet. */
   const offered = $derived(

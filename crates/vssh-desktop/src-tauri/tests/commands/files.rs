@@ -2,6 +2,7 @@
 //! progress on `sftp-progress:<id>` and can be cancelled.
 
 use std::fs;
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread;
 
@@ -91,16 +92,27 @@ fn the_local_commands_read_and_change_this_machine() {
             .collect()
     };
 
+    // As the window has a path: on Windows `\\?\C:\a` is `/C:/a` there.
+    let full = |dir: &Path| {
+        let full = dir.canonicalize().unwrap().to_str().unwrap().to_string();
+        match full.strip_prefix(r"\\?\") {
+            Some(disk) if cfg!(windows) => format!("/{}", disk.replace('\\', "/")),
+            _ => full,
+        }
+    };
+
     // The path comes back in full, whatever way it was asked for.
     let listed = call(&window, "local_list", json!({ "path": path("sub/..") })).unwrap();
-    assert_eq!(listed["path"], json!(dir.canonicalize().unwrap()));
+    assert_eq!(listed["path"], json!(full(&dir)));
+    // And is one that can be asked for again.
+    let again = call(&window, "local_list", json!({ "path": listed["path"] })).unwrap();
+    assert_eq!(again, listed);
     assert_eq!(names(&listed), ["sub", "b.txt"]);
     assert_eq!(listed["entries"][0]["is_dir"], true);
     assert_eq!(listed["entries"][1]["size"], 5);
     // No path is the user's home.
     let at_home = call(&window, "local_list", json!({ "path": "" })).unwrap();
-    let user_home = vssh_core::config::home().canonicalize().unwrap();
-    assert_eq!(at_home["path"], json!(user_home));
+    assert_eq!(at_home["path"], json!(full(&vssh_core::config::home())));
 
     let done = |cmd: &str, args: Value| assert_eq!(call(&window, cmd, args), Ok(Value::Null));
     done("local_mkdir", json!({ "path": path("new") }));
