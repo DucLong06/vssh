@@ -2,6 +2,7 @@
 //! (leaks, injection, silent corruption, hangs) rather than the happy path.
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -66,10 +67,14 @@ fn vault_file_stays_private_and_unique() {
     let mut vault = Vault::create(&path, "same passphrase").unwrap();
 
     // Someone loosens the permissions; the next save must not keep them.
+    #[cfg(unix)]
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     vault.set("host", &mut "s3cret".to_string()).unwrap();
-    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600);
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 
     // No temp file with key material is left next to it.
     let names: Vec<_> = fs::read_dir(&dir)
@@ -152,8 +157,11 @@ fn quick_connect_save_puts_the_password_in_the_vault_only() {
     let saved = "# mine\n\nHost web.example\n    HostName web.example\n    User deploy\n    Port 2222\n\nHost *\n";
     assert!(text.starts_with(saved), "{text}");
     assert!(!text.to_lowercase().contains("pass"));
-    let mode = fs::metadata(&config).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600);
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(&config).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 
 // ── ssh config ──────────────────────────────────────────────────────────

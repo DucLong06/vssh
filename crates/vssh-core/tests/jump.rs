@@ -3,6 +3,7 @@
 //! a throwaway HOME, killed at the end. It plays the jump host and the host
 //! behind it, and opens to one key only. Without `/usr/sbin/sshd` the test
 //! says so and proves nothing.
+#![cfg(unix)]
 
 use std::fs;
 use std::io::Write;
