@@ -28,6 +28,20 @@ jobs:
       # vssh-core stays free of TUI crates: the desktop app builds on it too.
       - run: ./scripts/check-core-deps.sh
 
+  # Windows compiles too, the desktop app with it, and its tests pass. No fmt
+  # (the job above has said it), no npm, no bundle.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The desktop app takes its built frontend in as it compiles: an empty page will do.
+      - run: mkdir -p crates/vssh-desktop/dist && echo '<!doctype html>' > crates/vssh-desktop/dist/index.html
+        shell: bash
+      - run: cargo check --workspace --all-targets
+      - run: cargo test --workspace
+
   audit:
     runs-on: ubuntu-latest
     steps:

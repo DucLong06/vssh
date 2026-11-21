@@ -1,7 +1,9 @@
 name: desktop-release
-# The desktop app for Linux (AppImage, .deb, .rpm) on a v0.2.* tag. Nothing
-# is published before the .deb has been installed in a bare ubuntu:22.04 and
-# its window has shown the app: scripts/deb-smoke.sh.
+# The desktop app for Linux (AppImage, .deb, .rpm) and for Windows (an NSIS
+# setup.exe, a portable zip) on a v0.2.* tag. Nothing is published before the
+# .deb has been installed in a bare ubuntu:22.04 and its window has shown the
+# app (scripts/deb-smoke.sh), nor before the Windows build has passed its
+# tests and answered its version: one release, with both or with neither.
 #
 # The version is the tag's: it is merged over tauri.conf.json at build time,
 # the way release.yml takes the terminal app's from the tag, so no commit has
@@ -91,8 +93,65 @@ jobs:
           name: deb-smoke-screenshot
           path: dist/deb-smoke.png
 
+  # No window is looked at here: the runner has no desktop to show one on.
+  # The tests, the bundle and the app's answer to --version are the gate.
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release config, from the tag
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          echo "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tag $GITHUB_REF_NAME is not vX.Y.Z"; exit 1; }
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+          # The same merge as the Linux build's, without what only a .deb reads.
+          cat > release.conf.json <<JSON
+          {
+            "version": "$ver",
+            "productName": "vssh-desktop",
+            "build": { "devUrl": null, "beforeDevCommand": null },
+            "bundle": {
+              "publisher": "Hoang Duc Long",
+              "shortDescription": "Desktop SSH connection manager"
+            }
+          }
+          JSON
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: crates/vssh-desktop/package-lock.json
+      - run: npm ci
+        working-directory: crates/vssh-desktop
+      # The desktop app's tests compile the built frontend in.
+      - run: npm run build
+        working-directory: crates/vssh-desktop
+      - run: cargo test --workspace
+      - name: The installer
+        run: npm run tauri -- build --bundles nsis --config "$GITHUB_WORKSPACE/release.conf.json"
+        working-directory: crates/vssh-desktop
+      - name: The app answers its version
+        run: |
+          said=$(target/release/vssh-desktop.exe --version | tr -d '\r')
+          [ "$said" = "vssh-desktop $VERSION" ] || { echo "::error::--version said '$said', not 'vssh-desktop $VERSION'"; exit 1; }
+      - name: Portable zip, the app alone
+        shell: pwsh
+        run: Compress-Archive -Path target/release/vssh-desktop.exe -DestinationPath "vssh-desktop_${env:VERSION}_x64-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          if-no-files-found: error
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            vssh-desktop_*_x64-portable.zip
+
   publish:
-    needs: [build, smoke]
+    needs: [build, smoke, windows]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -101,6 +160,10 @@ jobs:
         with:
           name: desktop-linux
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows
+          path: dist/windows
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
@@ -109,3 +172,5 @@ jobs:
             dist/deb/*.deb
             dist/rpm/*.rpm
             dist/appimage/*.AppImage
+            dist/windows/**/*-setup.exe
+            dist/windows/*-portable.zip

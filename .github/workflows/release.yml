@@ -56,3 +56,21 @@ jobs:
           files: |
             vssh-${{ matrix.target }}.tar.gz
             *.deb
+
+  # The terminal app for Windows: vssh.exe in a zip, with a page on how to run it.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test
+      - name: Build
+        run: cargo build --release
+      - name: Zip
+        run: Compress-Archive -Path target/release/vssh.exe, docs/README-WINDOWS.txt -DestinationPath vssh-x86_64-pc-windows-msvc.zip
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: vssh-x86_64-pc-windows-msvc.zip
