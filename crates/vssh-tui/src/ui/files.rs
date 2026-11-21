@@ -34,9 +34,14 @@ fn parent(dir: &str) -> String {
 impl SftpView {
     pub fn new(tx: Sender<Cmd>) -> Self {
         let cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
+        let mut cwd = cwd.to_string_lossy().into_owned();
+        // Names are joined with `/` here, which Windows reads too: one kind in a path.
+        if cfg!(windows) {
+            cwd = cwd.replace('\\', "/");
+        }
         let mut view = Self {
             tx,
-            dirs: [cwd.to_string_lossy().into_owned(), "connecting…".into()],
+            dirs: [cwd, "connecting…".into()],
             lists: [vec![], vec![]],
             sel: [0, 0],
             side: LOCAL,
@@ -124,7 +129,15 @@ impl SftpView {
     }
 
     pub fn up(&mut self) -> String {
-        self.chdir(parent(&self.dirs[self.side]))
+        let dir = &self.dirs[self.side];
+        let up = match self.side {
+            // A path of this machine is the system's to climb: `C:/a` is under `C:/`, which is its own top.
+            LOCAL => Path::new(dir)
+                .parent()
+                .map(|up| up.to_string_lossy().into_owned()),
+            _ => Some(parent(dir)),
+        };
+        self.chdir(up.unwrap_or_else(|| dir.clone()))
     }
 
     /// Copies the selected file to the directory shown in the other pane.
@@ -229,6 +242,13 @@ mod tests {
         let names: Vec<_> = v.lists[LOCAL].iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["sub", "b.txt"]);
 
+        // Up is the directory above, on a Windows drive too; back down by its name.
+        assert_eq!(v.up(), "");
+        assert_eq!(Path::new(&v.dirs[LOCAL]), dir.parent().unwrap());
+        let here = dir.file_name().unwrap().to_string_lossy();
+        assert_eq!(v.chdir(join(&v.dirs[LOCAL], &here)), "");
+        assert_eq!(Path::new(&v.dirs[LOCAL]), dir);
+
         assert_eq!(v.copy(), "only files can be copied");
         v.move_sel(5);
         assert_eq!(v.selected().unwrap().name, "b.txt");
@@ -254,7 +274,7 @@ mod tests {
         assert!(!dir.join("c.txt").exists());
         // A non-empty or missing directory is an error, not a silent no-op.
         assert_ne!(v.chdir(dir.join("nope").to_string_lossy().into_owned()), "");
-        assert_eq!(v.dirs[LOCAL], dir.to_string_lossy());
+        assert_eq!(Path::new(&v.dirs[LOCAL]), dir);
         fs::remove_dir_all(dir).unwrap();
     }
 }
