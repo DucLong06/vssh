@@ -61,26 +61,131 @@ fn at<T>(path: &Path, res: io::Result<T>) -> Result<T> {
     res.with_context(|| path.display().to_string())
 }
 
+/// A path of this machine as the window has it: joined with `/`, from one
+/// root, on every system. On Windows `C:\Users\me` is `/C:/Users/me` there,
+/// and `/` is the list of the drives.
+#[cfg(windows)]
+fn shown(path: &Path) -> String {
+    use std::path::{Component, Prefix};
+
+    let mut out = String::new();
+    for part in path.components() {
+        match part {
+            Component::Prefix(prefix) => match prefix.kind() {
+                Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+                    out.extend(['/', letter as char, ':']);
+                }
+                // shortcut: a network share is shown as Windows writes it, and the pane cannot climb out of it; give `\\server\share` a place under `/` once someone keeps files on one.
+                _ => return path.display().to_string(),
+            },
+            Component::RootDir => {}
+            part => {
+                out.push('/');
+                out.push_str(&part.as_os_str().to_string_lossy());
+            }
+        }
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn shown(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// `/C:/Users/me` as Windows reads it: `C:/Users/me`. A drive alone gets
+/// its `/`: a bare `C:` is wherever that drive was last left.
+fn drive(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    let lettered = bytes.len() >= 3
+        && bytes[0] == b'/'
+        && bytes[1].is_ascii_alphabetic()
+        && bytes[2] == b':'
+        && matches!(bytes.get(3), None | Some(b'/'));
+    let bare = if bytes.len() == 3 { "/" } else { "" };
+    lettered.then(|| format!("{}{bare}", &path[1..]))
+}
+
+/// The path of this machine that one of the window's stands for. A path
+/// that came from the system itself (a file dropped on the window) is itself.
+fn real(path: PathBuf) -> Result<PathBuf> {
+    let Some(shown) = path.to_str().filter(|_| cfg!(windows)) else {
+        return Ok(path);
+    };
+    let on_the_list = shown.starts_with('/') && !shown[1..].contains('/');
+    match drive(shown) {
+        Some(native) => Ok(native.into()),
+        // `/` is the list of the drives and holds nothing else: Windows would
+        // put `/x` on whatever drive the app was started from.
+        None if on_the_list => Err(anyhow!("{shown} is on no drive: open a drive first")),
+        None => Ok(path),
+    }
+}
+
+/// Whether a path is on a drive with a letter. The real name of a mapped
+/// drive is its share's (`\\?\UNC\..`), and no path joined with `/` is read
+/// under that.
+#[cfg(windows)]
+fn lettered(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+
+    let Some(Component::Prefix(prefix)) = path.components().next() else {
+        return false;
+    };
+    matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+}
+
+/// Every drive there is, as the directories of `/`.
+#[cfg(windows)]
+fn drives() -> Vec<Entry> {
+    let there = |name: &String| Path::new(&format!("{name}/")).exists();
+    let drives = ('A'..='Z').map(|letter| format!("{letter}:")).filter(there);
+    let entry = |name| Entry {
+        name,
+        is_dir: true,
+        size: 0,
+        mtime: 0,
+    };
+    drives.map(entry).collect()
+}
+
 /// The entries of a local directory, directories first. An empty path is
 /// the user's home.
 #[tauri::command(async)]
 pub fn local_list(path: String) -> Reply<Listing> {
-    let asked = if path.is_empty() { home() } else { path.into() };
+    #[cfg(windows)]
+    if path == "/" {
+        let entries = drives();
+        return Ok(Listing { path, entries });
+    }
+    let asked = if path.is_empty() {
+        home()
+    } else {
+        real(path.into())?
+    };
     let dir = at(&asked, asked.canonicalize())?;
+    // A mapped drive, a share: it stays what it was asked for as, in full.
+    #[cfg(windows)]
+    let dir = match lettered(&dir) {
+        true => dir,
+        false => at(&asked, std::path::absolute(&asked))?,
+    };
     Ok(Listing {
         entries: at(&dir, list_local(&dir))?,
-        path: dir.to_string_lossy().into_owned(),
+        path: shown(&dir),
     })
 }
 
 #[tauri::command(async)]
 pub fn local_mkdir(path: PathBuf) -> Reply<()> {
+    let path = real(path)?;
     Ok(at(&path, fs::create_dir(&path))?)
 }
 
 /// Removes a file, or a directory that is empty.
 #[tauri::command(async)]
 pub fn local_rm(path: PathBuf, is_dir: bool) -> Reply<()> {
+    let path = real(path)?;
     let removed = if is_dir {
         fs::remove_dir(&path)
     } else {
@@ -91,6 +196,7 @@ pub fn local_rm(path: PathBuf, is_dir: bool) -> Reply<()> {
 
 #[tauri::command(async)]
 pub fn local_rename(from: PathBuf, to: PathBuf) -> Reply<()> {
+    let (from, to) = (real(from)?, real(to)?);
     Ok(at(&from, fs::rename(&from, &to))?)
 }
 
@@ -186,7 +292,8 @@ pub async fn sftp_upload<R: Runtime>(
     id: String,
     backend: State<'_, Backend>,
 ) -> Reply<()> {
-    transfer(app, &backend, &host, id, Cmd::Upload(local, remote)).await
+    let cmd = Cmd::Upload(real(local)?, remote);
+    transfer(app, &backend, &host, id, cmd).await
 }
 
 /// Copies a remote file to `local`, the full path of the file to write.
@@ -199,7 +306,8 @@ pub async fn sftp_download<R: Runtime>(
     id: String,
     backend: State<'_, Backend>,
 ) -> Reply<()> {
-    transfer(app, &backend, &host, id, Cmd::Download(remote, local)).await
+    let cmd = Cmd::Download(remote, real(local)?);
+    transfer(app, &backend, &host, id, cmd).await
 }
 
 /// Stops a transfer where it is; what was written so far stays. False if
@@ -208,4 +316,56 @@ pub async fn sftp_download<R: Runtime>(
 pub fn sftp_cancel(id: String, backend: State<'_, Backend>) -> bool {
     let stop = backend.transfers.lock().unwrap().remove(&id);
     stop.is_some_and(|stop| stop.send(()).is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_windows_drive_is_a_directory_of_the_windows_one_root() {
+        assert_eq!(drive("/C:").as_deref(), Some("C:/"));
+        assert_eq!(drive("/c:/Users/me").as_deref(), Some("c:/Users/me"));
+        assert_eq!(drive("/D:/a b/c.txt").as_deref(), Some("D:/a b/c.txt"));
+        // The root, a Unix path, a name that only starts like a drive, a dropped file's own path.
+        for other in [
+            "/",
+            "",
+            "/home/me",
+            "/C:x",
+            "/CD:/x",
+            "C:\\Users\\me",
+            "/é:",
+        ] {
+            assert_eq!(drive(other), None, "{other}");
+        }
+        // Only Windows reads it so: anywhere else `/C:` is a directory called `C:`.
+        let real = |path: &str| real(path.into()).map(|real| real.to_string_lossy().into_owned());
+        let there = if cfg!(windows) { "C:/x" } else { "/C:/x" };
+        assert_eq!(real("/C:/x").unwrap(), there);
+        assert_eq!(real("C:\\x\\y.txt").unwrap(), "C:\\x\\y.txt");
+        // Nothing is made among the drives: there `/x` is on none of them.
+        assert_eq!(real("/x").is_err(), cfg!(windows));
+        assert_eq!(real("/x/y").unwrap(), "/x/y");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_path_is_shown_from_one_root_and_read_back() {
+        assert_eq!(shown(Path::new(r"C:\Users\me")), "/C:/Users/me");
+        assert_eq!(shown(Path::new(r"\\?\C:\Users\me")), "/C:/Users/me");
+        assert_eq!(shown(Path::new(r"\\?\D:\")), "/D:");
+        // What the pane shows, it can ask for again. Not the home: another test moves it.
+        let dir = std::env::temp_dir().canonicalize().unwrap();
+        let again = real(shown(&dir).into()).unwrap();
+        assert_eq!(again.canonicalize().unwrap(), dir);
+        // A mapped drive is no lettered one by its real name.
+        assert!(lettered(&dir) && lettered(Path::new(r"Z:\x")));
+        assert!(!lettered(Path::new(r"\\?\UNC\srv\share\x")));
+        assert!(drives()
+            .iter()
+            .any(|drive| drive.is_dir && drive.name.len() == 2));
+        // A share is not climbed out of: shown as it is.
+        assert_eq!(shown(Path::new(r"\\srv\share\x")), r"\\srv\share\x");
+    }
 }

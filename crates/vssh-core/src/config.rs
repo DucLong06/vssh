@@ -5,24 +5,76 @@
 //! default it is the raw table.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
+/// The user's home: `$HOME` where it is set, as on every Unix (and as a test
+/// points it somewhere else); else what the system says, which is the answer
+/// on Windows (`C:\Users\<name>`).
 pub fn home() -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+    let set = std::env::var_os("HOME").filter(|home| !home.is_empty());
+    set.map(PathBuf::from)
+        .or_else(dirs::home_dir)
+        .unwrap_or_default()
 }
 
+/// Windows OpenSSH reads `%USERPROFILE%\.ssh\config`: the same place.
 pub fn ssh_config_path() -> PathBuf {
     home().join(".ssh/config")
 }
 
-/// Directory of the SQLite database and the vault.
+/// Where Windows keeps an app's own files (`%APPDATA%`, the roaming one).
+/// Nowhere else: the files of a Unix user stay where they have always been,
+/// whatever `XDG_DATA_HOME` says.
+fn roaming() -> Option<PathBuf> {
+    cfg!(windows).then(dirs::data_dir).flatten()
+}
+
+fn data_in(roaming: Option<PathBuf>, home: &Path) -> PathBuf {
+    roaming
+        .unwrap_or_else(|| home.join(".local/share"))
+        .join("vssh")
+}
+
+fn config_in(roaming: Option<PathBuf>, home: &Path) -> PathBuf {
+    roaming
+        .unwrap_or_else(|| home.join(".config"))
+        .join("vssh/config.toml")
+}
+
+/// Directory of the SQLite database and the vault: `~/.local/share/vssh`,
+/// `%APPDATA%\vssh` on Windows.
 pub fn data_dir() -> PathBuf {
-    home().join(".local/share/vssh")
+    data_in(roaming(), &home())
+}
+
+/// The config file: `~/.config/vssh/config.toml`, `%APPDATA%\vssh\config.toml`
+/// on Windows.
+pub fn config_path() -> PathBuf {
+    config_in(roaming(), &home())
+}
+
+/// Makes a directory, and those above it, for its owner alone (0700). On
+/// Windows what is under the profile is its user's already, by inheritance.
+pub fn private_dir(dir: &Path) -> io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
+}
+
+/// How a file for its owner alone is opened (0600, if this makes it).
+pub fn private_file() -> fs::OpenOptions {
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut options = fs::OpenOptions::new();
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options
 }
 
 /// Language of the key hints, the leader menu and the help screen.
@@ -187,7 +239,7 @@ impl Default for Keys {
 
 impl<T: Default + DeserializeOwned> Config<T> {
     pub fn load() -> Result<Self> {
-        let path = home().join(".config/vssh/config.toml");
+        let path = config_path();
         match fs::read_to_string(&path) {
             Ok(text) => toml::from_str(&text).with_context(|| format!("{}", path.display())),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Self::default()),
@@ -199,6 +251,22 @@ impl<T: Default + DeserializeOwned> Config<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn files_are_under_the_home_on_unix_and_under_appdata_on_windows() {
+        let home = Path::new("/home/long");
+        assert_eq!(data_in(None, home), home.join(".local/share/vssh"));
+        assert_eq!(config_in(None, home), home.join(".config/vssh/config.toml"));
+        let appdata = PathBuf::from("C:/Users/long/AppData/Roaming");
+        assert_eq!(data_in(Some(appdata.clone()), home), appdata.join("vssh"));
+        assert_eq!(
+            config_in(Some(appdata.clone()), home),
+            appdata.join("vssh/config.toml")
+        );
+        // Only Windows has such a place; a Unix never asks for one.
+        assert_eq!(roaming().is_some(), cfg!(windows));
+        assert_eq!(ssh_config_path(), self::home().join(".ssh/config"));
+    }
 
     #[test]
     fn login_scripts_and_logging() {

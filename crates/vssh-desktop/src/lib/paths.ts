@@ -1,7 +1,11 @@
 // Paths and figures of the file view. Paths are absolute and joined with
-// `/` on both sides: the hosts are Unix, and so is whatever runs the TUI.
+// `/` on both sides: the hosts are Unix, and a Windows path of this machine
+// is handed over that way too (`/C:/Users/me`, by `files.rs`).
 
 export const join = (dir: string, name: string) => `${dir.replace(/\/+$/, '')}/${name}`
+
+/** The name of a file dropped on the window: its path is the system's own, `C:\a\b.txt` on Windows. */
+export const base = (path: string) => path.split(/^[A-Za-z]:\\/.test(path) ? '\\' : '/').pop()!
 
 export function parent(dir: string): string {
   const at = dir.replace(/\/+$/, '').lastIndexOf('/')

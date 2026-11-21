@@ -3,6 +3,7 @@
 //! first and put back if any later step fails.
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
@@ -102,6 +103,7 @@ fn a_key_is_made_installed_proven_and_then_passwords_are_turned_off() {
     );
 
     // The key is the user's alone, and its public half is what was sent.
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&key).unwrap().permissions().mode() & 0o777,
         0o600

@@ -342,13 +342,26 @@ fn call(window: &WebviewWindow<MockRuntime>, cmd: &str, args: Value) -> Result<V
         cmd: cmd.into(),
         callback: CallbackFn(0),
         error: CallbackFn(1),
-        // The origin of the app's own pages on Linux and macOS.
-        url: "tauri://localhost".parse().unwrap(),
+        // The origin of the app's own pages: Windows has them under http.
+        url: if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        }
+        .parse()
+        .unwrap(),
         body: InvokeBody::Json(args),
         headers: Default::default(),
         invoke_key: window.app_handle().invoke_key().to_string(),
     };
     get_ipc_response(window, request).map(|body| body.deserialize::<Value>().unwrap())
+}
+
+/// Who a host with no `User` is logged in to as: the core's own answer.
+fn me() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "root".into())
 }
 
 /// Everything the app emits under one event name, as the window would hear it.
@@ -579,7 +592,7 @@ fn a_host_that_is_not_watched_is_left_alone_until_a_person_asks() {
     assert_eq!(stats("bare", true), Ok(true));
     // A person asking is answered, once: nothing is kept for a next round.
     assert_eq!(stats("web-01", false), Ok(true));
-    let me = std::env::var("USER").unwrap_or_else(|_| "root".into());
+    let me = me();
     assert_eq!(
         net.asked(),
         [

@@ -11,12 +11,11 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
 use russh::client::{self, Handle};
-use russh::keys::agent::client::AgentClient;
 use russh::keys::known_hosts::{known_host_keys_path, learn_known_hosts_path};
 use russh::keys::ssh_key::LineEnding;
 use russh::keys::{
-    load_public_key, load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg,
-    PublicKey, PublicKeyOrCertificate,
+    load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey,
+    PublicKeyOrCertificate,
 };
 use russh::{Channel, ChannelMsg};
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
@@ -74,7 +73,9 @@ pub type JumpAuth = HashMap<(String, String), HopAuth>;
 
 /// A path of the ssh config, with no shell to read the `~`.
 fn tilde(path: &str) -> PathBuf {
-    match path.strip_prefix("~/") {
+    // On Windows a person types `~\` as well.
+    let windows = || path.strip_prefix("~\\").filter(|_| cfg!(windows));
+    match path.strip_prefix("~/").or_else(windows) {
         Some(rest) => crate::config::home().join(rest),
         None => PathBuf::from(path),
     }
@@ -235,7 +236,10 @@ impl Target {
 }
 
 fn current_user() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "root".into())
+    // Windows calls it USERNAME.
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "root".into())
 }
 
 fn default_keys() -> Vec<PathBuf> {
@@ -263,8 +267,10 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
 type Road = Vec<Box<dyn Send>>;
 
 /// A running `ProxyCommand`, killed and reaped when its connection ends.
+#[cfg(unix)]
 struct Proxy(std::process::Child);
 
+#[cfg(unix)]
 impl Drop for Proxy {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -314,6 +320,18 @@ async fn first_leg(t: &Target) -> Result<(Box<dyn Stream>, Road)> {
         return Ok((Box::new(sock), vec![]));
     };
     let command = proxy_command(command, t)?;
+    proxy(&command)
+}
+
+// shortcut: no ProxyCommand on Windows: it has no `sh` to run one and no socket pair to run it on, so the host is refused with these words; `cmd /C` on two pipes once someone needs it. ProxyJump works there.
+#[cfg(not(unix))]
+fn proxy(_: &str) -> Result<(Box<dyn Stream>, Road)> {
+    bail!("ProxyCommand is not supported on this system yet: use ProxyJump")
+}
+
+/// Runs a `ProxyCommand`: its stdin and stdout are the transport.
+#[cfg(unix)]
+fn proxy(command: &str) -> Result<(Box<dyn Stream>, Road)> {
     // One end of a socket pair is the command's stdin and stdout, the other
     // is the transport. `exec`, so that killing the shell kills the command.
     let (ours, theirs) = std::os::unix::net::UnixStream::pair()?;
@@ -594,31 +612,38 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
     let rsa_hash = h.best_supported_rsa_hash().await?.flatten();
     let mut keys = 0;
 
-    if let Ok(mut agent) = AgentClient::connect_env().await {
-        let mut ids = agent.request_identities().await.unwrap_or_default();
-        // Keys named by IdentityFile go first, so an agent full of unrelated
-        // keys does not use up the server's MaxAuthTries.
-        let wanted: Vec<_> = t
-            .keys
-            .iter()
-            .filter_map(|k| load_public_key(format!("{}.pub", k.display())).ok())
-            .collect();
-        let named = |id: &russh::keys::agent::AgentIdentity| {
-            let key = id.public_key();
-            wanted.iter().any(|w| w.key_data() == key.key_data())
-        };
-        ids.sort_by_key(|id| !named(id));
-        if t.only_keys {
-            ids.retain(named);
-        }
-        for id in ids {
-            let key = id.public_key().into_owned();
-            keys += 1;
-            let res = h
-                .authenticate_publickey_with(&t.user, key, rsa_hash, &mut agent)
-                .await;
-            if res.is_ok_and(|r| r.success()) {
-                return Ok(());
+    // shortcut: no agent on Windows (it has no `SSH_AUTH_SOCK`): key files and the password only; russh's `connect_named_pipe` on `\\.\pipe\openssh-ssh-agent` once someone needs a key with a passphrase there.
+    #[cfg(unix)]
+    {
+        use russh::keys::agent::client::AgentClient;
+        use russh::keys::load_public_key;
+
+        if let Ok(mut agent) = AgentClient::connect_env().await {
+            let mut ids = agent.request_identities().await.unwrap_or_default();
+            // Keys named by IdentityFile go first, so an agent full of unrelated
+            // keys does not use up the server's MaxAuthTries.
+            let wanted: Vec<_> = t
+                .keys
+                .iter()
+                .filter_map(|k| load_public_key(format!("{}.pub", k.display())).ok())
+                .collect();
+            let named = |id: &russh::keys::agent::AgentIdentity| {
+                let key = id.public_key();
+                wanted.iter().any(|w| w.key_data() == key.key_data())
+            };
+            ids.sort_by_key(|id| !named(id));
+            if t.only_keys {
+                ids.retain(named);
+            }
+            for id in ids {
+                let key = id.public_key().into_owned();
+                keys += 1;
+                let res = h
+                    .authenticate_publickey_with(&t.user, key, rsa_hash, &mut agent)
+                    .await;
+                if res.is_ok_and(|r| r.success()) {
+                    return Ok(());
+                }
             }
         }
     }
@@ -903,6 +928,7 @@ mod tests {
 
     #[test]
     fn a_generated_key_is_private_loadable_and_never_overwrites() {
+        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("vssh-keygen-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -914,6 +940,7 @@ mod tests {
         assert!(public.ends_with(" vssh"), "{public}");
         let written = fs::read_to_string(dir.join("vssh_db.prod_ed25519.pub")).unwrap();
         assert_eq!(written, format!("{public}\n"));
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
@@ -922,7 +949,7 @@ mod tests {
         let key = load_secret_key(&path, None).unwrap();
         assert_eq!(
             key.public_key().key_data(),
-            load_public_key(dir.join("vssh_db.prod_ed25519.pub"))
+            russh::keys::load_public_key(dir.join("vssh_db.prod_ed25519.pub"))
                 .unwrap()
                 .key_data()
         );

@@ -1,4 +1,6 @@
 //! Runs the shell test of the installer's language selection.
+//! The installer is for Linux and macOS: Windows has a zip.
+#![cfg(unix)]
 
 use std::process::Command;
 

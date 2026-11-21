@@ -117,6 +117,16 @@ Cài xong mở từ menu ứng dụng, hoặc gõ `vssh-desktop`.
 
 Fedora lấy file `.rpm`, bản phân phối khác lấy `.AppImage` — cả hai đều có trên [trang releases](https://github.com/DucLong06/vssh/releases). Mọi gói đều cần WebKitGTK 4.1 và GTK 3, trình quản lý gói sẽ tự cài kèm.
 
+### Windows
+
+Windows 10 hoặc 11, 64-bit: tải [`vssh-desktop_0.2.2_x64-setup.exe`](https://github.com/DucLong06/vssh/releases/download/v0.2.2/vssh-desktop_0.2.2_x64-setup.exe) rồi chạy. Bộ cài chỉ cài cho tài khoản của bạn, không hỏi quyền quản trị, và thêm vssh-desktop vào menu Start. Bộ cài chưa được ký số, nên Windows có thể báo đã bảo vệ máy của bạn: chọn "More info", rồi "Run anyway".
+
+Không muốn cài: file `vssh-desktop_0.2.2_x64-portable.zip` trên cùng [trang releases](https://github.com/DucLong06/vssh/releases) chỉ chứa ứng dụng; giải nén rồi chạy `vssh-desktop.exe`. Bản này cần WebView2 runtime, Windows 11 có sẵn, còn bộ cài sẽ tự tải về nếu máy chưa có.
+
+Máy chủ của bạn nằm trong `%USERPROFILE%\.ssh\config`, đúng file mà OpenSSH trên Windows đọc; cơ sở dữ liệu, kho mật khẩu và `config.toml` nằm trong `%APPDATA%\vssh`. Khi có phiên bản mới, thông báo trên thanh trạng thái mở trang releases: chạy bộ cài mới đè lên bản cũ.
+
+Chưa có trên Windows: ssh agent và `ProxyCommand`. Hãy đăng nhập bằng file khoá không có passphrase hoặc bằng mật khẩu trong kho; `ProxyJump` dùng được.
+
 ### Biên dịch từ mã nguồn
 
 Để tự dựng gói `.deb`, bạn cần Rust, Node.js 24 và `libwebkit2gtk-4.1-dev`:
@@ -137,6 +147,8 @@ sudo apt install ./target/deb/vssh-desktop_0.2.0_*.deb
 | `~/.local/share/vssh/vssh.db` | nhóm, thẻ, ghi chú, ghim, thống kê, đoạn lệnh |
 | `~/.local/share/vssh/vault` | mật khẩu đã mã hoá |
 | `~/.config/vssh/config.toml` | thiết lập (không bắt buộc) |
+
+Trên Windows `~` là `%USERPROFILE%`, và ba dòng cuối là `%APPDATA%\vssh\vssh.db`, `%APPDATA%\vssh\vault` và `%APPDATA%\vssh\config.toml`.
 
 - **`~/.ssh/config`** vẫn là file mà chính `ssh` dùng được. Trước lần sửa đầu tiên, vssh lưu một bản sao tại `~/.ssh/config.vssh.bak`. Ứng dụng desktop đọc lại danh sách máy chủ mỗi 5 giây, nên máy chủ thêm bằng tay hoặc thêm trong ứng dụng terminal sẽ hiện ra mà không cần khởi động lại.
 - **`~/.config/vssh/config.toml`** chủ yếu là của ứng dụng terminal: phím, màu và thanh trạng thái của nó ([xem đầy đủ](README-terminal.vi.md#file-và-cấu-hình)). Ứng dụng desktop đọc một thiết lập trong đó, `batch_max_parallel`: số máy chạy lệnh cùng lúc trong một lượt chạy hàng loạt (mặc định 8; các máy còn lại chờ tới lượt).

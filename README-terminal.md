@@ -38,6 +38,8 @@ curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
 
 Installs to `~/.local/bin` (`--prefix DIR` changes that); run it again to update. It uses a release binary when one exists for your machine and otherwise builds with `cargo`. The installer speaks English or Vietnamese, chosen from your locale; force it with `sh -s -- --lang vi` or `VSSH_LANG=vi`.
 
+Windows 10 or 11: take `vssh-x86_64-pc-windows-msvc.zip` from the [releases page](https://github.com/DucLong06/vssh/releases), unzip it and run `.\vssh.exe` from PowerShell or Windows Terminal. Hosts are those of `%USERPROFILE%\.ssh\config`; the database, the vault and `config.toml` are in `%APPDATA%\vssh`. The ssh agent and `ProxyCommand` are not there yet: use a key file without a passphrase or a vault password (`ProxyJump` works).
+
 ## Build
 
 Needs Rust 1.89+ and a C compiler (for the bundled SQLite).

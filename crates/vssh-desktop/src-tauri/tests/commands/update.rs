@@ -31,6 +31,8 @@ fn the_window_names_a_version_and_cannot_make_the_app_fetch_or_install_anything_
     assert!(!home.join("data/update").exists());
 }
 
+// dpkg-deb is Linux's: anywhere else the update is the releases page.
+#[cfg(target_os = "linux")]
 #[test]
 fn nothing_is_installed_that_was_not_fetched_and_found_whole() {
     let home = home("update-install");

@@ -517,8 +517,9 @@ fn an_import_is_previewed_and_takes_only_the_hosts_chosen() {
     .unwrap_err();
     let words = err["chain"][0].as_str().unwrap();
     // The `~` is the user's home, not a directory of that name.
+    let home = vssh_core::config::home();
     assert!(
-        words.starts_with("cannot read /") && !words.contains('~'),
+        words.starts_with(&format!("cannot read {}", home.display())) && !words.contains('~'),
         "{err}"
     );
 }

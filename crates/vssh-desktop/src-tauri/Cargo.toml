@@ -23,6 +23,10 @@ tauri-plugin-clipboard-manager = "2"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 
+# The same dialog where there is no GTK: Windows, macOS.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri-plugin-dialog = "2"
+
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
 

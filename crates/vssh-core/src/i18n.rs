@@ -220,6 +220,8 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("auth_password", "Vault password", "Mật khẩu trong kho"),
     ("auth_key", "Key", "Khoá"),
     ("auth_agent", "Agent", "Agent"),
+    // Windows, where no agent is asked.
+    ("auth_default_keys", "Default keys", "Khoá mặc định"),
     ("password", "Password", "Mật khẩu"),
     ("password_stored", "password stored", "đã lưu mật khẩu"),
     (
@@ -561,6 +563,7 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
         "the agent or the default keys",
         "agent hoặc khoá mặc định",
     ),
+    ("hop_default_keys", "the default keys", "khoá mặc định"),
     (
         "hop_invalid",
         "A hop is an alias or user@host[:port], and not this host itself.",

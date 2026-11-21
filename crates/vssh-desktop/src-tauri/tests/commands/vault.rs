@@ -2,12 +2,13 @@
 //! every connection to the host they are for. No command hands one back.
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use serde_json::{json, Value};
 use vssh_core::vault::Vault;
 
-use super::{call, home, listen, next, other, window, Fake};
+use super::{call, home, listen, me, next, other, window, Fake};
 
 #[test]
 fn the_vault_is_created_then_unlocked_with_its_passphrase() {
@@ -24,6 +25,7 @@ fn the_vault_is_created_then_unlocked_with_its_passphrase() {
         // There is none yet: the first passphrase makes it.
         assert_eq!(unlock("master"), Ok(Value::Null));
         assert_eq!(state(), Ok(json!("unlocked")));
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
@@ -76,10 +78,7 @@ fn an_unlocked_vault_gives_each_host_its_password() {
         ask(),
         [
             "web-01 = deploy@10.0.0.5:2222",
-            &format!(
-                "bare = {}@bare:22",
-                std::env::var("USER").unwrap_or("root".into())
-            ),
+            &format!("bare = {}@bare:22", me()),
             "deploy@10.0.0.5:2222 List(\"/\")",
             "deploy@10.0.0.5:2222 exec uptime",
         ]
@@ -216,6 +215,7 @@ fn an_export_is_a_sealed_copy_in_a_new_file() {
     // Nothing readable in it, and only its passphrase opens it.
     let sealed = fs::read(&copy).unwrap();
     assert!(!sealed.windows(7).any(|bytes| bytes == b"hunter2"));
+    #[cfg(unix)]
     assert_eq!(
         fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
         0o600

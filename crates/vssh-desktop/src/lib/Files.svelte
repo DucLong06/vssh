@@ -10,7 +10,7 @@
   import FilePane from './FilePane.svelte'
   import { i18n, t } from './i18n.svelte'
   import Modal from './Modal.svelte'
-  import { eta, human, join } from './paths'
+  import { base, eta, human, join } from './paths'
   import { capital, KEY, tip } from './keymap'
   import Menu, { type MenuItem } from './Menu.svelte'
 
@@ -275,7 +275,7 @@
         note = ''
         send(
           payload.paths.map((local) => {
-            const name = local.split('/').pop()!
+            const name = base(local)
             return { up: true, name, local, remote: join(panes.remote.path, name) }
           }),
         )

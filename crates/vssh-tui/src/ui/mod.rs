@@ -11,7 +11,6 @@ use std::fs::File;
 use std::io::{self, stdout, Write};
 use std::mem;
 use std::num::NonZeroU16;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -30,7 +29,7 @@ use zeroize::Zeroizing;
 use crate::theme::Config;
 use files::SftpView;
 use panes::{Layout, Shape};
-use vssh_core::config::{data_dir, ssh_config_path, Lang};
+use vssh_core::config::{data_dir, private_dir, private_file, ssh_config_path, Lang};
 use vssh_core::conn_err::Report;
 use vssh_core::ssh::{Login, SessionCmd, Target};
 use vssh_core::stats::{Peek, Stats};
@@ -335,18 +334,14 @@ fn tag_counts(hosts: &[String], meta: &HashMap<String, Meta>) -> Vec<(String, us
 /// the user. The alias is reduced to file-name characters, so a host called
 /// `../x` cannot write outside the log directory.
 fn start_log(dir: &Path, alias: &str, stamp: &str) -> io::Result<(File, PathBuf)> {
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)?;
+    private_dir(dir)?;
     let safe = |c: char| c.is_ascii_alphanumeric() || "._@-".contains(c);
     let name: String = alias
         .chars()
         .map(|c| if safe(c) { c } else { '_' })
         .collect();
     let path = dir.join(format!("{name}-{stamp}.log"));
-    let mut options = File::options();
-    let file = options.append(true).create(true).mode(0o600).open(&path)?;
+    let file = private_file().append(true).create(true).open(&path)?;
     Ok((file, path))
 }
 
@@ -417,10 +412,7 @@ impl App {
 
     fn new(cfg: Config, tx: Sender<Event>) -> Result<Self> {
         let sshc = SshConfig::load(&ssh_config_path()).context("cannot read ~/.ssh/config")?;
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(data_dir())?;
+        private_dir(&data_dir())?;
         let db = Db::open(&data_dir().join("vssh.db"))?;
         Self::with(cfg, tx, sshc, db)
     }
@@ -2317,6 +2309,7 @@ mod tests {
 
     #[test]
     fn session_logs_are_private_and_stay_in_their_directory() {
+        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("vssh-logs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -2325,8 +2318,11 @@ mod tests {
         let (mut file, path) = start_log(&logs, "web-01", "20261116-101500").unwrap();
         assert_eq!(path, logs.join("web-01-20261116-101500.log"));
         file.write_all(b"hello").unwrap();
-        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!((mode(&path), mode(&logs)), (0o600, 0o700));
+        #[cfg(unix)]
+        {
+            let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!((mode(&path), mode(&logs)), (0o600, 0o700));
+        }
 
         // Names that try to leave the directory, and a quick-connect title.
         for (alias, name) in [
@@ -2342,6 +2338,8 @@ mod tests {
         let (mut again, _) = start_log(&logs, "web-01", "20261116-101500").unwrap();
         again.write_all(b" again").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello again");
+        // Windows keeps a file that is open, and so its directory.
+        drop((file, again));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -2,7 +2,6 @@
 //! parsed on demand, so comments, unknown options and `Match` blocks survive edits.
 
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::{fmt, fs, io};
 
@@ -179,11 +178,10 @@ impl SshConfig {
             fs::copy(&path, &bak)?;
         }
         let tmp = path.with_extension("vssh.tmp");
-        let mut f = fs::OpenOptions::new()
+        let mut f = crate::config::private_file()
             .write(true)
             .create(true)
             .truncate(true)
-            .mode(0o600)
             .open(&tmp)?;
         f.write_all(self.to_string().as_bytes())?;
         f.sync_all()?;
@@ -658,6 +656,7 @@ Host *
 
     #[test]
     fn save_backs_up_once_and_is_private() {
+        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("vssh-cfg-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -675,6 +674,7 @@ Host *
             fs::read_to_string(dir.join("config.vssh.bak")).unwrap(),
             "Host a\n"
         );
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600

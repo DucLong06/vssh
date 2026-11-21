@@ -7,7 +7,6 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, mem};
 
@@ -180,11 +179,10 @@ impl Vault {
         }
         // Temp file + rename: a crash mid-write must not destroy the old vault.
         let tmp = path.with_extension("tmp");
-        let mut f = fs::OpenOptions::new()
+        let mut f = crate::config::private_file()
             .write(true)
             .create(true)
             .truncate(true)
-            .mode(0o600)
             .open(&tmp)?;
         f.write_all(&[MAGIC, &self.salt, &nonce, &sealed].concat())?;
         f.sync_all()?;
@@ -196,6 +194,7 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     fn temp(name: &str) -> PathBuf {
@@ -305,6 +304,7 @@ mod tests {
         let path = temp("opaque");
         let mut v = filled(&path);
         let first = fs::read(&path).unwrap();
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
@@ -351,6 +351,7 @@ mod tests {
         let v = filled(&path);
         let copy = path.with_file_name("copy.vault");
         v.export(&copy).unwrap();
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
             0o600
