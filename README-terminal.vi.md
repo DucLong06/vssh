@@ -38,6 +38,8 @@ curl -fsSL https://raw.githubusercontent.com/DucLong06/vssh/main/install.sh | sh
 
 Cài vào `~/.local/bin` (đổi bằng `--prefix THƯ_MỤC`); chạy lại để cập nhật. Trình cài đặt dùng bản dựng sẵn nếu có cho máy của bạn, nếu không sẽ biên dịch bằng `cargo`. Thông báo hiện bằng tiếng Anh hoặc tiếng Việt theo locale của máy; ép chọn bằng `--lang vi` hoặc `VSSH_LANG=vi`.
 
+Windows 10 hoặc 11: lấy `vssh-x86_64-pc-windows-msvc.zip` trên [trang releases](https://github.com/DucLong06/vssh/releases), giải nén rồi chạy `.\vssh.exe` trong PowerShell hoặc Windows Terminal. Máy chủ nằm trong `%USERPROFILE%\.ssh\config`; cơ sở dữ liệu, kho mật khẩu và `config.toml` nằm trong `%APPDATA%\vssh`. Chưa có ssh agent và `ProxyCommand`: hãy dùng file khoá không có passphrase hoặc mật khẩu trong kho (`ProxyJump` dùng được).
+
 ## Biên dịch
 
 Cần Rust 1.89 trở lên và một trình biên dịch C (cho SQLite đi kèm).

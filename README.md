@@ -117,6 +117,16 @@ Then start it from the application menu, or run `vssh-desktop`.
 
 Fedora: take the `.rpm`, any other distribution: the `.AppImage` — both on the [releases page](https://github.com/DucLong06/vssh/releases). Every package depends on WebKitGTK 4.1 and GTK 3, which the package manager installs with it.
 
+### Windows
+
+Windows 10 or 11, 64-bit: download [`vssh-desktop_0.2.2_x64-setup.exe`](https://github.com/DucLong06/vssh/releases/download/v0.2.2/vssh-desktop_0.2.2_x64-setup.exe) and run it. It installs for your user alone, asks for no administrator, and adds vssh-desktop to the Start menu. The installer is not signed, so Windows may say it protected your PC: choose "More info", then "Run anyway".
+
+Without installing: `vssh-desktop_0.2.2_x64-portable.zip` from the same [releases page](https://github.com/DucLong06/vssh/releases) holds the app alone; unzip it and run `vssh-desktop.exe`. It needs the WebView2 runtime, which Windows 11 has and the installer fetches where it is missing.
+
+Your hosts are those of `%USERPROFILE%\.ssh\config`, the file OpenSSH for Windows reads; the database, the vault and `config.toml` are in `%APPDATA%\vssh`. When a newer version is out, the notice in the status bar opens the releases page: run the new setup over the old one.
+
+Not on Windows yet: the ssh agent and `ProxyCommand`. Log in with a key file that has no passphrase or with a vault password; `ProxyJump` works.
+
 ### Build from source
 
 To build the `.deb` yourself you need Rust, Node.js 24 and `libwebkit2gtk-4.1-dev`:
@@ -137,6 +147,8 @@ The desktop app has no store of its own: it is the same data as the terminal app
 | `~/.local/share/vssh/vssh.db` | groups, tags, notes, pins, stats, snippets |
 | `~/.local/share/vssh/vault` | encrypted passwords |
 | `~/.config/vssh/config.toml` | optional settings |
+
+On Windows `~` is `%USERPROFILE%`, and the last three are `%APPDATA%\vssh\vssh.db`, `%APPDATA%\vssh\vault` and `%APPDATA%\vssh\config.toml`.
 
 - **`~/.ssh/config`** stays a file `ssh` itself can use. Before its first change vssh saves a copy as `~/.ssh/config.vssh.bak`. The desktop app reads the hosts again every 5 seconds, so a host added by hand or in the terminal app appears without a restart.
 - **`~/.config/vssh/config.toml`** is mostly the terminal app's: its keys, colours and status bar ([all of them](README-terminal.md#files-and-configuration)). The desktop app reads one setting from it, `batch_max_parallel`: how many hosts of a batch run a command at once (8 by default; the rest wait their turn).
