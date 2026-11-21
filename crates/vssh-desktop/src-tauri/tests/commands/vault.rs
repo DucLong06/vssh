@@ -8,7 +8,7 @@ use std::os::unix::fs::PermissionsExt;
 use serde_json::{json, Value};
 use vssh_core::vault::Vault;
 
-use super::{call, home, listen, next, other, window, Fake};
+use super::{call, home, listen, me, next, other, window, Fake};
 
 #[test]
 fn the_vault_is_created_then_unlocked_with_its_passphrase() {
@@ -78,10 +78,7 @@ fn an_unlocked_vault_gives_each_host_its_password() {
         ask(),
         [
             "web-01 = deploy@10.0.0.5:2222",
-            &format!(
-                "bare = {}@bare:22",
-                std::env::var("USER").unwrap_or("root".into())
-            ),
+            &format!("bare = {}@bare:22", me()),
             "deploy@10.0.0.5:2222 List(\"/\")",
             "deploy@10.0.0.5:2222 exec uptime",
         ]
