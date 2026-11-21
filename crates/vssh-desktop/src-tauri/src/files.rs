@@ -108,11 +108,31 @@ fn drive(path: &str) -> Option<String> {
 
 /// The path of this machine that one of the window's stands for. A path
 /// that came from the system itself (a file dropped on the window) is itself.
-fn real(path: PathBuf) -> PathBuf {
-    match path.to_str().and_then(drive) {
-        Some(native) if cfg!(windows) => native.into(),
-        _ => path,
+fn real(path: PathBuf) -> Result<PathBuf> {
+    let Some(shown) = path.to_str().filter(|_| cfg!(windows)) else {
+        return Ok(path);
+    };
+    let on_the_list = shown.starts_with('/') && !shown[1..].contains('/');
+    match drive(shown) {
+        Some(native) => Ok(native.into()),
+        // `/` is the list of the drives and holds nothing else: Windows would
+        // put `/x` on whatever drive the app was started from.
+        None if on_the_list => Err(anyhow!("{shown} is on no drive: open a drive first")),
+        None => Ok(path),
     }
+}
+
+/// Whether a path is on a drive with a letter. The real name of a mapped
+/// drive is its share's (`\\?\UNC\..`), and no path joined with `/` is read
+/// under that.
+#[cfg(windows)]
+fn lettered(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+
+    let Some(Component::Prefix(prefix)) = path.components().next() else {
+        return false;
+    };
+    matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
 }
 
 /// Every drive there is, as the directories of `/`.
@@ -141,9 +161,15 @@ pub fn local_list(path: String) -> Reply<Listing> {
     let asked = if path.is_empty() {
         home()
     } else {
-        real(path.into())
+        real(path.into())?
     };
     let dir = at(&asked, asked.canonicalize())?;
+    // A mapped drive, a share: it stays what it was asked for as, in full.
+    #[cfg(windows)]
+    let dir = match lettered(&dir) {
+        true => dir,
+        false => at(&asked, std::path::absolute(&asked))?,
+    };
     Ok(Listing {
         entries: at(&dir, list_local(&dir))?,
         path: shown(&dir),
@@ -152,14 +178,14 @@ pub fn local_list(path: String) -> Reply<Listing> {
 
 #[tauri::command(async)]
 pub fn local_mkdir(path: PathBuf) -> Reply<()> {
-    let path = real(path);
+    let path = real(path)?;
     Ok(at(&path, fs::create_dir(&path))?)
 }
 
 /// Removes a file, or a directory that is empty.
 #[tauri::command(async)]
 pub fn local_rm(path: PathBuf, is_dir: bool) -> Reply<()> {
-    let path = real(path);
+    let path = real(path)?;
     let removed = if is_dir {
         fs::remove_dir(&path)
     } else {
@@ -170,7 +196,7 @@ pub fn local_rm(path: PathBuf, is_dir: bool) -> Reply<()> {
 
 #[tauri::command(async)]
 pub fn local_rename(from: PathBuf, to: PathBuf) -> Reply<()> {
-    let (from, to) = (real(from), real(to));
+    let (from, to) = (real(from)?, real(to)?);
     Ok(at(&from, fs::rename(&from, &to))?)
 }
 
@@ -266,7 +292,8 @@ pub async fn sftp_upload<R: Runtime>(
     id: String,
     backend: State<'_, Backend>,
 ) -> Reply<()> {
-    transfer(app, &backend, &host, id, Cmd::Upload(real(local), remote)).await
+    let cmd = Cmd::Upload(real(local)?, remote);
+    transfer(app, &backend, &host, id, cmd).await
 }
 
 /// Copies a remote file to `local`, the full path of the file to write.
@@ -279,7 +306,7 @@ pub async fn sftp_download<R: Runtime>(
     id: String,
     backend: State<'_, Backend>,
 ) -> Reply<()> {
-    let cmd = Cmd::Download(remote, real(local));
+    let cmd = Cmd::Download(remote, real(local)?);
     transfer(app, &backend, &host, id, cmd).await
 }
 
@@ -313,9 +340,13 @@ mod tests {
             assert_eq!(drive(other), None, "{other}");
         }
         // Only Windows reads it so: anywhere else `/C:` is a directory called `C:`.
-        let real = |path: &str| real(path.into()).to_string_lossy().into_owned();
-        assert_eq!(real("/C:/x"), if cfg!(windows) { "C:/x" } else { "/C:/x" });
-        assert_eq!(real("C:\\x\\y.txt"), "C:\\x\\y.txt");
+        let real = |path: &str| real(path.into()).map(|real| real.to_string_lossy().into_owned());
+        let there = if cfg!(windows) { "C:/x" } else { "/C:/x" };
+        assert_eq!(real("/C:/x").unwrap(), there);
+        assert_eq!(real("C:\\x\\y.txt").unwrap(), "C:\\x\\y.txt");
+        // Nothing is made among the drives: there `/x` is on none of them.
+        assert_eq!(real("/x").is_err(), cfg!(windows));
+        assert_eq!(real("/x/y").unwrap(), "/x/y");
     }
 
     #[cfg(windows)]
@@ -324,9 +355,13 @@ mod tests {
         assert_eq!(shown(Path::new(r"C:\Users\me")), "/C:/Users/me");
         assert_eq!(shown(Path::new(r"\\?\C:\Users\me")), "/C:/Users/me");
         assert_eq!(shown(Path::new(r"\\?\D:\")), "/D:");
-        // What the pane shows, it can ask for again.
-        let home = home().canonicalize().unwrap();
-        assert_eq!(real(shown(&home).into()).canonicalize().unwrap(), home);
+        // What the pane shows, it can ask for again. Not the home: another test moves it.
+        let dir = std::env::temp_dir().canonicalize().unwrap();
+        let again = real(shown(&dir).into()).unwrap();
+        assert_eq!(again.canonicalize().unwrap(), dir);
+        // A mapped drive is no lettered one by its real name.
+        assert!(lettered(&dir) && lettered(Path::new(r"Z:\x")));
+        assert!(!lettered(Path::new(r"\\?\UNC\srv\share\x")));
         assert!(drives()
             .iter()
             .any(|drive| drive.is_dir && drive.name.len() == 2));
