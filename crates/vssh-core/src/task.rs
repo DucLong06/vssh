@@ -150,15 +150,17 @@ pub enum Shell {
 
 /// A shell session for a frontend that is on the runtime itself (Tauri):
 /// awaited until either side ends it, and dropped to end it. `keys` types
-/// into it and resizes it. Keys and the agent only.
+/// into it and resizes it. The agent and keys first, then `password`.
 pub async fn shell(
     target: Target,
+    password: Password,
     size: (u16, u16),
     keys: Receiver<SessionCmd>,
     report: impl Fn(Shell) + Send + Sync,
 ) -> Result<(), ConnError> {
     let run = async {
-        let h = ssh::connect(&target, None, None).await?;
+        let pw = password.as_ref().map(|p| p.as_str());
+        let h = ssh::connect(&target, pw, None).await?;
         report(Shell::Up);
         let login = Login {
             command: target.remote_command.clone(),

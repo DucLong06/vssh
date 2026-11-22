@@ -224,6 +224,7 @@ pub const STRINGS: &[(&str, &str, &str)] = &[
     ("auth_default_keys", "Default keys", "Khoá mặc định"),
     ("password", "Password", "Mật khẩu"),
     ("password_stored", "password stored", "đã lưu mật khẩu"),
+    ("save_password", "Save to the vault", "Lưu vào kho"),
     (
         "vault_needed",
         "Unlock the vault to store a password.",

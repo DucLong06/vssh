@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+use vssh_core::vault::Vault;
+
 use super::*;
 
 /// Everything the app emits under `event`, as the window would hear it.
@@ -258,4 +260,77 @@ fn a_changed_host_key_is_trusted_only_for_a_host_on_the_sessions_road() {
     );
     assert_eq!(trust(2, "10.9.9.9", true), Err(other("no session 2")));
     assert_eq!(net.asked.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn a_session_logs_in_with_the_vaults_password_or_a_typed_one_which_it_can_keep() {
+    let home = home("session-password");
+    let path = home.join("data/vault");
+    let mut vault = Vault::create(&path, "master").unwrap();
+    vault.set("web-01", &mut "hunter2".to_string()).unwrap();
+    drop(vault);
+    let net = Fake::silent();
+    let (_app, window) = window(&home, net.clone());
+    call(&window, "session_open", json!({ "alias": "web-01" })).unwrap();
+    call(&window, "quick_connect", json!({ "host": "ops@10.0.0.9" })).unwrap();
+    let start = |id: u64, typed: Value| {
+        let mut args = json!({ "id": id, "cols": 80, "rows": 24 });
+        args.as_object_mut()
+            .unwrap()
+            .extend(typed.as_object().unwrap().clone());
+        call(&window, "session_start", args)
+    };
+    // Each start, the shell it asked for: the old one is let go of meanwhile.
+    let shells = || {
+        let asked = std::mem::take(&mut *net.asked.lock().unwrap());
+        let shells = asked.into_iter().filter(|line| line.starts_with("shell "));
+        shells.collect::<Vec<_>>()
+    };
+
+    // Locked: keys and the agent, or what the person typed for this start.
+    start(1, json!({})).unwrap();
+    start(1, json!({ "password": "typed" })).unwrap();
+    assert_eq!(
+        shells(),
+        [
+            "shell deploy@10.0.0.5:2222 80x24",
+            "shell deploy@10.0.0.5:2222 (typed) 80x24",
+        ]
+    );
+    // Keeping it takes an open vault: nothing is written, nobody is connected to.
+    let keep = json!({ "password": "typed", "save": true });
+    assert_eq!(start(1, keep.clone()), Err(other("the vault is locked")));
+    assert_eq!(shells(), Vec::<String>::new());
+
+    call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
+    start(1, json!({})).unwrap();
+    // Typed wins over the vault's, and is kept only when asked to.
+    start(1, json!({ "password": "typed" })).unwrap();
+    start(1, json!({})).unwrap();
+    start(1, keep).unwrap();
+    start(1, json!({})).unwrap();
+    assert_eq!(
+        shells(),
+        [
+            "shell deploy@10.0.0.5:2222 (hunter2) 80x24",
+            "shell deploy@10.0.0.5:2222 (typed) 80x24",
+            "shell deploy@10.0.0.5:2222 (hunter2) 80x24",
+            "shell deploy@10.0.0.5:2222 (typed) 80x24",
+            "shell deploy@10.0.0.5:2222 (typed) 80x24",
+        ]
+    );
+    let vault = Vault::open(&path, "master").unwrap();
+    assert_eq!(vault.get("web-01"), Some("typed"));
+
+    // A quick connect is no host of the config: it has nothing in the vault,
+    // and nowhere to keep a password.
+    start(2, json!({ "password": "once" })).unwrap();
+    assert_eq!(shells(), ["shell ops@10.0.0.9:22 (once) 80x24"]);
+    let keep = json!({ "password": "once", "save": true });
+    assert_eq!(
+        start(2, keep),
+        Err(other("a quick connect has no host to keep a password for"))
+    );
+    assert_eq!(shells(), Vec::<String>::new());
+    assert_eq!(Vault::open(&path, "master").unwrap().names().count(), 1);
 }

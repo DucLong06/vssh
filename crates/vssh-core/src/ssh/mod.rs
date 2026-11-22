@@ -10,14 +10,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
-use russh::client::{self, Handle};
+use russh::client::{self, AuthResult, Handle, KeyboardInteractiveAuthResponse as Kbd};
 use russh::keys::known_hosts::{known_host_keys_path, learn_known_hosts_path};
 use russh::keys::ssh_key::LineEnding;
 use russh::keys::{
     load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey,
     PublicKeyOrCertificate,
 };
-use russh::{Channel, ChannelMsg};
+use russh::{Channel, ChannelMsg, MethodKind};
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
 use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -606,7 +606,8 @@ async fn handshake(
         .map_err(slow)?
 }
 
-/// Authenticates: agent, then key files, then the password. If all of it is
+/// Authenticates: agent, then key files, then the password (by `password`,
+/// then `keyboard-interactive` if the server offers it). If all of it is
 /// refused the error says what was tried (`Fail::Auth`).
 async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Result<()> {
     let rsa_hash = h.best_supported_rsa_hash().await?.flatten();
@@ -659,7 +660,14 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
         }
     }
     if let Some(pw) = password {
-        if h.authenticate_password(&t.user, pw).await?.success() {
+        let res = h.authenticate_password(&t.user, pw).await?;
+        if res.success() {
+            return Ok(());
+        }
+        // Servers with PAM often take a password only this way.
+        let asks = matches!(&res, AuthResult::Failure { remaining_methods, .. }
+            if remaining_methods.contains(&MethodKind::KeyboardInteractive));
+        if asks && keyboard_interactive(h, &t.user, pw).await? {
             return Ok(());
         }
     }
@@ -670,6 +678,34 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
         password: password.is_some(),
     }
     .into())
+}
+
+/// `keyboard-interactive` with the password: it answers every prompt that
+/// hides what is typed, and an empty line to those that show it. True if
+/// the server let us in.
+async fn keyboard_interactive(h: &mut Handle<Client>, user: &str, pw: &str) -> Result<bool> {
+    // shortcut: a one-time code prompt gets the password too and the login fails; ask the person prompt by prompt once someone needs 2FA.
+    let mut reply = h
+        .authenticate_keyboard_interactive_start(user, None)
+        .await?;
+    // A server may ask again and again; OpenSSH's PAM asks once or twice.
+    for _ in 0..5 {
+        let Kbd::InfoRequest { prompts, .. } = reply else {
+            break;
+        };
+        let answers = prompts
+            .iter()
+            .map(|p| {
+                if p.echo {
+                    String::new()
+                } else {
+                    pw.to_string()
+                }
+            })
+            .collect();
+        reply = h.authenticate_keyboard_interactive_respond(answers).await?;
+    }
+    Ok(matches!(reply, Kbd::Success))
 }
 
 /// Connects and authenticates, through the target's jump hosts or proxy

@@ -104,6 +104,7 @@ pub trait Transport: Send + Sync + 'static {
     fn shell(
         &self,
         target: Target,
+        password: Password,
         size: (u16, u16),
         keys: Receiver<SessionCmd>,
         report: Heard,
@@ -189,12 +190,14 @@ impl Transport for Core {
     fn shell(
         &self,
         target: Target,
+        password: Password,
         size: (u16, u16),
         keys: Receiver<SessionCmd>,
         report: Heard,
     ) -> Answer<()> {
-        // Keys and the agent only: a session does not ask the vault.
-        Box::pin(task::shell(target, size, keys, move |ev| report(ev)))
+        Box::pin(task::shell(target, password, size, keys, move |ev| {
+            report(ev)
+        }))
     }
 
     fn trust(&self, target: &Target, fingerprint: &str, forever: bool) {
@@ -301,10 +304,14 @@ impl Backend {
     /// How to log in to a host of the config: where it is, and its password
     /// if the vault has one.
     fn login(&self, alias: &str) -> Result<(Target, Password)> {
-        let target = self.target(alias)?;
+        Ok((self.target(alias)?, self.password(alias)))
+    }
+
+    /// The host's password, if the vault is unlocked and has one.
+    fn password(&self, alias: &str) -> Password {
         let vault = self.vault.lock().unwrap();
         let password = vault.as_ref().and_then(|vault| vault.get(alias));
-        Ok((target, password.map(|p| Zeroizing::new(p.to_string()))))
+        password.map(|p| Zeroizing::new(p.to_string()))
     }
 }
 

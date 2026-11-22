@@ -18,6 +18,10 @@
 #
 #   shell-01, shell-02  a real shell on a PTY  moved-box   a key that changed
 #   far-box             its second jump host refuses
+#   a quick connect     to an sshd in docker that takes a password only by
+#                       keyboard-interactive (PAM): the terminal asks for it,
+#                       and is a shell once it is typed. Skipped, and said so,
+#                       without docker
 #
 # Then the file view, on one more host:
 #
@@ -122,7 +126,7 @@
 # Screenshots land in docs/img/desktop-d1*.png, desktop-d2*.png, desktop-d3*.png,
 # desktop-d4*.png, desktop-d5*.png, desktop-d6*.png, desktop-d7*.png,
 # desktop-d9-rail*.png, desktop-d10-{shortcuts,split,focus}*.png,
-# desktop-d11-compact*.png and desktop-d12-broadcast*.png
+# desktop-d11-compact*.png, desktop-d12-broadcast*.png and desktop-password*.png
 # (.vi.png: the Vietnamese UI; d3-fail: a connection that fails, d3-closed:
 # one that drops; d4-sftp: the file view with transfers under way; d5-batch:
 # what four hosts answered to one command; d6-vault: the vault's manager,
@@ -175,7 +179,8 @@ app=
 sshd=
 # The app is given the time to go before its HOME is taken away: what it
 # still writes on its way out would otherwise be in the way of the rm.
-trap 'kill $app $sshd 2>/dev/null || true; wait 2>/dev/null || true; rm -rf "$home" 2>/dev/null || { sleep 2; rm -rf "$home"; }' EXIT
+pwbox=vssh-smoke-password-$$
+trap 'kill $app $sshd 2>/dev/null || true; docker rm -f "$pwbox" >/dev/null 2>&1 || true; wait 2>/dev/null || true; rm -rf "$home" 2>/dev/null || { sleep 2; rm -rf "$home"; }' EXIT
 mkdir -p "$home/.ssh" "$home/.local/share" "$home/sshd"
 chmod 700 "$home/.ssh"
 # The user's own fonts (Maple Mono NF) are under the HOME this run hides.
@@ -246,6 +251,15 @@ LogLevel VERBOSE
 EOF
 "$SSHD" -D -e -f "$home/sshd/config" 2>"$home/sshd/log" &
 sshd=$!
+
+# The password-only host, started now: its packages take a while. No
+# literal password here for scanners to flag; apk wants the proxy, if any.
+pw=$(printf '%s-%s' smoke word)
+docker run -d --rm --name "$pwbox" -e PW="$pw" -e http_proxy -e https_proxy -p 127.0.0.1::2202 alpine:latest sh -c '
+    apk add --no-cache openssh openssh-server-pam >/dev/null && ssh-keygen -A >/dev/null &&
+    adduser -D tester && echo "tester:$PW" | chpasswd &&
+    exec /usr/sbin/sshd.pam -D -e -p 2202 -o UsePAM=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=yes' \
+    >/dev/null 2>&1 || pwbox=
 
 # Hosts the user "has connected to before": their key is on record. new-box
 # (127.0.0.2) is left out on purpose.
@@ -663,6 +677,44 @@ shot docs/img/desktop-d3-fail.vi.png
 key Escape
 key ctrl+shift+w
 language
+
+# A host that takes a password and no key, by keyboard-interactive only: the
+# terminal asks for it in place of the failure dialog, and the box has the keys.
+if [ -n "$pwbox" ] && port=$(docker port "$pwbox" 2202/tcp 2>/dev/null | head -n 1 | sed 's/.*://') && [ -n "$port" ]; then
+    tries=0
+    until docker logs "$pwbox" 2>&1 | grep -q 'listening on'; do
+        tries=$((tries + 1))
+        [ "$tries" -le 120 ] || { echo "FAIL: the password-only sshd never started"; docker logs "$pwbox"; exit 1; }
+        sleep 1
+    done
+    quick() {
+        key ctrl+shift+k
+        xdotool type --window "$win" "tester@127.0.0.1:$port"
+        key Return
+        sleep 4
+    }
+    quick
+    shot docs/img/desktop-password.png
+    xdotool type --window "$win" --delay 20 "$pw"
+    key Return
+    sleep 4
+    docker logs "$pwbox" 2>&1 | grep -q 'Accepted keyboard-interactive/pam for tester' ||
+        { echo "FAIL: the typed password did not log in"; docker logs "$pwbox"; shot target/smoke/failed.png; exit 1; }
+    run 'touch typed-here'
+    docker exec "$pwbox" test -e /home/tester/typed-here ||
+        { echo "FAIL: after the password the keys did not go to the shell"; shot target/smoke/failed.png; exit 1; }
+    shot target/smoke/password-up.png
+    step "a password-only host: the terminal asked, keyboard-interactive let the typed password in, the keys went to the shell"
+    key ctrl+shift+w
+    # The same in Vietnamese: the language goes first, the box takes the keys.
+    language
+    quick
+    shot docs/img/desktop-password.vi.png
+    key ctrl+shift+w
+    language
+else
+    echo "skipped: the password-only host needs docker running alpine:latest"
+fi
 
 # A session that ends under its tab: shell-01's shell kills what it runs
 # under. The tab keeps its screen and says so in a banner.
@@ -1324,7 +1376,9 @@ step "the form with a road of three hops, and the dashboard at 125 percent by Ct
 # A card's own switch is its first stop. Off: the database says so, the
 # connection the dashboard kept is closed, and two rounds later nobody has
 # logged in. On again: the next round logs in anew.
-closed() { grep -c 'Connection closed by 127' "$home/sshd/log" || true; }
+# Logged-in connections only: a ping, a TCP connect with no SSH in it, is
+# "Connection closed" too, and a round of them may fall in this window.
+closed() { grep -c 'Closing connection to 127' "$home/sshd/log" || true; }
 sleep 6
 logins=$(accepted)
 shut=$(closed)

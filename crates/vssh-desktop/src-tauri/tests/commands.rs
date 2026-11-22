@@ -244,14 +244,15 @@ impl Transport for Fake {
     fn shell(
         &self,
         target: Target,
+        password: Password,
         (cols, rows): (u16, u16),
         mut keys: Receiver<SessionCmd>,
         report: Heard,
     ) -> Answer<()> {
-        let at = format!("{}@{}:{}", target.user, target.host, target.port);
         let asked = self.asked.clone();
         let note = move |line: String| asked.lock().unwrap().push(line);
-        note(format!("shell {at} {cols}x{rows}"));
+        note(format!("shell {} {cols}x{rows}", at(&target, &password)));
+        let at = format!("{}@{}:{}", target.user, target.host, target.port);
         let refusal = self.answer.clone().err();
         Box::pin(async move {
             // Dropped with the shell, however it ends.
