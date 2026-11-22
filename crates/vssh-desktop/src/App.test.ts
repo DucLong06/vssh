@@ -22,6 +22,13 @@ import { forget as unheard } from './lib/update.svelte'
 import { fake, setStreamer } from './lib/streamer.svelte'
 import strings from './lib/strings.json'
 
+// accessible name of the password box for a host
+const askFor = (who: string) => ['Password', who].join(': ')
+
+// what the user types in the password box (built, not a literal secret)
+const TYPED = 'a'.repeat(7)
+const RETYPED = 'b'.repeat(5)
+
 type Args = Record<string, unknown>
 const snippets = [{ id: 1, host: '', name: 'up', command: 'uptime' }]
 /** Every command the window sent, with what it sent. */
@@ -546,6 +553,76 @@ test('a host key that is not the one on record stops the session and asks: accep
   await user.click(within(await screen.findByRole('dialog', { name: 'JUMP HOST: web-01' })).getByRole('button', { name: 'Trust' }))
   await vi.waitFor(() => expect(asked('session_trust')).toHaveLength(3))
   expect(asked('session_trust')[2]).toEqual({ ...yes, host: 'bastion.example.com', forever: true })
+})
+
+test('a refused login asks for a password in the terminal itself: Enter connects with it, kept in the vault if asked', async () => {
+  const user = shell({ vault_state: () => 'unlocked' })
+  await connected(user, 'web-01')
+  const auth = errors[4]
+  const ask = async () => {
+    await says(1, { state: 'closed', error: auth })
+    return screen.findByRole('form', { name: askFor('web-01') })
+  }
+  let form = await ask()
+  // What was refused, as the TUI says it; no dialog over the window.
+  expect(form).toHaveTextContent('Public key rejected for deploy@10.0.0.5: 2 offered, none accepted')
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  const field = within(form).getByLabelText('Password')
+  expect(field).toHaveAttribute('type', 'password')
+  expect(field).toHaveFocus()
+  await user.keyboard(`${TYPED}{Enter}`)
+  expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24, password: TYPED, save: false })
+  expect(form).not.toBeInTheDocument()
+
+  // Refused again: asked again, and this time kept.
+  form = await ask()
+  await user.click(within(form).getByRole('checkbox', { name: 'Save to the vault' }))
+  await user.type(within(form).getByLabelText('Password'), RETYPED)
+  await user.click(within(form).getByRole('button', { name: 'Connect' }))
+  expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24, password: RETYPED, save: true })
+
+  // Cancel leaves the tab closed, its reason and a way back on it.
+  form = await ask()
+  await user.click(within(form).getByRole('button', { name: 'Cancel' }))
+  expect(form).not.toBeInTheDocument()
+  const badge = within(screen.getByRole('tabpanel', { name: 'web-01' })).getByRole('status')
+  expect(badge).toHaveTextContent('AUTH')
+  const starts = asked('session_start').length
+  await user.click(within(badge).getByRole('button', { name: 'Reconnect' }))
+  expect(asked('session_start')).toHaveLength(starts + 1)
+  expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24 })
+})
+
+test('the password box is for a refused login only; a locked vault cannot keep it, and a quick connect has nowhere to', async () => {
+  const user = shell({ vault_state: () => 'locked' })
+  await user.click(within(await screen.findByRole('dialog', { name: 'Vault' })).getByRole('button', { name: 'Cancel' }))
+  await connected(user, 'web-01')
+  await says(1, { state: 'closed', error: refused })
+  await within(screen.getByRole('tabpanel', { name: 'web-01' })).findByRole('status')
+  expect(screen.queryByRole('form')).not.toBeInTheDocument()
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+
+  await user.click(screen.getByRole('button', { name: 'Reconnect' }))
+  await says(1, { state: 'closed', error: errors[4] })
+  const form = await screen.findByRole('form', { name: askFor('web-01') })
+  expect(within(form).getByRole('checkbox', { name: 'Save to the vault' })).toBeDisabled()
+  expect(form).toHaveTextContent('Unlock the vault to store a password.')
+  // In Vietnamese, every word of it.
+  await setting(user, /Language/)
+  await vi.waitFor(() => expect(form).toHaveTextContent('Mở kho để lưu mật khẩu.'))
+  expect(within(form).getByRole('checkbox', { name: 'Lưu vào kho' })).toBeDisabled()
+  expect(within(form).getByRole('button', { name: 'Kết nối' })).toBeInTheDocument()
+  expect(english(form.textContent ?? '')).toEqual([])
+  await setting(user, /Ngôn ngữ/)
+
+  await user.keyboard(ctrlK)
+  await user.type(palette(), 'deploy@10.0.0.9{Enter}')
+  await vi.waitFor(() => expect(asked('session_start').at(-1)).toEqual({ id: 2, cols: 80, rows: 24 }))
+  await says(2, { state: 'closed', error: errors[4] })
+  const quick = await screen.findByRole('form', { name: askFor('deploy@10.0.0.9') })
+  expect(within(quick).queryByRole('checkbox')).not.toBeInTheDocument()
+  await user.type(within(quick).getByLabelText('Password'), 'once{Enter}')
+  expect(asked('session_start').at(-1)).toEqual({ id: 2, cols: 80, rows: 24, password: 'once', save: false })
 })
 
 test('a shell that ends leaves its tab red with a way back: reconnect starts the same session again', async () => {

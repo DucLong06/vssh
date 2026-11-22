@@ -5,7 +5,7 @@
   import { Terminal } from '@xterm/xterm'
   import '@xterm/xterm/css/xterm.css'
   import { onMount } from 'svelte'
-  import { api, type PtyState, type Shown } from './api'
+  import { api, type PtyState, type Shown, type VaultState } from './api'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
   import { KEY, tip } from './keymap'
@@ -27,12 +27,16 @@
     /** What was typed, for the caller to send where it goes. */
     oninput: (data: string) => void
     onstate: (state: PtyState) => void
-    onreconnect: () => void
+    /** Connects again; with the password typed after a refused login, and whether to keep it in the vault. */
+    onreconnect: (password?: string, save?: boolean) => void
+    /** Whether a password typed here can be kept; a quick connect has no host to keep it for. */
+    vault?: VaultState
+    quick?: boolean
     /** While some session broadcasts: whether this one hears it and is heard. Not said: nothing broadcasts, and there is no switch for it. */
     broadcast?: boolean
     onbroadcast?: () => void
   }
-  let { id, label, active, front = true, closed, why, oninput, onstate, onreconnect, broadcast, onbroadcast }: Props = $props()
+  let { id, label, active, front = true, closed, why, oninput, onstate, onreconnect, vault = 'none', quick = false, broadcast, onbroadcast }: Props = $props()
 
   let box: HTMLElement
   let term: Terminal
@@ -75,7 +79,7 @@
       listen<PtyState>(`pty-state:${id}`, (e) => onstate(e.payload)),
     ])
     // Only now: nothing the shell says is lost on the way here.
-    void heard.then(start)
+    void heard.then(() => start())
     const watching = new ResizeObserver(() => active && fit.fit())
     watching.observe(box)
     return () => {
@@ -93,6 +97,21 @@
     fit.fit()
     if (front) term.focus()
   })
+
+  /** A refused login, as the TUI does it: a password asked for here, unless the person said no to that. */
+  let password = $state('')
+  let save = $state(false)
+  let dismissed = $state(false)
+  let field = $state<HTMLInputElement>()
+  const asking = $derived(closed && why?.class === 'auth' && !dismissed)
+  $effect(() => {
+    if (!closed) dismissed = false
+  })
+  // After the terminal's own focus, above: the keys are the box's while it asks.
+  $effect(() => {
+    if (asking && active) field?.focus()
+  })
+  const button = 'min-h-9 cursor-pointer rounded-ctl border border-edge px-3.5 py-1.5 font-medium hover:bg-selection'
 
   /** What a pointer with no keys can do here: the selection to the clipboard, the clipboard to the shell, all of the screen selected. */
   function asked(e: MouseEvent) {
@@ -125,9 +144,9 @@
   export const focus = () => term.focus()
 
   /** Connects the session, again if it was connected before, at the terminal's size. */
-  export function start() {
+  export function start(password?: string, save?: boolean) {
     if (active) fit.fit()
-    return api.sessionStart(id, term.cols, term.rows)
+    return api.sessionStart(id, term.cols, term.rows, password, save)
   }
 
   /** Puts the output of the last command on the clipboard. */
@@ -170,7 +189,43 @@
       <span class="first-letter:uppercase">{t('broadcast')}</span>
     </button>
   {/if}
-  {#if closed}
+  {#if asking && why}
+    <form
+      aria-label="{t('password')}: {label}"
+      onsubmit={(e) => {
+        e.preventDefault()
+        onreconnect(password, save)
+        password = ''
+      }}
+      class="grid w-80 max-w-full gap-3 rounded-xl border border-red bg-panel p-4 text-sm"
+    >
+      <!-- What was refused, in the window's words; the libraries' own on hover. -->
+      <p class="break-words text-white" title={why.chain}><strong class="text-red">{why.label}</strong> {why.message}</p>
+      <label class="grid gap-1.5">
+        <span class="text-dim">{t('password')}</span>
+        <input
+          bind:this={field}
+          bind:value={password}
+          type="password"
+          autocomplete="off"
+          class="min-h-9 rounded-ctl border border-edge bg-bg px-3 text-fg outline-none focus:border-blue"
+        />
+      </label>
+      {#if !quick}
+        <label class="flex min-h-9 items-center gap-2 text-fg has-disabled:text-dim">
+          <input type="checkbox" bind:checked={save} disabled={vault !== 'unlocked'} class="size-4" />
+          {t('save_password')}
+        </label>
+        {#if vault !== 'unlocked'}
+          <p class="-mt-2 text-xs text-dim">{t('vault_needed')}</p>
+        {/if}
+      {/if}
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick={() => (dismissed = true)} class="{button} text-white">{t('cancel')}</button>
+        <button type="submit" class="{button} border-blue bg-blue! font-semibold text-page hover:brightness-110">{t('connect')}</button>
+      </div>
+    </form>
+  {:else if closed}
     <p
       role="status"
       class="flex min-w-0 items-center gap-3 rounded-xl border border-red bg-panel py-1.5 pr-1.5 pl-3 text-sm"
@@ -181,7 +236,7 @@
       {/if}
       <button
         type="button"
-        onclick={onreconnect}
+        onclick={() => onreconnect()}
         class="shrink-0 cursor-pointer rounded-lg border border-edge px-3 py-1 font-medium text-fg hover:bg-selection"
       >
         {t('reconnect')}

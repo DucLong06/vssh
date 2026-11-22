@@ -608,19 +608,26 @@
     if (said.state === 'up') Object.assign(session, { state: 'up', met: true, error: null, why: null })
     else if (said.state === 'busy') session.busy = said.command
     else {
-      // One that never got through says why in a dialog; one that was up
-      // and dropped keeps its screen, and says it there.
-      if (said.error && !session.met) failure = active = session.id
+      // One that never got through comes to the front and says why in a dialog, or asks for
+      // a password on its screen if that was what was refused; one that was up and dropped
+      // keeps its screen, and says it there.
+      if (said.error && !session.met) {
+        active = session.id
+        if (said.error.class !== 'auth') failure = session.id
+      }
       Object.assign(session, { state: 'closed', busy: null, error: said.error })
     }
   }
 
   const answer = 'cursor-pointer rounded-ctl border border-edge min-h-9 px-3.5 py-1.5 font-medium hover:bg-selection'
 
-  function reconnect(session: Session) {
+  function reconnect(session: Session, password?: string, save?: boolean) {
     failure = null
     Object.assign(session, fresh)
-    void terms[session.id]?.start()
+    terms[session.id]?.start(password, save).catch(async (error) => {
+      // Refused before it connected (the vault was locked meanwhile): said on the tab.
+      Object.assign(session, { state: 'closed', why: await explain(error, i18n.lang) })
+    })
   }
 
   /** The user's yes to a host key, then the connection it was needed for. */
@@ -783,7 +790,9 @@
             why={session.why}
             oninput={(data) => input(session, data)}
             onstate={(said) => heard(session, said)}
-            onreconnect={() => reconnect(session)}
+            onreconnect={(password, save) => reconnect(session, password, save)}
+            {vault}
+            quick={session.quick}
             broadcast={sessions.length > 1 && sessions.some((other) => other.broadcast) ? session.broadcast : undefined}
             onbroadcast={() => (session.broadcast = !session.broadcast)}
           />

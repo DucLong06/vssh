@@ -182,7 +182,9 @@ export const api = {
    * to reconnect. From then on `pty-data:<id>` carries its output as bytes
    * and `pty-state:<id>` a `PtyState`: listen before calling this.
    */
-  sessionStart: (id: number, cols: number, rows: number) => invoke<void>('session_start', { id, cols, rows }),
+  /** `password`: typed after a refused login, for this start; `save` keeps it in the unlocked vault. */
+  sessionStart: (id: number, cols: number, rows: number, password?: string, save?: boolean) =>
+    invoke<void>('session_start', { id, cols, rows, password, save }),
   sessionWrite: (id: number, data: string) => invoke<void>('session_write', { id, data }),
   sessionResize: (id: number, cols: number, rows: number) => invoke<void>('session_resize', { id, cols, rows }),
   sessionClose: (id: number) => invoke<void>('session_close', { id }),
