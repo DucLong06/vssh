@@ -21,12 +21,15 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 use vssh_core::conn_err::ConnError;
 use vssh_core::ssh::{SessionCmd, Target, Via};
 use vssh_core::task::{self, Sender, Shell};
+use zeroize::Zeroizing;
 
-use crate::{Backend, Reply};
+use crate::{Backend, Password, Reply};
 
-/// A tab's session: where it goes, and its shell while one runs.
+/// A tab's session: where it goes, the host of the config it is (none for
+/// a quick connect), and its shell while one runs.
 struct Session {
     target: Target,
+    alias: Option<String>,
     keys: Option<Sender<SessionCmd>>,
     shell: Option<JoinHandle<()>>,
 }
@@ -48,10 +51,11 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    fn add(&mut self, target: Target) -> u64 {
+    fn add(&mut self, target: Target, alias: Option<String>) -> u64 {
         self.last += 1;
         let session = Session {
             target,
+            alias,
             keys: None,
             shell: None,
         };
@@ -82,7 +86,7 @@ enum PtyState {
 #[tauri::command(async)]
 pub fn session_open(alias: String, backend: State<'_, Backend>) -> Reply<u64> {
     let target = backend.target(&alias)?;
-    Ok(backend.sessions.lock().unwrap().add(target))
+    Ok(backend.sessions.lock().unwrap().add(target, Some(alias)))
 }
 
 /// Opens a session to a typed `[user@]host[:port]` and returns its id.
@@ -90,21 +94,54 @@ pub fn session_open(alias: String, backend: State<'_, Backend>) -> Reply<u64> {
 #[tauri::command]
 pub fn quick_connect(host: String, backend: State<'_, Backend>) -> Reply<u64> {
     let target = Target::parse(&host)?;
-    Ok(backend.sessions.lock().unwrap().add(target))
+    Ok(backend.sessions.lock().unwrap().add(target, None))
+}
+
+/// The password a start logs in with: the one typed for it, kept in the
+/// vault if `save` says so; else the vault's for the host. Never logged,
+/// never written anywhere but the vault.
+fn password(
+    backend: &Backend,
+    alias: Option<&str>,
+    typed: Option<String>,
+    save: bool,
+) -> Result<Password> {
+    let Some(typed) = typed.map(Zeroizing::new).filter(|p| !p.is_empty()) else {
+        return Ok(alias.and_then(|alias| backend.password(alias)));
+    };
+    if save {
+        let alias =
+            alias.ok_or_else(|| anyhow!("a quick connect has no host to keep a password for"))?;
+        let mut vault = backend.vault.lock().unwrap();
+        let vault = vault
+            .as_mut()
+            .ok_or_else(|| anyhow!("the vault is locked"))?;
+        vault.set(alias, &mut typed.to_string())?;
+    }
+    Ok(Some(typed))
 }
 
 /// Connects the session and runs its shell on a PTY of this size. A shell
-/// it already had is ended first.
+/// it already had is ended first. `password` is one the person typed after
+/// a refused login; `save` keeps it in the (unlocked) vault for the host.
 #[tauri::command]
 pub fn session_start<R: Runtime>(
     id: u64,
     cols: u16,
     rows: u16,
+    password: Option<String>,
+    save: Option<bool>,
     app: AppHandle<R>,
     backend: State<'_, Backend>,
 ) -> Reply<()> {
     let mut sessions = backend.sessions.lock().unwrap();
     let session = sessions.get(id)?;
+    let password = self::password(
+        &backend,
+        session.alias.as_deref(),
+        password,
+        save == Some(true),
+    )?;
     if let Some(old) = session.shell.take() {
         old.abort();
     }
@@ -125,7 +162,7 @@ pub fn session_start<R: Runtime>(
     let size = (cols, rows);
     let running = backend
         .net
-        .shell(session.target.clone(), size, typed, report);
+        .shell(session.target.clone(), password, size, typed, report);
     session.keys = Some(keys);
     session.shell = Some(tauri::async_runtime::spawn(async move {
         let error = running.await.err();
