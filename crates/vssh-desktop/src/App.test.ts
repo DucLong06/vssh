@@ -598,6 +598,38 @@ test('a refused login asks for a password in the terminal itself: Enter connects
   expect(within(await ask()).getByLabelText('Password')).toHaveValue('')
 })
 
+test('a wrong password asks again, saying so: the box is empty and still set to keep the next one, which the shell writes only once it is let in', async () => {
+  const wrongly = { ...errors[4], fail: { ...errors[4].fail, keys: 0, password: true } }
+  const user = shell({
+    vault_state: () => 'unlocked',
+    resolve_conn_error: ({ error, lang }) =>
+      (error as typeof wrongly).fail?.password
+        ? { class: 'auth', label: 'AUTH', message: 'Wrong password for deploy@10.0.0.5', chain: 'authentication failed for deploy@10.0.0.5' }
+        : shown[lang as 'en' | 'vi'][4],
+  })
+  await connected(user, 'web-01')
+  await says(1, { state: 'closed', error: errors[4] })
+  let form = await screen.findByRole('form', { name: askFor('web-01') })
+  await user.click(within(form).getByRole('checkbox', { name: 'Save to the vault' }))
+  await user.type(within(form).getByLabelText('Password'), `${TYPED}{Enter}`)
+  expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24, password: TYPED, save: true })
+
+  // The host turned it down: the box is back with why, nothing of the wrong one left in it.
+  await says(1, { state: 'closed', error: wrongly })
+  form = await screen.findByRole('form', { name: askFor('web-01') })
+  await vi.waitFor(() => expect(form).toHaveTextContent('Wrong password for deploy@10.0.0.5'))
+  expect(within(form).getByLabelText('Password')).toHaveValue('')
+  expect(within(form).getByLabelText('Password')).toHaveFocus()
+  expect(within(form).getByRole('checkbox', { name: 'Save to the vault' })).toBeChecked()
+  await user.keyboard(`${RETYPED}{Enter}`)
+  expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24, password: RETYPED, save: true })
+  // Let in: no box. Neither password went anywhere but its start: keeping one is the shell's, after the login.
+  await says(1, { state: 'up' })
+  expect(screen.queryByRole('form', { name: askFor('web-01') })).not.toBeInTheDocument()
+  const carrying = (pw: string) => calls.filter(([, args]) => JSON.stringify(args).includes(pw)).map(([cmd]) => cmd)
+  expect([carrying(TYPED), carrying(RETYPED)]).toEqual([['session_start'], ['session_start']])
+})
+
 test('the password box is for a refused login only; a locked vault cannot keep it, and a quick connect has nowhere to', async () => {
   const user = shell({ vault_state: () => 'locked' })
   await user.click(within(await screen.findByRole('dialog', { name: 'Vault' })).getByRole('button', { name: 'Cancel' }))

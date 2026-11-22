@@ -66,7 +66,7 @@ Nhấn `c`, gõ `user@host` hoặc `user@host:port`, có thể thêm mật khẩ
 **Lưu ngay khi kết nối.** Đánh dấu ô chọn trong biểu mẫu bằng `Ctrl-s` (hoặc `Tab` tới ô đó rồi nhấn `S`), sau đó nhấn `Enter`:
 
 - máy chủ được thêm vào `~/.ssh/config` như mọi máy chủ khác. Alias là tên máy, hoặc `user@host` nếu tên đó đã được dùng;
-- mật khẩu bạn đã gõ được lưu vào kho mật khẩu dưới alias đó, mã hoá như mọi mật khẩu trong kho. Nếu kho đang khoá, vssh hỏi mật khẩu chủ (hoặc tạo kho mới); nếu bạn huỷ bước này thì mật khẩu bị bỏ đi, không được lưu;
+- mật khẩu bạn đã gõ được lưu vào kho mật khẩu dưới alias đó, mã hoá như mọi mật khẩu trong kho, chỉ sau khi đăng nhập thành công: mật khẩu sai không bao giờ được lưu, và mật khẩu bạn gõ lại khi được hỏi sẽ được lưu thay. Nếu kho đang khoá, vssh hỏi mật khẩu chủ (hoặc tạo kho mới); nếu bạn huỷ bước này thì mật khẩu bị bỏ đi, không được lưu;
 - mật khẩu không bao giờ được ghi vào `~/.ssh/config` hay `config.toml`.
 
 Khi con trỏ đang ở ô nhập chữ, phím `S` đơn không thể dùng để bật/tắt vì đó là một chữ cái bạn có thể cần gõ; vì vậy phím tắt là `Ctrl-s`.

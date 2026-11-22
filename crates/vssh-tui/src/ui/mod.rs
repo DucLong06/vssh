@@ -67,6 +67,9 @@ struct Tab {
     closed: bool,
     /// Session log, while logging is on.
     log: Option<File>,
+    /// A password typed to be saved: it goes into the vault once this tab
+    /// is let in, and is dropped, zeroized, with a tab that never is.
+    keep: Option<Zeroizing<String>>,
 }
 
 /// What to do with a submitted form or a confirmed question.
@@ -80,6 +83,8 @@ enum After {
         target: Target,
         saved: bool,
         sftp: bool,
+        /// The refused password was to be saved: so is the one typed now.
+        keep: bool,
     },
     /// Connect to a typed `user@host[:port]` without saving it.
     QuickConnect,
@@ -792,6 +797,7 @@ impl App {
             connected: false,
             closed: false,
             log: None,
+            keep: None,
         });
         self.active = self.tabs.len();
         if self.cfg.log_sessions && !sftp {
@@ -1081,6 +1087,7 @@ impl App {
                     alias: tab.alias.clone(),
                     target: tab.target.clone(),
                     saved: tab.saved,
+                    keep: tab.keep.is_some(),
                 };
                 // The title says what was refused: a key, a password, or nothing to offer.
                 self.prompt(&report.message, "Password", true, then);
@@ -1168,6 +1175,9 @@ impl App {
             return;
         }
         self.fails.remove(&self.tabs[i].alias);
+        if let Some(password) = self.tabs[i].keep.take() {
+            self.store_password(self.tabs[i].alias.clone(), password);
+        }
         if self.tabs[i].saved {
             let res = self.db.touch(&self.tabs[i].alias);
             let res = res.and_then(|()| self.db.metas().map(|m| self.meta = m));
@@ -2032,7 +2042,13 @@ impl App {
                 target,
                 saved,
                 sftp,
-            } => self.open_target(alias, target.clone(), *saved, *sftp, Some(secret)),
+                keep,
+            } => {
+                // An empty one is not kept: stored, it would remove the vault's entry.
+                let typed = (*keep && !secret.is_empty()).then(|| secret.clone());
+                self.open_target(alias, target.clone(), *saved, *sftp, Some(secret));
+                self.tabs.last_mut().expect("just opened").keep = typed;
+            }
             After::QuickConnect => {
                 let target = Target::parse(&text(0))?;
                 let password = (!secret.is_empty()).then_some(secret);
@@ -2045,9 +2061,8 @@ impl App {
                     self.sel = self.hosts.iter().position(|h| *h == alias).unwrap_or(0);
                     self.open_target(&alias, target, true, false, password.clone());
                     self.msg = format!("saved as {alias}");
-                    if let Some(password) = password {
-                        self.store_password(alias, password);
-                    }
+                    // Into the vault once the login with it went through: a wrong one is never kept.
+                    self.tabs.last_mut().expect("just opened").keep = password;
                 } else {
                     let title = match target.port {
                         22 => format!("{}@{}", target.user, target.host),
@@ -2241,6 +2256,7 @@ mod tests {
             connected: true,
             closed: false,
             log: None,
+            keep: None,
         };
         (tab, rx)
     }
@@ -2384,6 +2400,83 @@ mod tests {
         assert_eq!(vault.get("web.example"), Some("s3cret-pw"));
         let raw = std::fs::read(&path).unwrap();
         assert!(!raw.windows(9).any(|w| w == b"s3cret-pw"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_password_typed_to_be_saved_is_stored_only_once_its_login_went_through() {
+        use vssh_core::conn_err::{ConnError, Fail};
+        let dir = std::env::temp_dir().join(format!("vssh-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Db::open(&dir.join("vssh.db")).unwrap();
+        let mut app = App::with(Config::default(), channel().0, SshConfig::parse(""), db).unwrap();
+        let path = dir.join("vault");
+        let mut vault = Vault::create(&path, "master").unwrap();
+        vault
+            .set("web.example", &mut "good-pw".to_string())
+            .unwrap();
+        app.vault = Some(vault);
+        let stored = || {
+            Vault::open(&path, "master")
+                .unwrap()
+                .get("web.example")
+                .map(str::to_string)
+        };
+        let connecting = |app: &mut App, id: u64, typed: &str| {
+            app.tabs.push(Tab {
+                alias: "web.example".into(),
+                target: Target::parse("user@127.0.0.1:1").unwrap(),
+                connected: false,
+                keep: Some(Zeroizing::new(typed.into())),
+                ..term_tab(id).0
+            });
+            app.next_id = id + 1;
+        };
+        let refused = |password| {
+            let fail = Fail::Auth {
+                user: "user".into(),
+                host: "127.0.0.1".into(),
+                keys: 0,
+                password,
+            };
+            ConnError::from(anyhow::Error::new(fail))
+        };
+
+        // Refused: nothing stored, and the prompt that asks again still means to keep it.
+        connecting(&mut app, 1, "wrong-pw");
+        app.on_task(task::Event::AuthFailed(1, refused(true)));
+        assert_eq!(stored().as_deref(), Some("good-pw"));
+        let Some(Popup::Form(mut form)) = app.popup.take() else {
+            panic!("no password prompt");
+        };
+        assert!(matches!(form.then, After::Password { keep: true, .. }));
+        // Nothing typed there is nothing to keep.
+        task::run(|| app.submit(&mut form)).unwrap().unwrap();
+        assert!(app.close_tab(app.tabs.len() - 1).keep.is_none());
+        // What is typed there is the tab's to keep, once it is let in.
+        form.fields[0].1.push_str("right-pw");
+        // Its connection is started and dropped: only the tab matters here.
+        task::run(|| app.submit(&mut form)).unwrap().unwrap();
+        let kept = app
+            .tabs
+            .last()
+            .and_then(|t| t.keep.as_deref().map(String::as_str));
+        assert_eq!(kept, Some("right-pw"));
+        assert_eq!(stored().as_deref(), Some("good-pw"));
+        let id = app.tabs.last().unwrap().id;
+
+        // Any other failure before the login: nothing stored either.
+        connecting(&mut app, id + 1, "other-pw");
+        let down = ConnError::from(anyhow::anyhow!("connection reset"));
+        app.on_task(task::Event::Closed(id + 1, Some(down)));
+        assert_eq!(stored().as_deref(), Some("good-pw"));
+
+        // In: stored on the first word from the host, and no longer held by the tab.
+        app.on_task(task::Event::Data(id, b"$ ".to_vec()));
+        assert_eq!(stored().as_deref(), Some("right-pw"));
+        assert!(app.tabs.iter().all(|t| t.keep.is_none()));
+        drop(app);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

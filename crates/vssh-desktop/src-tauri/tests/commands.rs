@@ -93,6 +93,8 @@ struct Fake {
     down: Option<ConnError>,
     known: bool,
     ping: Option<u64>,
+    /// A password every shell refuses, as a server does a wrong one.
+    wrong: Option<&'static str>,
 }
 
 /// Says so when it is dropped.
@@ -131,6 +133,7 @@ impl Fake {
             down: None,
             known: true,
             ping: Some(12),
+            wrong: None,
         }
     }
 
@@ -253,7 +256,16 @@ impl Transport for Fake {
         let note = move |line: String| asked.lock().unwrap().push(line);
         note(format!("shell {} {cols}x{rows}", at(&target, &password)));
         let at = format!("{}@{}:{}", target.user, target.host, target.port);
-        let refusal = self.answer.clone().err();
+        let wrong = self.wrong.is_some() && password.as_ref().map(|p| p.as_str()) == self.wrong;
+        let wrong = wrong.then(|| {
+            failed(Fail::Auth {
+                user: target.user.clone(),
+                host: target.host.clone(),
+                keys: 0,
+                password: true,
+            })
+        });
+        let refusal = wrong.or_else(|| self.answer.clone().err());
         Box::pin(async move {
             // Dropped with the shell, however it ends.
             let _gone = Gone(Box::new(note.clone()), at);

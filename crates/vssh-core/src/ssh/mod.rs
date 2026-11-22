@@ -17,7 +17,7 @@ use russh::keys::{
     load_secret_key, Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKey,
     PublicKeyOrCertificate,
 };
-use russh::{Channel, ChannelMsg, MethodKind};
+use russh::{Channel, ChannelMsg, MethodKind, MethodSet};
 use tokio::io::{copy_bidirectional, AsyncRead, AsyncWrite};
 use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -606,12 +606,14 @@ async fn handshake(
         .map_err(slow)?
 }
 
-/// Authenticates: agent, then key files, then the password (by `password`,
-/// then `keyboard-interactive` if the server offers it). If all of it is
-/// refused the error says what was tried (`Fail::Auth`).
+/// Authenticates: agent, then key files, then the password, by one method
+/// the server offers (see [`password_method`]). If all of it is refused the
+/// error says what was tried (`Fail::Auth`).
 async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Result<()> {
     let rsa_hash = h.best_supported_rsa_hash().await?.flatten();
     let mut keys = 0;
+    // What the server said it takes, at its last refusal.
+    let mut offered = None;
 
     // shortcut: no agent on Windows (it has no `SSH_AUTH_SOCK`): key files and the password only; russh's `connect_named_pipe` on `\\.\pipe\openssh-ssh-agent` once someone needs a key with a passphrase there.
     #[cfg(unix)]
@@ -642,7 +644,7 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
                 let res = h
                     .authenticate_publickey_with(&t.user, key, rsa_hash, &mut agent)
                     .await;
-                if res.is_ok_and(|r| r.success()) {
+                if res.is_ok_and(|r| let_in(r, &mut offered)) {
                     return Ok(());
                 }
             }
@@ -655,19 +657,21 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
         };
         let key = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
         keys += 1;
-        if h.authenticate_publickey(&t.user, key).await?.success() {
+        if let_in(h.authenticate_publickey(&t.user, key).await?, &mut offered) {
             return Ok(());
         }
     }
     if let Some(pw) = password {
-        let res = h.authenticate_password(&t.user, pw).await?;
-        if res.success() {
+        // No key was tried: ask with nothing, which costs no try against MaxAuthTries.
+        if offered.is_none() && let_in(h.authenticate_none(&t.user).await?, &mut offered) {
             return Ok(());
         }
-        // Servers with PAM often take a password only this way.
-        let asks = matches!(&res, AuthResult::Failure { remaining_methods, .. }
-            if remaining_methods.contains(&MethodKind::KeyboardInteractive));
-        if asks && keyboard_interactive(h, &t.user, pw).await? {
+        let ok = match password_method(offered.as_deref().unwrap_or_default()) {
+            Some(MethodKind::Password) => h.authenticate_password(&t.user, pw).await?.success(),
+            Some(_) => keyboard_interactive(h, &t.user, pw).await?,
+            None => false,
+        };
+        if ok {
             return Ok(());
         }
     }
@@ -678,6 +682,29 @@ async fn login(h: &mut Handle<Client>, t: &Target, password: Option<&str>) -> Re
         password: password.is_some(),
     }
     .into())
+}
+
+/// True if the server let us in; else keeps what it said it takes.
+fn let_in(res: AuthResult, offered: &mut Option<MethodSet>) -> bool {
+    match res {
+        AuthResult::Success => true,
+        AuthResult::Failure {
+            remaining_methods, ..
+        } => {
+            *offered = Some(remaining_methods);
+            false
+        }
+    }
+}
+
+/// The one method a password is tried by, of those the server offers:
+/// `password`, else `keyboard-interactive` (how servers with PAM often take
+/// it). Never both: each wrong try counts against the server's MaxAuthTries
+/// and fail2ban.
+fn password_method(offered: &[MethodKind]) -> Option<MethodKind> {
+    [MethodKind::Password, MethodKind::KeyboardInteractive]
+        .into_iter()
+        .find(|m| offered.contains(m))
 }
 
 /// `keyboard-interactive` with the password: it answers every prompt that
@@ -996,6 +1023,15 @@ mod tests {
         // Two keys are two keys.
         assert_ne!(generate_key(&dir.join("other"), "vssh").unwrap(), public);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_password_is_tried_by_one_method_password_first() {
+        use MethodKind::{KeyboardInteractive as Kbd, Password, PublicKey};
+        assert_eq!(password_method(&[PublicKey, Kbd, Password]), Some(Password));
+        assert_eq!(password_method(&[PublicKey, Kbd]), Some(Kbd));
+        assert_eq!(password_method(&[PublicKey]), None);
+        assert_eq!(password_method(&[]), None);
     }
 
     #[test]

@@ -12,12 +12,12 @@
 //! keys could overtake each other, where these commands run in order.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use vssh_core::conn_err::ConnError;
 use vssh_core::ssh::{SessionCmd, Target, Via};
 use vssh_core::task::{self, Sender, Shell};
@@ -97,33 +97,49 @@ pub fn quick_connect(host: String, backend: State<'_, Backend>) -> Reply<u64> {
     Ok(backend.sessions.lock().unwrap().add(target, None))
 }
 
-/// The password a start logs in with: the one typed for it, kept in the
-/// vault if `save` says so; else the vault's for the host. Never logged,
-/// never written anywhere but the vault.
+/// What a start keeps in the vault once its login went through: the host
+/// and the password typed for it.
+type Keep = Option<(String, Zeroizing<String>)>;
+
+/// The password a start logs in with: the one typed for it, else the
+/// vault's for the host. With `save`, the typed one is also what to keep:
+/// for a host of the config, in a vault unlocked now. Never logged, never
+/// written anywhere but the vault, and only by [`keep`].
 fn password(
     backend: &Backend,
     alias: Option<&str>,
     typed: Option<String>,
     save: bool,
-) -> Result<Password> {
+) -> Result<(Password, Keep)> {
     let Some(typed) = typed.map(Zeroizing::new).filter(|p| !p.is_empty()) else {
-        return Ok(alias.and_then(|alias| backend.password(alias)));
+        return Ok((alias.and_then(|alias| backend.password(alias)), None));
     };
-    if save {
-        let alias =
-            alias.ok_or_else(|| anyhow!("a quick connect has no host to keep a password for"))?;
-        let mut vault = backend.vault.lock().unwrap();
-        let vault = vault
-            .as_mut()
-            .ok_or_else(|| anyhow!("the vault is locked"))?;
-        vault.set(alias, &mut typed.to_string())?;
+    if !save {
+        return Ok((Some(typed), None));
     }
-    Ok(Some(typed))
+    let alias =
+        alias.ok_or_else(|| anyhow!("a quick connect has no host to keep a password for"))?;
+    if backend.vault.lock().unwrap().is_none() {
+        return Err(anyhow!("the vault is locked"));
+    }
+    Ok((Some(typed.clone()), Some((alias.to_string(), typed))))
+}
+
+/// Puts a typed password into the vault, once the login with it went
+/// through: a wrong one never replaces the one there.
+fn keep<R: Runtime>(app: &AppHandle<R>, (alias, password): (String, Zeroizing<String>)) {
+    let backend = app.state::<Backend>();
+    let mut vault = backend.vault.lock().unwrap();
+    // shortcut: a vault locked since the start, or a write that fails, keeps nothing and says nothing; tell the window once someone misses it.
+    if let Some(vault) = vault.as_mut() {
+        let _ = vault.set(&alias, &mut password.to_string());
+    }
 }
 
 /// Connects the session and runs its shell on a PTY of this size. A shell
 /// it already had is ended first. `password` is one the person typed after
-/// a refused login; `save` keeps it in the (unlocked) vault for the host.
+/// a refused login; `save` keeps it in the (unlocked) vault for the host,
+/// once it logged in.
 #[tauri::command]
 pub fn session_start<R: Runtime>(
     id: u64,
@@ -136,7 +152,7 @@ pub fn session_start<R: Runtime>(
 ) -> Reply<()> {
     let mut sessions = backend.sessions.lock().unwrap();
     let session = sessions.get(id)?;
-    let password = self::password(
+    let (password, keep) = self::password(
         &backend,
         session.alias.as_deref(),
         password,
@@ -149,9 +165,15 @@ pub fn session_start<R: Runtime>(
     let state = format!("pty-state:{id}");
     let (window, data, said) = (app.clone(), format!("pty-data:{id}"), state.clone());
     // A window that is gone hears nothing, which is all there is to do about it.
+    let keep = Mutex::new(keep);
     let report = Arc::new(move |ev| {
         let _ = match ev {
-            Shell::Up => window.emit(&said, PtyState::Up),
+            Shell::Up => {
+                if let Some(typed) = keep.lock().unwrap().take() {
+                    self::keep(&window, typed);
+                }
+                window.emit(&said, PtyState::Up)
+            }
             // shortcut: bytes go as a JSON array of numbers, some four
             // characters each; use a `tauri::ipc::Channel` with a raw body
             // if a terminal ever needs to keep up with `cat` of a large file.
