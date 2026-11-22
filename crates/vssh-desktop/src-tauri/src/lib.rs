@@ -194,7 +194,7 @@ impl Transport for Core {
         report: Heard,
     ) -> Answer<()> {
         // Keys and the agent only: a session does not ask the vault.
-        Box::pin(task::shell(target, size, keys, move |ev| report(ev)))
+        Box::pin(task::shell(target, None, size, keys, move |ev| report(ev)))
     }
 
     fn trust(&self, target: &Target, fingerprint: &str, forever: bool) {
