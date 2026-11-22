@@ -196,6 +196,8 @@
         e.preventDefault()
         onreconnect(password, save)
         password = ''
+        // The box goes: the keys are the shell's again.
+        term.focus()
       }}
       class="grid w-80 max-w-full gap-3 rounded-xl border border-red bg-panel p-4 text-sm"
     >

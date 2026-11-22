@@ -573,6 +573,8 @@ test('a refused login asks for a password in the terminal itself: Enter connects
   await user.keyboard(`${TYPED}{Enter}`)
   expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24, password: TYPED, save: false })
   expect(form).not.toBeInTheDocument()
+  // The keys are the shell's again.
+  expect(terminals[0].focused).toBe(true)
 
   // Refused again: asked again, and this time kept.
   form = await ask()
