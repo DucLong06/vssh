@@ -66,7 +66,7 @@ Press `c`, type `user@host` or `user@host:port`, optionally a password, and pres
 **Save while connecting.** Tick the checkbox in the form with `Ctrl-s` (or `Tab` to it and press `S`), then `Enter`:
 
 - the host is added to `~/.ssh/config` like any other host. Its alias is the host name, or `user@host` if that name is already taken;
-- a password you typed is stored in the vault under that alias, encrypted like every vault password. If the vault is locked you are asked for the master passphrase (or to create a vault); cancel that prompt and the password is dropped, not stored;
+- a password you typed is stored in the vault under that alias, encrypted like every vault password, only after a successful login: a wrong one is never stored, and the one you type when asked again is stored instead. If the vault is locked you are asked for the master passphrase (or to create a vault); cancel that prompt and the password is dropped, not stored;
 - the password is never written to `~/.ssh/config` or `config.toml`.
 
 A plain `S` cannot be the toggle while the cursor is in a text field, because it is a letter you may need to type; that is why the shortcut is `Ctrl-s`.

@@ -308,6 +308,10 @@ fn a_session_logs_in_with_the_vaults_password_or_a_typed_one_which_it_can_keep()
     start(1, json!({ "password": "typed" })).unwrap();
     start(1, json!({})).unwrap();
     start(1, keep).unwrap();
+    // Kept once the login with it went through, not before.
+    until("the typed one kept", || {
+        Vault::open(&path, "master").unwrap().get("web-01") == Some("typed")
+    });
     start(1, json!({})).unwrap();
     assert_eq!(
         shells(),
@@ -333,4 +337,53 @@ fn a_session_logs_in_with_the_vaults_password_or_a_typed_one_which_it_can_keep()
     );
     assert_eq!(shells(), Vec::<String>::new());
     assert_eq!(Vault::open(&path, "master").unwrap().names().count(), 1);
+}
+
+#[test]
+fn a_typed_password_is_kept_only_once_the_login_with_it_went_through() {
+    let home = home("session-keep");
+    let path = home.join("data/vault");
+    let mut vault = Vault::create(&path, "master").unwrap();
+    vault.set("web-01", &mut "hunter2".to_string()).unwrap();
+    drop(vault);
+    let net = Fake {
+        wrong: Some("nope"),
+        ..Fake::silent()
+    };
+    let (app, window) = window(&home, net);
+    call(&window, "vault_unlock", json!({ "passphrase": "master" })).unwrap();
+    call(&window, "session_open", json!({ "alias": "web-01" })).unwrap();
+    let state = heard(&app, "pty-state:1");
+    let start = |password: &str, save: bool| {
+        let args = json!({ "id": 1, "cols": 80, "rows": 24, "password": password, "save": save });
+        call(&window, "session_start", args).unwrap();
+    };
+    // The next state the window hears, once it is there.
+    let next = || {
+        until("a state", || !state.lock().unwrap().is_empty());
+        state.lock().unwrap().remove(0)
+    };
+    let kept = || {
+        Vault::open(&path, "master")
+            .unwrap()
+            .get("web-01")
+            .map(str::to_string)
+    };
+
+    // Refused: the window hears it was the password, and the good one stays.
+    start("nope", true);
+    let refused = next();
+    assert_eq!(refused["state"], "closed");
+    assert_eq!(refused["error"]["fail"]["password"], true);
+    assert_eq!(kept().as_deref(), Some("hunter2"));
+
+    // Let in, but not asked to keep it: nothing written.
+    start("typed", false);
+    assert_eq!(next(), json!({ "state": "up" }));
+    assert_eq!(kept().as_deref(), Some("hunter2"));
+
+    // Let in and asked to: kept by the time the window hears it is up.
+    start("right", true);
+    assert_eq!(next(), json!({ "state": "up" }));
+    assert_eq!(kept().as_deref(), Some("right"));
 }
