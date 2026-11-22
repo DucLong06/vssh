@@ -223,7 +223,7 @@
         {/if}
       {/if}
       <div class="flex justify-end gap-2">
-        <button type="button" onclick={() => (dismissed = true)} class="{button} text-white">{t('cancel')}</button>
+        <button type="button" onclick={() => ((dismissed = true), (password = ''))} class="{button} text-white">{t('cancel')}</button>
         <button type="submit" class="{button} border-blue bg-blue! font-semibold text-page hover:brightness-110">{t('connect')}</button>
       </div>
     </form>

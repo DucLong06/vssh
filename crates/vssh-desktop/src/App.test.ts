@@ -585,6 +585,7 @@ test('a refused login asks for a password in the terminal itself: Enter connects
 
   // Cancel leaves the tab closed, its reason and a way back on it.
   form = await ask()
+  await user.type(within(form).getByLabelText('Password'), 'left')
   await user.click(within(form).getByRole('button', { name: 'Cancel' }))
   expect(form).not.toBeInTheDocument()
   const badge = within(screen.getByRole('tabpanel', { name: 'web-01' })).getByRole('status')
@@ -593,6 +594,8 @@ test('a refused login asks for a password in the terminal itself: Enter connects
   await user.click(within(badge).getByRole('button', { name: 'Reconnect' }))
   expect(asked('session_start')).toHaveLength(starts + 1)
   expect(asked('session_start').at(-1)).toEqual({ id: 1, cols: 80, rows: 24 })
+  // What was typed before Cancel is gone, not waiting in the next box.
+  expect(within(await ask()).getByLabelText('Password')).toHaveValue('')
 })
 
 test('the password box is for a refused login only; a locked vault cannot keep it, and a quick connect has nowhere to', async () => {
