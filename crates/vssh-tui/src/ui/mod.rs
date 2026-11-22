@@ -2044,7 +2044,8 @@ impl App {
                 sftp,
                 keep,
             } => {
-                let typed = keep.then(|| secret.clone());
+                // An empty one is not kept: stored, it would remove the vault's entry.
+                let typed = (*keep && !secret.is_empty()).then(|| secret.clone());
                 self.open_target(alias, target.clone(), *saved, *sftp, Some(secret));
                 self.tabs.last_mut().expect("just opened").keep = typed;
             }
@@ -2450,6 +2451,9 @@ mod tests {
             panic!("no password prompt");
         };
         assert!(matches!(form.then, After::Password { keep: true, .. }));
+        // Nothing typed there is nothing to keep.
+        task::run(|| app.submit(&mut form)).unwrap().unwrap();
+        assert!(app.close_tab(app.tabs.len() - 1).keep.is_none());
         // What is typed there is the tab's to keep, once it is let in.
         form.fields[0].1.push_str("right-pw");
         // Its connection is started and dropped: only the tab matters here.
